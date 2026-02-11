@@ -14,7 +14,22 @@ Tars is a Python project for AI assistant experiments. Uses uv for package manag
 
 ## Development
 
-### system design idea
+### tars assistant ideas
+
+- an agent frontend/porcelain called 'tars'
+- tars has cli, webpage and whatsapp channels
+- tars also has state somewhere on the path i can ask it to store
+- messages to tars routes to an AI — configurable
+- AI works with tools/task/mcp etc in the background
+
+A few integration ideas:
+
+  1. route reminders and todos from tars to todoist: eg "add eggs to groceries, remind me to go to shop at 3pm"1.
+  2. Route regular chat to tars and use the AI to handle them
+  3. Have tars remember things about me, eg "my dog's name is Perry" that persist across sessions and channels
+
+
+### System design idea
 
 ```                     
                                + ---> [calls other apis via mcp/tools/skils]

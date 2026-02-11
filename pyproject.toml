@@ -7,3 +7,10 @@ requires-python = ">=3.14"
 dependencies = [
     "anthropic>=0.79.0",
 ]
+
+[project.scripts]
+tars = "tars.cli:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
