@@ -1,16 +1,25 @@
-# This is a sample Python script.
-
-# Press ⌃R to execute it or replace it with your code.
-# Press Double ⇧ to search everywhere for classes, files, tool windows, actions, and settings.
+import sys
+import anthropic
 
 
-def print_hi(name):
-    # Use a breakpoint in the code line below to debug your script.
-    print(f'Hi, {name}')  # Press ⌘F8 to toggle the breakpoint.
+def chat(message: str) -> str:
+    client = anthropic.Anthropic()
+    response = client.messages.create(
+        model="claude-sonnet-4-5-20250929",
+        max_tokens=1024,
+        messages=[{"role": "user", "content": message}],
+    )
+    return response.content[0].text
 
 
-# Press the green button in the gutter to run the script.
-if __name__ == '__main__':
-    print_hi('PyCharm')
+def main():
+    if len(sys.argv) > 1:
+        message = " ".join(sys.argv[1:])
+    else:
+        message = input("tars> ")
 
-# See PyCharm help at https://www.jetbrains.com/help/pycharm/
+    print(chat(message))
+
+
+if __name__ == "__main__":
+    main()
