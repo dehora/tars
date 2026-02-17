@@ -14,3 +14,4 @@ wheels/
 
 # Secrets
 .envrc
+.env
