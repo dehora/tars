@@ -10,7 +10,7 @@ CLAUDE_MODELS = {
     "opus": "claude-opus-4-6",
 }
 
-DEFAULT_MODEL = "ollama:gemma3:12b"
+DEFAULT_MODEL = "ollama:mistral-small3.2"
 
 
 def parse_model(model_str: str) -> tuple[str, str]:
