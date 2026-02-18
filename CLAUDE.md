@@ -81,6 +81,67 @@ Here's what I see:
     - Snapshot at the end of a session before closing
   - Remember at the user's request ('remember this'). The agent can decide where to remember.
 
+#### Session logging TODOs
+  - Compaction summaries should be incremental — pass the previous summary to `_summarize_session` so the model only covers new material since the last compaction, avoiding redundancy across sections
+
+
+#### Semantic Memory Guidelines
+
+Suggested by Claude:
+
+```
+# Core
+- Name: John
+- Location: Dublin, IE
+- Pets: Luna (cat), Max (dog)
+
+# Work
+- Role: Senior engineer at Acme
+- Stack: Python, TypeScript, AWS
+
+# Preferences
+- Editor: Neovim
+- Style: concise responses, no fluff
+- Task mgmt: Todoist, Obsidian for notes
+
+# Active projects
+- Learning Claude CLI/agents
+- Home automation (Home Assistant)
+```
+
+**Memory guidelines**
+
+- Keep memory.md under 100 lines / ~1000 tokens
+- Use terse bullet points, not prose
+- Only store durable facts, not transient state
+- When adding: check for duplicates/conflicts first
+- When removing: confirm with user before deleting
+
+Rough targets for a persistent memory file:
+
+```
+| Approach | Size | Tokens (~) |
+|----------|------|------------|
+| Minimal | 20-50 lines | 200-500 |
+| Comfortable | 50-150 lines | 500-1500 |
+| Upper bound | 200-300 lines | 2000-3000 |
+```
+
+**Claude's Recommendation**: 
+
+Aim for ~50-100 lines / ~500-1000 tokens. This gives you room for meaningful context without meaningfully impacting the available context for actual work. Claude's context window is large (200k tokens for Sonnet/Opus), so even 1-2k tokens is <1% — but memory gets loaded every turn, so smaller is better for:
+
+- Faster processing
+- Lower cost (if API-based)
+- Less noise competing with the actual task
+
+Optional: add a brief schema hint at the top
+
+```
+<!-- Format: flat bullets under category headers, ~100 lines max -->
+```
+
+
 #### Searching
   - aside from plain text storage, we can let the agent search memory by giving it a tool like [sqlite vec](https://github.com/asg017/sqlite-vec)
 

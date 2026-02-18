@@ -5,6 +5,7 @@ import re
 import subprocess
 import sys
 import urllib.request
+from datetime import datetime
 from pathlib import Path
 
 import anthropic
@@ -208,6 +209,55 @@ def _build_system_prompt() -> str:
         f"{memory}\n"
         "</memory>"
     )
+
+
+SESSION_COMPACTION_INTERVAL = 10
+
+SUMMARIZE_PROMPT = """\
+Summarize this conversation concisely for a session log.
+Include what was discussed, decisions made, and which tools were used (not their payloads).
+Use bullet points. Be brief."""
+
+
+def _session_path() -> Path | None:
+    """Returns a timestamped session file path, or None if memory not configured."""
+    d = _memory_dir()
+    if d is None:
+        return None
+    sessions_dir = d / "sessions"
+    sessions_dir.mkdir(parents=True, exist_ok=True)
+    ts = datetime.now().strftime("%Y-%m-%dT%H-%M-%S")
+    return sessions_dir / f"{ts}.md"
+
+
+def _summarize_session(messages: list[dict], provider: str, model: str) -> str:
+    """Ask the model to summarize the conversation for session logging."""
+    summary_messages = [
+        {"role": "user", "content": SUMMARIZE_PROMPT},
+    ]
+    # Inject conversation as context — build a text representation
+    convo_text = "\n".join(
+        f"{m['role']}: {m['content']}" for m in messages if isinstance(m.get("content"), str)
+    )
+    summary_messages[0]["content"] = f"{SUMMARIZE_PROMPT}\n\n<conversation>\n{convo_text}\n</conversation>"
+    return chat(summary_messages, provider, model)
+
+
+def _save_session(path: Path, summary: str, *, is_compaction: bool = False) -> None:
+    """Write or append a session summary to the session file."""
+    if path.exists():
+        existing = path.read_text()
+        ts = datetime.now().strftime("%Y-%m-%dT%H:%M:%S")
+        label = "Compaction" if is_compaction else "Final"
+        text = f"{existing}\n## {label} {ts}\n\n{summary}\n"
+    else:
+        parts = path.stem.split("T")
+        if len(parts) == 2:
+            ts = f"{parts[0]} {parts[1].replace('-', ':')}"
+        else:
+            ts = path.stem
+        text = f"# Session {ts}\n\n{summary}\n"
+    path.write_text(text)
 
 
 def _append_to_file(p: Path, content: str) -> None:
@@ -474,6 +524,9 @@ def chat(messages: list[dict], provider: str, model: str) -> str:
 
 def repl(provider: str, model: str):
     messages = []
+    session_file = _session_path()
+    msg_count = 0
+    last_compaction = 0
     print(f"tars [{provider}:{model}] (ctrl-d to quit)")
     while True:
         try:
@@ -487,6 +540,22 @@ def repl(provider: str, model: str):
         reply = chat(messages, provider, model)
         messages.append({"role": "assistant", "content": reply})
         print(f"tars> {reply}")
+        msg_count += 1
+        if session_file and msg_count - last_compaction >= SESSION_COMPACTION_INTERVAL:
+            try:
+                summary = _summarize_session(messages, provider, model)
+                _save_session(session_file, summary, is_compaction=True)
+                last_compaction = msg_count
+            except Exception as e:
+                print(f"  [warning] session compaction failed: {e}", file=sys.stderr)
+
+    # Save final session on exit
+    if session_file and messages and msg_count > last_compaction:
+        try:
+            summary = _summarize_session(messages, provider, model)
+            _save_session(session_file, summary)
+        except Exception as e:
+            print(f"  [warning] session save failed: {e}", file=sys.stderr)
 
 
 def main():
@@ -503,7 +572,17 @@ def main():
 
     if args.message:
         message = " ".join(args.message)
-        print(chat([{"role": "user", "content": message}], provider, model))
+        messages = [{"role": "user", "content": message}]
+        reply = chat(messages, provider, model)
+        print(reply)
+        session_file = _session_path()
+        if session_file:
+            try:
+                messages.append({"role": "assistant", "content": reply})
+                summary = _summarize_session(messages, provider, model)
+                _save_session(session_file, summary)
+            except Exception as e:
+                print(f"  [warning] session save failed: {e}", file=sys.stderr)
     else:
         repl(provider, model)
 
