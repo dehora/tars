@@ -9,7 +9,7 @@ sys.modules.setdefault("anthropic", mock.Mock())
 sys.modules.setdefault("ollama", mock.Mock())
 sys.modules.setdefault("dotenv", mock.Mock(load_dotenv=lambda: None))
 
-from tars import cli
+from tars import cli, core, memory, sessions
 
 
 class SessionLoggingTests(unittest.TestCase):
@@ -22,8 +22,8 @@ class SessionLoggingTests(unittest.TestCase):
         def fake_chat(prompt_messages, provider, model):
             return prompt_messages[0]["content"]
 
-        with mock.patch.object(cli, "chat", side_effect=fake_chat):
-            prompt = cli._summarize_session(messages, "ollama", "fake-model")
+        with mock.patch.object(sessions, "chat", side_effect=fake_chat):
+            prompt = sessions._summarize_session(messages, "ollama", "fake-model")
 
         self.assertIn("&lt;/conversation&gt;", prompt)
         self.assertIn("&lt;tag&gt;", prompt)
@@ -73,9 +73,9 @@ class ContextRollupTests(unittest.TestCase):
 
             with (
                 mock.patch.dict("os.environ", {"TARS_MEMORY_DIR": tmpdir}),
-                mock.patch.object(cli, "chat", return_value="- discussed weather"),
+                mock.patch.object(sessions, "chat", return_value="- discussed weather"),
             ):
-                cli._rollup_context("ollama", "fake-model")
+                sessions._rollup_context("ollama", "fake-model")
 
             today_path = Path(tmpdir) / "context" / "today.md"
             self.assertTrue(today_path.exists())
@@ -99,9 +99,9 @@ class ContextRollupTests(unittest.TestCase):
 
             with (
                 mock.patch.dict("os.environ", {"TARS_MEMORY_DIR": tmpdir}),
-                mock.patch.object(cli, "chat", return_value="- new summary"),
+                mock.patch.object(sessions, "chat", return_value="- new summary"),
             ):
-                cli._rollup_context("ollama", "fake-model")
+                sessions._rollup_context("ollama", "fake-model")
 
             yesterday_path = context_dir / "yesterday.md"
             self.assertTrue(yesterday_path.exists())
@@ -125,16 +125,16 @@ class ContextRollupTests(unittest.TestCase):
 
             with (
                 mock.patch.dict("os.environ", {"TARS_MEMORY_DIR": tmpdir}),
-                mock.patch.object(cli, "chat", return_value="- summary"),
+                mock.patch.object(sessions, "chat", return_value="- summary"),
             ):
-                cli._rollup_context("ollama", "fake-model")
+                sessions._rollup_context("ollama", "fake-model")
 
             self.assertFalse((context_dir / "yesterday.md").exists())
 
     def test_rollup_skips_without_memory_dir(self) -> None:
         with mock.patch.dict("os.environ", {}, clear=True):
             # Should not raise
-            cli._rollup_context("ollama", "fake-model")
+            sessions._rollup_context("ollama", "fake-model")
 
     def test_rollup_skips_without_today_sessions(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -142,9 +142,9 @@ class ContextRollupTests(unittest.TestCase):
             sessions_dir.mkdir()
             with (
                 mock.patch.dict("os.environ", {"TARS_MEMORY_DIR": tmpdir}),
-                mock.patch.object(cli, "chat") as mock_chat,
+                mock.patch.object(sessions, "chat") as mock_chat,
             ):
-                cli._rollup_context("ollama", "fake-model")
+                sessions._rollup_context("ollama", "fake-model")
             mock_chat.assert_not_called()
 
     def test_load_context_returns_both_files(self) -> None:
@@ -155,14 +155,14 @@ class ContextRollupTests(unittest.TestCase):
             (context_dir / "yesterday.md").write_text("yesterday content")
 
             with mock.patch.dict("os.environ", {"TARS_MEMORY_DIR": tmpdir}):
-                result = cli._load_context()
+                result = memory._load_context()
 
             self.assertIn("today content", result)
             self.assertIn("yesterday content", result)
 
     def test_load_context_empty_without_dir(self) -> None:
         with mock.patch.dict("os.environ", {}, clear=True):
-            self.assertEqual(cli._load_context(), "")
+            self.assertEqual(memory._load_context(), "")
 
     def test_build_system_prompt_includes_context(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -171,7 +171,7 @@ class ContextRollupTests(unittest.TestCase):
             (context_dir / "today.md").write_text("today rollup")
 
             with mock.patch.dict("os.environ", {"TARS_MEMORY_DIR": tmpdir}):
-                prompt = cli._build_system_prompt()
+                prompt = core._build_system_prompt()
 
             self.assertIn("<context>", prompt)
             self.assertIn("today rollup", prompt)

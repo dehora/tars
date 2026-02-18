@@ -10,19 +10,19 @@ sys.modules.setdefault("anthropic", mock.Mock())
 sys.modules.setdefault("ollama", mock.Mock())
 sys.modules.setdefault("dotenv", mock.Mock(load_dotenv=lambda: None))
 
-from tars import cli
+from tars import memory, core, tools
 
 
 class MemoryToolTests(unittest.TestCase):
     def test_memory_recall_requires_config(self) -> None:
         with mock.patch.dict(os.environ, {}, clear=True):
-            result = json.loads(cli._run_memory_tool("memory_recall", {}))
+            result = json.loads(memory._run_memory_tool("memory_recall", {}))
         self.assertIn("Memory not configured", result.get("error", ""))
 
     def test_memory_recall_no_files(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             with mock.patch.dict(os.environ, {"TARS_MEMORY_DIR": tmpdir}, clear=True):
-                result = json.loads(cli._run_memory_tool("memory_recall", {}))
+                result = json.loads(memory._run_memory_tool("memory_recall", {}))
         self.assertIn("No memory files found", result.get("error", ""))
 
     def test_memory_update_missing_entry(self) -> None:
@@ -32,7 +32,7 @@ class MemoryToolTests(unittest.TestCase):
                 handle.write("- something else\n")
             with mock.patch.dict(os.environ, {"TARS_MEMORY_DIR": tmpdir}, clear=True):
                 result = json.loads(
-                    cli._run_memory_tool(
+                    memory._run_memory_tool(
                         "memory_update",
                         {"old_content": "missing", "new_content": "updated"},
                     )
@@ -43,7 +43,7 @@ class MemoryToolTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmpdir:
             with mock.patch.dict(os.environ, {"TARS_MEMORY_DIR": tmpdir}, clear=True):
                 result = json.loads(
-                    cli._run_memory_tool(
+                    memory._run_memory_tool(
                         "memory_remember",
                         {"section": "invalid", "content": "oops"},
                     )
@@ -51,9 +51,9 @@ class MemoryToolTests(unittest.TestCase):
         self.assertIn("Invalid section", result.get("error", ""))
 
     def test_build_system_prompt_includes_memory_preface(self) -> None:
-        with mock.patch.object(cli, "_load_memory", return_value="- remembered"):
-            prompt = cli._build_system_prompt()
-        self.assertIn(cli.MEMORY_PROMPT_PREFACE, prompt)
+        with mock.patch.object(core, "_load_memory", return_value="- remembered"):
+            prompt = core._build_system_prompt()
+        self.assertIn(core.MEMORY_PROMPT_PREFACE, prompt)
         self.assertIn("<memory>", prompt)
         self.assertIn("- remembered", prompt)
 
@@ -62,7 +62,7 @@ class MemoryToolTests(unittest.TestCase):
             path = os.path.join(tmpdir, "Memory.md")
             with open(path, "w", encoding="utf-8") as handle:
                 handle.write("<!-- tars:memory\nplaceholder details\n-->\n- existing\n")
-            cli._append_to_file(Path(path), "new item")
+            memory._append_to_file(Path(path), "new item")
             updated = Path(path).read_text()
         self.assertNotIn("tars:memory", updated)
         self.assertIn("- existing", updated)
@@ -71,7 +71,7 @@ class MemoryToolTests(unittest.TestCase):
     def test_ollama_tools_include_memory(self) -> None:
         tool_names = {
             tool["function"]["name"]
-            for tool in cli.OLLAMA_TOOLS
+            for tool in tools.OLLAMA_TOOLS
         }
         self.assertIn("memory_remember", tool_names)
         self.assertIn("memory_update", tool_names)

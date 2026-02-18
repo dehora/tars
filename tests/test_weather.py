@@ -8,7 +8,7 @@ sys.modules.setdefault("anthropic", mock.Mock())
 sys.modules.setdefault("ollama", mock.Mock())
 sys.modules.setdefault("dotenv", mock.Mock(load_dotenv=lambda: None))
 
-from tars import cli
+from tars import weather
 
 
 class WeatherToolTests(unittest.TestCase):
@@ -27,20 +27,20 @@ class WeatherToolTests(unittest.TestCase):
                 "precipitation": [0.0],
             },
         }
-        with mock.patch.object(cli, "_fetch_weather", return_value=payload):
-            result = json.loads(cli._run_weather_tool("weather_now", {"lat": 0, "lon": -1}))
+        with mock.patch.object(weather, "_fetch_weather", return_value=payload):
+            result = json.loads(weather._run_weather_tool("weather_now", {"lat": 0, "lon": -1}))
         self.assertNotIn("error", result)
         self.assertEqual(result["location"]["lat"], 0)
         self.assertEqual(result["location"]["lon"], -1)
 
     def test_missing_coords_returns_error(self) -> None:
         with mock.patch.dict(os.environ, {}, clear=True):
-            result = json.loads(cli._run_weather_tool("weather_now", {}))
+            result = json.loads(weather._run_weather_tool("weather_now", {}))
         self.assertIn("error", result)
 
     def test_api_failure_returns_error(self) -> None:
-        with mock.patch.object(cli, "_fetch_weather", side_effect=Exception("boom")):
-            result = json.loads(cli._run_weather_tool("weather_now", {"lat": 10, "lon": 20}))
+        with mock.patch.object(weather, "_fetch_weather", side_effect=Exception("boom")):
+            result = json.loads(weather._run_weather_tool("weather_now", {"lat": 10, "lon": 20}))
         self.assertIn("Weather API request failed", result.get("error", ""))
 
     def test_forecast_uses_minimum_hourly_length(self) -> None:
@@ -52,8 +52,8 @@ class WeatherToolTests(unittest.TestCase):
                 "precipitation": [0.1, 0.2],
             },
         }
-        with mock.patch.object(cli, "_fetch_weather", return_value=payload):
-            result = json.loads(cli._run_weather_tool("weather_forecast", {"lat": 10, "lon": 20}))
+        with mock.patch.object(weather, "_fetch_weather", return_value=payload):
+            result = json.loads(weather._run_weather_tool("weather_forecast", {"lat": 10, "lon": 20}))
         self.assertEqual(len(result["hourly"]), 1)
 
 
