@@ -51,7 +51,7 @@ def _load_recent_sessions() -> str:
     # Load in chronological order (oldest first)
     parts = []
     for f in reversed(files):
-        parts.append(f.read_text().strip())
+        parts.append(f.read_text(encoding="utf-8", errors="replace").strip())
     return "\n\n---\n\n".join(parts)
 
 

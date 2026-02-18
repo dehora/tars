@@ -20,8 +20,14 @@ def repl(provider: str, model: str):
     session_file = _session_path()
     msg_count = 0
     last_compaction = 0
-    last_summary = ""
+    cumulative_summary = ""
     print(f"tars [{provider}:{model}] (ctrl-d to quit)")
+    def _merge_summary(existing: str, new: str) -> str:
+        if not existing:
+            return new
+        if not new:
+            return existing
+        return f"{existing.rstrip()}\n{new.lstrip()}"
     try:
         while True:
             try:
@@ -39,10 +45,10 @@ def repl(provider: str, model: str):
             if session_file and msg_count - last_compaction >= SESSION_COMPACTION_INTERVAL:
                 try:
                     summary = _summarize_session(
-                        messages, provider, model, previous_summary=last_summary,
+                        messages, provider, model, previous_summary=cumulative_summary,
                     )
                     _save_session(session_file, summary, is_compaction=True)
-                    last_summary = summary
+                    cumulative_summary = _merge_summary(cumulative_summary, summary)
                     last_compaction = msg_count
                 except Exception as e:
                     print(f"  [warning] session compaction failed: {e}", file=sys.stderr)
@@ -51,7 +57,7 @@ def repl(provider: str, model: str):
         if session_file and messages and msg_count > last_compaction:
             try:
                 summary = _summarize_session(
-                    messages, provider, model, previous_summary=last_summary,
+                    messages, provider, model, previous_summary=cumulative_summary,
                 )
                 _save_session(session_file, summary)
             except Exception as e:

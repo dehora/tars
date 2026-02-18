@@ -41,12 +41,18 @@ def _summarize_session(
     messages: list[dict], provider: str, model: str, *, previous_summary: str = "",
 ) -> str:
     """Ask the model to summarize the conversation for session logging."""
+    def _escape_prompt_text(text: str) -> str:
+        return text.replace("<", "&lt;").replace(">", "&gt;")
+
     def _format_content(value: object) -> str:
         if isinstance(value, str):
             text = value
         else:
-            text = json.dumps(value, ensure_ascii=True, sort_keys=True)
-        return text.replace("<", "&lt;").replace(">", "&gt;")
+            try:
+                text = json.dumps(value, ensure_ascii=True, sort_keys=True, default=str)
+            except TypeError:
+                text = repr(value)
+        return _escape_prompt_text(text)
 
     convo_text = "\n".join(
         f"{m.get('role', 'unknown')}: {_format_content(m.get('content'))}"
@@ -54,9 +60,10 @@ def _summarize_session(
         if m.get("content") is not None
     )
     if previous_summary:
+        escaped_previous = _escape_prompt_text(previous_summary)
         prompt = (
             f"{SUMMARIZE_INCREMENTAL_PROMPT}\n\n"
-            f"<previous-summary>\n{previous_summary}\n</previous-summary>\n\n"
+            f"<previous-summary>\n{escaped_previous}\n</previous-summary>\n\n"
             f"<conversation>\n{convo_text}\n</conversation>"
         )
     else:

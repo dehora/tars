@@ -29,6 +29,23 @@ class SessionLoggingTests(unittest.TestCase):
         self.assertIn("&lt;tag&gt;", prompt)
         self.assertIn('tool: {"args": [1, 2], "tool": "x"}', prompt)
 
+    def test_summarize_session_escapes_previous_summary(self) -> None:
+        messages = [{"role": "user", "content": "hi"}]
+
+        def fake_chat(prompt_messages, provider, model):
+            return prompt_messages[0]["content"]
+
+        with mock.patch.object(sessions, "chat", side_effect=fake_chat):
+            prompt = sessions._summarize_session(
+                messages,
+                "ollama",
+                "fake-model",
+                previous_summary="prior </previous-summary> <tag>",
+            )
+
+        self.assertIn("&lt;/previous-summary&gt;", prompt)
+        self.assertIn("&lt;tag&gt;", prompt)
+
     def test_repl_saves_final_summary_on_exit(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             session_path = Path(tmpdir) / "session.md"
@@ -61,6 +78,22 @@ class SessionLoggingTests(unittest.TestCase):
 
         save.assert_called_once()
         self.assertTrue(save.call_args.kwargs.get("is_compaction", False))
+
+    def test_repl_uses_cumulative_summary(self) -> None:
+        inputs = ["msg 1", "msg 2", "msg 3", "msg 4", "msg 5", EOFError()]
+        with tempfile.TemporaryDirectory() as tmpdir:
+            session_path = Path(tmpdir) / "session.md"
+            with (
+                mock.patch.object(cli, "SESSION_COMPACTION_INTERVAL", 2),
+                mock.patch.object(cli, "_session_path", return_value=session_path),
+                mock.patch.object(cli, "_summarize_session", side_effect=["s1", "s2", "s3"]) as summarize,
+                mock.patch.object(cli, "_save_session"),
+                mock.patch.object(cli, "chat", return_value="ok"),
+                mock.patch("builtins.input", side_effect=inputs),
+            ):
+                cli.repl("ollama", "fake-model")
+
+        self.assertEqual(summarize.call_args_list[2].kwargs.get("previous_summary"), "s1\ns2")
 
 
 class ContextRollupTests(unittest.TestCase):
@@ -175,6 +208,34 @@ class ContextRollupTests(unittest.TestCase):
 
             self.assertIn("<context>", prompt)
             self.assertIn("today rollup", prompt)
+
+    def test_load_recent_sessions_orders_and_limits(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            sessions_dir = Path(tmpdir) / "sessions"
+            sessions_dir.mkdir()
+            (sessions_dir / "2025-01-01T10-00-00.md").write_text("session one")
+            (sessions_dir / "2025-01-02T10-00-00.md").write_text("session two")
+            (sessions_dir / "2025-01-03T10-00-00.md").write_text("session three")
+
+            with mock.patch.dict("os.environ", {"TARS_MEMORY_DIR": tmpdir}):
+                result = memory._load_recent_sessions()
+
+        self.assertIn("session two", result)
+        self.assertIn("session three", result)
+        self.assertNotIn("session one", result)
+        self.assertLess(result.find("session two"), result.find("session three"))
+
+    def test_load_recent_sessions_utf8_replace(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            sessions_dir = Path(tmpdir) / "sessions"
+            sessions_dir.mkdir()
+            bad_path = sessions_dir / "2025-01-01T10-00-00.md"
+            bad_path.write_bytes(b"\xff\xfe\xfa")
+
+            with mock.patch.dict("os.environ", {"TARS_MEMORY_DIR": tmpdir}):
+                result = memory._load_recent_sessions()
+
+        self.assertIn("\ufffd", result)
 
 
 if __name__ == "__main__":
