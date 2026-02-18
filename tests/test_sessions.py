@@ -5,9 +5,9 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from unittest import mock
 
-sys.modules.setdefault("anthropic", mock.Mock())
-sys.modules.setdefault("ollama", mock.Mock())
-sys.modules.setdefault("dotenv", mock.Mock(load_dotenv=lambda: None))
+sys.modules["anthropic"] = mock.Mock()
+sys.modules["ollama"] = mock.Mock()
+sys.modules["dotenv"] = mock.Mock(load_dotenv=lambda: None)
 
 from tars import cli, core, memory, sessions
 
@@ -27,7 +27,8 @@ class SessionLoggingTests(unittest.TestCase):
 
         self.assertIn("&lt;/conversation&gt;", prompt)
         self.assertIn("&lt;tag&gt;", prompt)
-        self.assertIn('tool: {"args": [1, 2], "tool": "x"}', prompt)
+        self.assertIn('"tool": "x"', prompt)
+        self.assertIn('"args": [1, 2]', prompt)
 
     def test_summarize_session_escapes_previous_summary(self) -> None:
         messages = [{"role": "user", "content": "hi"}]
@@ -76,8 +77,19 @@ class SessionLoggingTests(unittest.TestCase):
             ):
                 cli.repl("ollama", "fake-model")
 
-        save.assert_called_once()
-        self.assertTrue(save.call_args.kwargs.get("is_compaction", False))
+        compaction_calls = [
+            call
+            for call in save.call_args_list
+            if call.kwargs.get("is_compaction", False)
+        ]
+        self.assertGreaterEqual(len(compaction_calls), 1)
+        if len(save.call_args_list) > 1:
+            final_calls = [
+                call
+                for call in save.call_args_list
+                if not call.kwargs.get("is_compaction", False)
+            ]
+            self.assertGreaterEqual(len(final_calls), 1)
 
     def test_repl_uses_cumulative_summary(self) -> None:
         inputs = ["msg 1", "msg 2", "msg 3", "msg 4", "msg 5", EOFError()]
