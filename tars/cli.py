@@ -198,17 +198,36 @@ def _load_memory() -> str:
     return p.read_text()
 
 
+def _load_recent_sessions() -> str:
+    """Load the most recent session logs for context."""
+    d = _memory_dir()
+    if d is None:
+        return ""
+    sessions_dir = d / "sessions"
+    if not sessions_dir.is_dir():
+        return ""
+    files = sorted(sessions_dir.glob("*.md"), reverse=True)[:RECENT_SESSIONS_LIMIT]
+    if not files:
+        return ""
+    # Load in chronological order (oldest first)
+    parts = []
+    for f in reversed(files):
+        parts.append(f.read_text().strip())
+    return "\n\n---\n\n".join(parts)
+
+
 def _build_system_prompt() -> str:
+    prompt = SYSTEM_PROMPT
     memory = _load_memory()
-    if not memory:
-        return SYSTEM_PROMPT
-    return (
-        f"{SYSTEM_PROMPT}\n\n---\n\n"
-        f"{MEMORY_PROMPT_PREFACE}\n\n"
-        "<memory>\n"
-        f"{memory}\n"
-        "</memory>"
-    )
+    sessions = _load_recent_sessions()
+    if not memory and not sessions:
+        return prompt
+    prompt += f"\n\n---\n\n{MEMORY_PROMPT_PREFACE}"
+    if memory:
+        prompt += f"\n\n<memory>\n{memory}\n</memory>"
+    if sessions:
+        prompt += f"\n\n<recent-sessions>\n{sessions}\n</recent-sessions>"
+    return prompt
 
 
 SESSION_COMPACTION_INTERVAL = 10
@@ -217,6 +236,14 @@ SUMMARIZE_PROMPT = """\
 Summarize this conversation concisely for a session log.
 Include what was discussed, decisions made, and which tools were used (not their payloads).
 Use bullet points. Be brief."""
+
+SUMMARIZE_INCREMENTAL_PROMPT = """\
+Summarize only what is NEW in this conversation since the previous summary.
+Do not repeat anything already covered. Include new topics discussed, decisions made, \
+and which tools were used (not their payloads).
+Use bullet points. Be brief."""
+
+RECENT_SESSIONS_LIMIT = 2
 
 
 def _session_path() -> Path | None:
@@ -230,17 +257,31 @@ def _session_path() -> Path | None:
     return sessions_dir / f"{ts}.md"
 
 
-def _summarize_session(messages: list[dict], provider: str, model: str) -> str:
+def _summarize_session(
+    messages: list[dict], provider: str, model: str, *, previous_summary: str = "",
+) -> str:
     """Ask the model to summarize the conversation for session logging."""
-    summary_messages = [
-        {"role": "user", "content": SUMMARIZE_PROMPT},
-    ]
-    # Inject conversation as context — build a text representation
+    def _format_content(value: object) -> str:
+        if isinstance(value, str):
+            text = value
+        else:
+            text = json.dumps(value, ensure_ascii=True, sort_keys=True)
+        return text.replace("<", "&lt;").replace(">", "&gt;")
+
     convo_text = "\n".join(
-        f"{m['role']}: {m['content']}" for m in messages if isinstance(m.get("content"), str)
+        f"{m.get('role', 'unknown')}: {_format_content(m.get('content'))}"
+        for m in messages
+        if m.get("content") is not None
     )
-    summary_messages[0]["content"] = f"{SUMMARIZE_PROMPT}\n\n<conversation>\n{convo_text}\n</conversation>"
-    return chat(summary_messages, provider, model)
+    if previous_summary:
+        prompt = (
+            f"{SUMMARIZE_INCREMENTAL_PROMPT}\n\n"
+            f"<previous-summary>\n{previous_summary}\n</previous-summary>\n\n"
+            f"<conversation>\n{convo_text}\n</conversation>"
+        )
+    else:
+        prompt = f"{SUMMARIZE_PROMPT}\n\n<conversation>\n{convo_text}\n</conversation>"
+    return chat([{"role": "user", "content": prompt}], provider, model)
 
 
 def _save_session(path: Path, summary: str, *, is_compaction: bool = False) -> None:
@@ -527,35 +568,42 @@ def repl(provider: str, model: str):
     session_file = _session_path()
     msg_count = 0
     last_compaction = 0
+    last_summary = ""
     print(f"tars [{provider}:{model}] (ctrl-d to quit)")
-    while True:
-        try:
-            user_input = input("you> ")
-        except (EOFError, KeyboardInterrupt):
-            print()
-            break
-        if not user_input.strip():
-            continue
-        messages.append({"role": "user", "content": user_input})
-        reply = chat(messages, provider, model)
-        messages.append({"role": "assistant", "content": reply})
-        print(f"tars> {reply}")
-        msg_count += 1
-        if session_file and msg_count - last_compaction >= SESSION_COMPACTION_INTERVAL:
+    try:
+        while True:
             try:
-                summary = _summarize_session(messages, provider, model)
-                _save_session(session_file, summary, is_compaction=True)
-                last_compaction = msg_count
+                user_input = input("you> ")
+            except (EOFError, KeyboardInterrupt):
+                print()
+                break
+            if not user_input.strip():
+                continue
+            messages.append({"role": "user", "content": user_input})
+            reply = chat(messages, provider, model)
+            messages.append({"role": "assistant", "content": reply})
+            print(f"tars> {reply}")
+            msg_count += 1
+            if session_file and msg_count - last_compaction >= SESSION_COMPACTION_INTERVAL:
+                try:
+                    summary = _summarize_session(
+                        messages, provider, model, previous_summary=last_summary,
+                    )
+                    _save_session(session_file, summary, is_compaction=True)
+                    last_summary = summary
+                    last_compaction = msg_count
+                except Exception as e:
+                    print(f"  [warning] session compaction failed: {e}", file=sys.stderr)
+    finally:
+        # Save final session on exit
+        if session_file and messages and msg_count > last_compaction:
+            try:
+                summary = _summarize_session(
+                    messages, provider, model, previous_summary=last_summary,
+                )
+                _save_session(session_file, summary)
             except Exception as e:
-                print(f"  [warning] session compaction failed: {e}", file=sys.stderr)
-
-    # Save final session on exit
-    if session_file and messages and msg_count > last_compaction:
-        try:
-            summary = _summarize_session(messages, provider, model)
-            _save_session(session_file, summary)
-        except Exception as e:
-            print(f"  [warning] session save failed: {e}", file=sys.stderr)
+                print(f"  [warning] session save failed: {e}", file=sys.stderr)
 
 
 def main():

@@ -81,10 +81,6 @@ Here's what I see:
     - Snapshot at the end of a session before closing
   - Remember at the user's request ('remember this'). The agent can decide where to remember.
 
-#### Session logging TODOs
-  - Compaction summaries should be incremental — pass the previous summary to `_summarize_session` so the model only covers new material since the last compaction, avoiding redundancy across sections
-
-
 #### Semantic Memory Guidelines
 
 Suggested by Claude:
