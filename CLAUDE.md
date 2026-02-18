@@ -59,27 +59,26 @@ Here's what I see:
   - where does it go?
   - when to remember?
 
-#### Four kinds of memory
+#### Three kinds of memory
   - Semantic. Preferences, facts and stable things that are broadly true over time, especially about the user.
   - Procedural. Operational information, rules, idioms and and approaches.
-  - Episodic:Context. Recent context based on time (today, yesterday), these are rollups.
-  - Episodic:Sessions. Captures conversations in session, without the technical details/commands. Folders of timestamped logs.  
+  - Episodic. Session logs — timestamped conversation summaries without technical details/commands. Retrieved by relevance via search, not by fixed time windows.
 
 - Can use markdown files. Don't need a vectordb/database for storage
   - Multiple files in a hierarchy not one big file (cf. context windows).
-  - A Memory.md file. Mostly semantic memory and lists of other files, just a few hundred lines. 
-  - The agent can load the recent Episodic:Context files.
-  - The agent can load the recent Episodic:Sessions that are relevant to this session.
+  - A Memory.md file. Mostly semantic memory and lists of other files, just a few hundred lines.
+  - The agent retrieves relevant session logs via search at conversation start, based on the opening message.
 
 - Could host in an obsidian vault called tars. This creates a dep on Obsidian but that's ok since it'll be just used as a holder and for syncing, since Obsidian works on markdown.
 
 #### Memory handling
-  - Memory.md is always loaded and given to tars. The agent always has it present. To manage the context window is one reason to keep this light.
-  - The Episodic:Contexts, today.md, yesterday.md, etc are loaded in by tars to remind itself of recent activity.
-  - The Episodic:Sessions:
-    - Snapshot count based compaction near the context limit to move memory information from the session and working desk to a session log, saving information before it gets flushed away. 
-    - Snapshot at the end of a session before closing
-  - Remember at the user's request ('remember this'). The agent can decide where to remember.
+  - Memory.md is always loaded into the system prompt. This is a stopgap — once search is working, Memory.md should also be retrieved selectively rather than loaded wholesale every turn. Keep it light until then.
+  - Session logs:
+    - Snapshot count based compaction near the context limit to move memory information from the session and working desk to a session log, saving information before it gets flushed away.
+    - Snapshot at the end of a session before closing.
+    - No fixed time-window files (today.md/yesterday.md). Instead, at conversation start, search session logs for entries relevant to the opening message. Relevance beats recency — context from three days ago can matter more than yesterday.
+    - This avoids: arbitrary time windows, lossy summary-of-summary compression, extra LLM calls on exit for rollups, and always-loaded noise.
+  - Prefer user-triggered saves ('remember this') over model-triggered ones. The user knows what matters; the model tends to over-save or under-save. The agent can decide where to store it.
 
 #### Semantic Memory Guidelines
 
@@ -139,7 +138,13 @@ Optional: add a brief schema hint at the top
 
 
 #### Searching
-  - aside from plain text storage, we can let the agent search memory by giving it a tool like [sqlite vec](https://github.com/asg017/sqlite-vec)
+
+Search is the core retrieval mechanism for all memory types — semantic, procedural, and episodic. Rather than always-loading files or using fixed time windows, tars searches its memory at conversation start and via tools during conversation.
+
+  - Use [sqlite vec](https://github.com/asg017/sqlite-vec) for vector storage and search
+  - Index all memory files and session logs into the same search infrastructure
+  - At conversation start: run a search against the opening message to pull in relevant context (session logs, memory entries)
+  - During conversation: the agent can search via tools as needed
 
   - The search model would be
     - hybrid: keyword search and semantic search
