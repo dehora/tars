@@ -67,7 +67,7 @@ def _load_context() -> str:
     for name in ("today.md", "yesterday.md"):
         p = context_dir / name
         if p.exists():
-            parts.append(p.read_text().strip())
+            parts.append(p.read_text(encoding="utf-8", errors="replace").strip())
     return "\n\n---\n\n".join(parts)
 
 

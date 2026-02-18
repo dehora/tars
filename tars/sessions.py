@@ -74,7 +74,7 @@ def _summarize_session(
 def _save_session(path: Path, summary: str, *, is_compaction: bool = False) -> None:
     """Write or append a session summary to the session file."""
     if path.exists():
-        existing = path.read_text()
+        existing = path.read_text(encoding="utf-8", errors="replace")
         ts = datetime.now().strftime("%Y-%m-%dT%H:%M:%S")
         label = "Compaction" if is_compaction else "Final"
         text = f"{existing}\n## {label} {ts}\n\n{summary}\n"
@@ -85,7 +85,7 @@ def _save_session(path: Path, summary: str, *, is_compaction: bool = False) -> N
         else:
             ts = path.stem
         text = f"# Session {ts}\n\n{summary}\n"
-    path.write_text(text)
+    path.write_text(text, encoding="utf-8", errors="replace")
 
 
 def _rollup_context(provider: str, model: str) -> None:
@@ -107,17 +107,17 @@ def _rollup_context(provider: str, model: str) -> None:
     today_path = context_dir / "today.md"
     yesterday_path = context_dir / "yesterday.md"
 
-    # Rotate: if today.md exists with a different date, move it to yesterday.md
+    # Rotate: if today.md exists with a different date (or no marker), move it to yesterday.md
     if today_path.exists():
-        text = today_path.read_text()
+        text = today_path.read_text(encoding="utf-8", errors="replace")
         match = CONTEXT_DATE_RE.search(text)
-        if match and match.group(1) != today:
-            today_path.rename(yesterday_path)
+        if not match or match.group(1) != today:
+            today_path.replace(yesterday_path)
 
     # Clean up: if yesterday.md is older than yesterday, delete it
     yesterday = (datetime.now() - timedelta(days=1)).strftime("%Y-%m-%d")
     if yesterday_path.exists():
-        text = yesterday_path.read_text()
+        text = yesterday_path.read_text(encoding="utf-8", errors="replace")
         match = CONTEXT_DATE_RE.search(text)
         if match and match.group(1) != today and match.group(1) != yesterday:
             yesterday_path.unlink()
@@ -125,10 +125,15 @@ def _rollup_context(provider: str, model: str) -> None:
     # Concatenate today's session files and ask for a rollup summary
     session_texts = []
     for f in today_files:
-        session_texts.append(f.read_text().strip())
+        session_texts.append(f.read_text(encoding="utf-8", errors="replace").strip())
     combined = "\n\n---\n\n".join(session_texts)
 
-    prompt = f"{ROLLUP_PROMPT}\n\n<sessions>\n{combined}\n</sessions>"
+    escaped_combined = combined.replace("<", "&lt;").replace(">", "&gt;")
+    prompt = f"{ROLLUP_PROMPT}\n\n<sessions>\n{escaped_combined}\n</sessions>"
     summary = chat([{"role": "user", "content": prompt}], provider, model)
 
-    today_path.write_text(f"<!-- tars:date {today} -->\n# Context {today}\n\n{summary}\n")
+    today_path.write_text(
+        f"<!-- tars:date {today} -->\n# Context {today}\n\n{summary}\n",
+        encoding="utf-8",
+        errors="replace",
+    )

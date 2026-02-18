@@ -113,13 +113,16 @@ class ContextRollupTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmpdir:
             sessions_dir = Path(tmpdir) / "sessions"
             sessions_dir.mkdir()
-            today = datetime.now().strftime("%Y-%m-%d")
+            fixed_now = datetime(2025, 1, 2, 12, 0, 0)
+            today = fixed_now.strftime("%Y-%m-%d")
             (sessions_dir / f"{today}T10-00-00.md").write_text("# Session\n- talked about weather")
 
             with (
                 mock.patch.dict("os.environ", {"TARS_MEMORY_DIR": tmpdir}),
+                mock.patch.object(sessions, "datetime", wraps=datetime) as mocked_datetime,
                 mock.patch.object(sessions, "chat", return_value="- discussed weather"),
             ):
+                mocked_datetime.now.return_value = fixed_now
                 sessions._rollup_context("ollama", "fake-model")
 
             today_path = Path(tmpdir) / "context" / "today.md"
@@ -132,8 +135,9 @@ class ContextRollupTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmpdir:
             sessions_dir = Path(tmpdir) / "sessions"
             sessions_dir.mkdir()
-            today = datetime.now().strftime("%Y-%m-%d")
-            yesterday = (datetime.now() - timedelta(days=1)).strftime("%Y-%m-%d")
+            fixed_now = datetime(2025, 1, 2, 12, 0, 0)
+            today = fixed_now.strftime("%Y-%m-%d")
+            yesterday = (fixed_now - timedelta(days=1)).strftime("%Y-%m-%d")
             (sessions_dir / f"{today}T10-00-00.md").write_text("# Session\n- new stuff")
 
             context_dir = Path(tmpdir) / "context"
@@ -144,8 +148,10 @@ class ContextRollupTests(unittest.TestCase):
 
             with (
                 mock.patch.dict("os.environ", {"TARS_MEMORY_DIR": tmpdir}),
+                mock.patch.object(sessions, "datetime", wraps=datetime) as mocked_datetime,
                 mock.patch.object(sessions, "chat", return_value="- new summary"),
             ):
+                mocked_datetime.now.return_value = fixed_now
                 sessions._rollup_context("ollama", "fake-model")
 
             yesterday_path = context_dir / "yesterday.md"
@@ -158,8 +164,9 @@ class ContextRollupTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmpdir:
             sessions_dir = Path(tmpdir) / "sessions"
             sessions_dir.mkdir()
-            today = datetime.now().strftime("%Y-%m-%d")
-            old_date = (datetime.now() - timedelta(days=3)).strftime("%Y-%m-%d")
+            fixed_now = datetime(2025, 1, 4, 12, 0, 0)
+            today = fixed_now.strftime("%Y-%m-%d")
+            old_date = (fixed_now - timedelta(days=3)).strftime("%Y-%m-%d")
             (sessions_dir / f"{today}T10-00-00.md").write_text("# Session\n- stuff")
 
             context_dir = Path(tmpdir) / "context"
@@ -170,8 +177,10 @@ class ContextRollupTests(unittest.TestCase):
 
             with (
                 mock.patch.dict("os.environ", {"TARS_MEMORY_DIR": tmpdir}),
+                mock.patch.object(sessions, "datetime", wraps=datetime) as mocked_datetime,
                 mock.patch.object(sessions, "chat", return_value="- summary"),
             ):
+                mocked_datetime.now.return_value = fixed_now
                 sessions._rollup_context("ollama", "fake-model")
 
             self.assertFalse((context_dir / "yesterday.md").exists())
@@ -205,6 +214,17 @@ class ContextRollupTests(unittest.TestCase):
             self.assertIn("today content", result)
             self.assertIn("yesterday content", result)
 
+    def test_load_context_utf8_replace(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            context_dir = Path(tmpdir) / "context"
+            context_dir.mkdir()
+            (context_dir / "today.md").write_bytes(b"\xff\xfe\xfa")
+
+            with mock.patch.dict("os.environ", {"TARS_MEMORY_DIR": tmpdir}):
+                result = memory._load_context()
+
+        self.assertIn("\ufffd", result)
+
     def test_load_context_empty_without_dir(self) -> None:
         with mock.patch.dict("os.environ", {}, clear=True):
             self.assertEqual(memory._load_context(), "")
@@ -213,13 +233,63 @@ class ContextRollupTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmpdir:
             context_dir = Path(tmpdir) / "context"
             context_dir.mkdir()
-            (context_dir / "today.md").write_text("today rollup")
+            (context_dir / "today.md").write_text("today rollup </context> <tag>")
 
             with mock.patch.dict("os.environ", {"TARS_MEMORY_DIR": tmpdir}):
                 prompt = core._build_system_prompt()
 
             self.assertIn("<context>", prompt)
             self.assertIn("today rollup", prompt)
+            self.assertIn("&lt;/context&gt;", prompt)
+            self.assertIn("&lt;tag&gt;", prompt)
+
+    def test_rollup_prompt_escapes_sessions_content(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            sessions_dir = Path(tmpdir) / "sessions"
+            sessions_dir.mkdir()
+            fixed_now = datetime(2025, 1, 2, 12, 0, 0)
+            today = fixed_now.strftime("%Y-%m-%d")
+            (sessions_dir / f"{today}T10-00-00.md").write_text("log </sessions> <tag>")
+
+            def fake_chat(prompt_messages, provider, model):
+                return prompt_messages[0]["content"]
+
+            with (
+                mock.patch.dict("os.environ", {"TARS_MEMORY_DIR": tmpdir}),
+                mock.patch.object(sessions, "datetime", wraps=datetime) as mocked_datetime,
+                mock.patch.object(sessions, "chat", side_effect=fake_chat) as mocked_chat,
+            ):
+                mocked_datetime.now.return_value = fixed_now
+                sessions._rollup_context("ollama", "fake-model")
+
+            prompt = mocked_chat.call_args[0][0][0]["content"]
+            self.assertIn("<sessions>", prompt)
+            self.assertIn("&lt;/sessions&gt;", prompt)
+            self.assertIn("&lt;tag&gt;", prompt)
+
+    def test_rollup_rotates_missing_marker(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            sessions_dir = Path(tmpdir) / "sessions"
+            sessions_dir.mkdir()
+            fixed_now = datetime(2025, 1, 2, 12, 0, 0)
+            today = fixed_now.strftime("%Y-%m-%d")
+            (sessions_dir / f"{today}T10-00-00.md").write_text("# Session\n- new stuff")
+
+            context_dir = Path(tmpdir) / "context"
+            context_dir.mkdir()
+            (context_dir / "today.md").write_text("unmarked previous context")
+
+            with (
+                mock.patch.dict("os.environ", {"TARS_MEMORY_DIR": tmpdir}),
+                mock.patch.object(sessions, "datetime", wraps=datetime) as mocked_datetime,
+                mock.patch.object(sessions, "chat", return_value="- summary"),
+            ):
+                mocked_datetime.now.return_value = fixed_now
+                sessions._rollup_context("ollama", "fake-model")
+
+            yesterday_path = context_dir / "yesterday.md"
+            self.assertTrue(yesterday_path.exists())
+            self.assertIn("unmarked previous context", yesterday_path.read_text())
 
     def test_load_recent_sessions_orders_and_limits(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
