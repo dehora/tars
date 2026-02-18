@@ -12,6 +12,11 @@ Tars is a Python project for AI assistant experiments. Uses uv for package manag
 - **Add dependency**: `uv add <package>`
 - **Sync environment**: `uv sync`
 
+## Coding guidelines
+
+- Never use `or` for numeric defaults — `0` and `0.0` are falsy. Use explicit `None` checks instead.
+- Never assume parallel arrays from external APIs are equal length — use `min(len(...))` across all arrays.
+
 ## Development
 
 ### tars assistant ideas
