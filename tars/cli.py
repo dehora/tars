@@ -139,15 +139,23 @@ def _fetch_weather(lat: float, lon: float) -> dict:
         return json.loads(resp.read())
 
 
-def _resolve_coords(args: dict) -> tuple[float, float]:
-    lat = args.get("lat") or float(os.environ.get("DEFAULT_LAT", "0"))
-    lon = args.get("lon") or float(os.environ.get("DEFAULT_LON", "0"))
+def _resolve_coords(args: dict) -> tuple[float | None, float | None]:
+    lat = args["lat"] if "lat" in args and args["lat"] is not None else None
+    lon = args["lon"] if "lon" in args and args["lon"] is not None else None
+
+    if lat is None:
+        env_lat = os.environ.get("DEFAULT_LAT")
+        lat = float(env_lat) if env_lat not in (None, "") else None
+    if lon is None:
+        env_lon = os.environ.get("DEFAULT_LON")
+        lon = float(env_lon) if env_lon not in (None, "") else None
+
     return lat, lon
 
 
 def _run_weather_tool(name: str, args: dict) -> str:
     lat, lon = _resolve_coords(args)
-    if lat == 0 and lon == 0:
+    if lat is None or lon is None:
         return json.dumps({"error": "No location provided and DEFAULT_LAT/DEFAULT_LON not set in .env"})
     try:
         data = _fetch_weather(lat, lon)
@@ -162,6 +170,12 @@ def _run_weather_tool(name: str, args: dict) -> str:
         precip_amounts = hourly.get("precipitation", [])[:6]
         temps = hourly.get("temperature_2m", [])[:6]
         times = hourly.get("time", [])[:6]
+        series_len = min(
+            len(times),
+            len(temps),
+            len(precip_probs),
+            len(precip_amounts),
+        )
         weather_code = current.get("weather_code", 0)
         return json.dumps({
             "current": {
@@ -177,7 +191,7 @@ def _run_weather_tool(name: str, args: dict) -> str:
                     "precip_prob_pct": precip_probs[i] if i < len(precip_probs) else None,
                     "precip_mm": precip_amounts[i] if i < len(precip_amounts) else None,
                 }
-                for i in range(min(6, len(times)))
+                for i in range(series_len)
             ],
             "location": {"lat": lat, "lon": lon},
         })
@@ -188,6 +202,7 @@ def _run_weather_tool(name: str, args: dict) -> str:
     temps = hourly.get("temperature_2m", [])
     precip_probs = hourly.get("precipitation_probability", [])
     precip_amounts = hourly.get("precipitation", [])
+    series_len = min(len(times), len(temps), len(precip_probs), len(precip_amounts))
     return json.dumps({
         "hourly": [
             {
@@ -196,7 +211,7 @@ def _run_weather_tool(name: str, args: dict) -> str:
                 "precip_prob_pct": precip_probs[i] if i < len(precip_probs) else None,
                 "precip_mm": precip_amounts[i] if i < len(precip_amounts) else None,
             }
-            for i in range(len(times))
+            for i in range(series_len)
         ],
         "location": {"lat": lat, "lon": lon},
     })
