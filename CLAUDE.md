@@ -16,6 +16,8 @@ Tars is a Python project for AI assistant experiments. Uses uv for package manag
 
 - Never use `or` for numeric defaults — `0` and `0.0` are falsy. Use explicit `None` checks instead.
 - Never assume parallel arrays from external APIs are equal length — use `min(len(...))` across all arrays.
+- Wrap untrusted user data in tagged blocks with a preface when injecting into prompts — never concatenate raw content into system prompts.
+- Use specific patterns for placeholder comments (e.g. `<!-- tars:memory -->`) — broad regex like `<!--.*?-->` will eat legitimate comments.
 
 # Development
 
