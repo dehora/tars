@@ -1,6 +1,7 @@
 import sys
 import tempfile
 import unittest
+from datetime import datetime, timedelta
 from pathlib import Path
 from unittest import mock
 
@@ -60,6 +61,120 @@ class SessionLoggingTests(unittest.TestCase):
 
         save.assert_called_once()
         self.assertTrue(save.call_args.kwargs.get("is_compaction", False))
+
+
+class ContextRollupTests(unittest.TestCase):
+    def test_rollup_creates_today_md(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            sessions_dir = Path(tmpdir) / "sessions"
+            sessions_dir.mkdir()
+            today = datetime.now().strftime("%Y-%m-%d")
+            (sessions_dir / f"{today}T10-00-00.md").write_text("# Session\n- talked about weather")
+
+            with (
+                mock.patch.dict("os.environ", {"TARS_MEMORY_DIR": tmpdir}),
+                mock.patch.object(cli, "chat", return_value="- discussed weather"),
+            ):
+                cli._rollup_context("ollama", "fake-model")
+
+            today_path = Path(tmpdir) / "context" / "today.md"
+            self.assertTrue(today_path.exists())
+            text = today_path.read_text()
+            self.assertIn(f"<!-- tars:date {today} -->", text)
+            self.assertIn("- discussed weather", text)
+
+    def test_rollup_rotates_yesterday(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            sessions_dir = Path(tmpdir) / "sessions"
+            sessions_dir.mkdir()
+            today = datetime.now().strftime("%Y-%m-%d")
+            yesterday = (datetime.now() - timedelta(days=1)).strftime("%Y-%m-%d")
+            (sessions_dir / f"{today}T10-00-00.md").write_text("# Session\n- new stuff")
+
+            context_dir = Path(tmpdir) / "context"
+            context_dir.mkdir()
+            (context_dir / "today.md").write_text(
+                f"<!-- tars:date {yesterday} -->\n# Context {yesterday}\n\n- old stuff\n"
+            )
+
+            with (
+                mock.patch.dict("os.environ", {"TARS_MEMORY_DIR": tmpdir}),
+                mock.patch.object(cli, "chat", return_value="- new summary"),
+            ):
+                cli._rollup_context("ollama", "fake-model")
+
+            yesterday_path = context_dir / "yesterday.md"
+            self.assertTrue(yesterday_path.exists())
+            self.assertIn(f"<!-- tars:date {yesterday} -->", yesterday_path.read_text())
+            today_path = context_dir / "today.md"
+            self.assertIn(f"<!-- tars:date {today} -->", today_path.read_text())
+
+    def test_rollup_deletes_stale_yesterday(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            sessions_dir = Path(tmpdir) / "sessions"
+            sessions_dir.mkdir()
+            today = datetime.now().strftime("%Y-%m-%d")
+            old_date = (datetime.now() - timedelta(days=3)).strftime("%Y-%m-%d")
+            (sessions_dir / f"{today}T10-00-00.md").write_text("# Session\n- stuff")
+
+            context_dir = Path(tmpdir) / "context"
+            context_dir.mkdir()
+            (context_dir / "yesterday.md").write_text(
+                f"<!-- tars:date {old_date} -->\n# Context {old_date}\n\n- stale\n"
+            )
+
+            with (
+                mock.patch.dict("os.environ", {"TARS_MEMORY_DIR": tmpdir}),
+                mock.patch.object(cli, "chat", return_value="- summary"),
+            ):
+                cli._rollup_context("ollama", "fake-model")
+
+            self.assertFalse((context_dir / "yesterday.md").exists())
+
+    def test_rollup_skips_without_memory_dir(self) -> None:
+        with mock.patch.dict("os.environ", {}, clear=True):
+            # Should not raise
+            cli._rollup_context("ollama", "fake-model")
+
+    def test_rollup_skips_without_today_sessions(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            sessions_dir = Path(tmpdir) / "sessions"
+            sessions_dir.mkdir()
+            with (
+                mock.patch.dict("os.environ", {"TARS_MEMORY_DIR": tmpdir}),
+                mock.patch.object(cli, "chat") as mock_chat,
+            ):
+                cli._rollup_context("ollama", "fake-model")
+            mock_chat.assert_not_called()
+
+    def test_load_context_returns_both_files(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            context_dir = Path(tmpdir) / "context"
+            context_dir.mkdir()
+            (context_dir / "today.md").write_text("today content")
+            (context_dir / "yesterday.md").write_text("yesterday content")
+
+            with mock.patch.dict("os.environ", {"TARS_MEMORY_DIR": tmpdir}):
+                result = cli._load_context()
+
+            self.assertIn("today content", result)
+            self.assertIn("yesterday content", result)
+
+    def test_load_context_empty_without_dir(self) -> None:
+        with mock.patch.dict("os.environ", {}, clear=True):
+            self.assertEqual(cli._load_context(), "")
+
+    def test_build_system_prompt_includes_context(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            context_dir = Path(tmpdir) / "context"
+            context_dir.mkdir()
+            (context_dir / "today.md").write_text("today rollup")
+
+            with mock.patch.dict("os.environ", {"TARS_MEMORY_DIR": tmpdir}):
+                prompt = cli._build_system_prompt()
+
+            self.assertIn("<context>", prompt)
+            self.assertIn("today rollup", prompt)
 
 
 if __name__ == "__main__":

@@ -5,7 +5,7 @@ import re
 import subprocess
 import sys
 import urllib.request
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 
 import anthropic
@@ -216,15 +216,80 @@ def _load_recent_sessions() -> str:
     return "\n\n---\n\n".join(parts)
 
 
+def _load_context() -> str:
+    """Load today.md and yesterday.md from context/ for episodic context."""
+    d = _memory_dir()
+    if d is None:
+        return ""
+    context_dir = d / "context"
+    if not context_dir.is_dir():
+        return ""
+    parts = []
+    for name in ("today.md", "yesterday.md"):
+        p = context_dir / name
+        if p.exists():
+            parts.append(p.read_text().strip())
+    return "\n\n---\n\n".join(parts)
+
+
+def _rollup_context(provider: str, model: str) -> None:
+    """Summarize today's sessions into context/today.md, rotating yesterday.md."""
+    d = _memory_dir()
+    if d is None:
+        return
+    sessions_dir = d / "sessions"
+    if not sessions_dir.is_dir():
+        return
+
+    today = datetime.now().strftime("%Y-%m-%d")
+    today_files = sorted(sessions_dir.glob(f"{today}*.md"))
+    if not today_files:
+        return
+
+    context_dir = d / "context"
+    context_dir.mkdir(parents=True, exist_ok=True)
+    today_path = context_dir / "today.md"
+    yesterday_path = context_dir / "yesterday.md"
+
+    # Rotate: if today.md exists with a different date, move it to yesterday.md
+    if today_path.exists():
+        text = today_path.read_text()
+        match = CONTEXT_DATE_RE.search(text)
+        if match and match.group(1) != today:
+            today_path.rename(yesterday_path)
+
+    # Clean up: if yesterday.md is older than yesterday, delete it
+    yesterday = (datetime.now() - timedelta(days=1)).strftime("%Y-%m-%d")
+    if yesterday_path.exists():
+        text = yesterday_path.read_text()
+        match = CONTEXT_DATE_RE.search(text)
+        if match and match.group(1) != today and match.group(1) != yesterday:
+            yesterday_path.unlink()
+
+    # Concatenate today's session files and ask for a rollup summary
+    session_texts = []
+    for f in today_files:
+        session_texts.append(f.read_text().strip())
+    combined = "\n\n---\n\n".join(session_texts)
+
+    prompt = f"{ROLLUP_PROMPT}\n\n<sessions>\n{combined}\n</sessions>"
+    summary = chat([{"role": "user", "content": prompt}], provider, model)
+
+    today_path.write_text(f"<!-- tars:date {today} -->\n# Context {today}\n\n{summary}\n")
+
+
 def _build_system_prompt() -> str:
     prompt = SYSTEM_PROMPT
     memory = _load_memory()
+    context = _load_context()
     sessions = _load_recent_sessions()
-    if not memory and not sessions:
+    if not memory and not context and not sessions:
         return prompt
     prompt += f"\n\n---\n\n{MEMORY_PROMPT_PREFACE}"
     if memory:
         prompt += f"\n\n<memory>\n{memory}\n</memory>"
+    if context:
+        prompt += f"\n\n<context>\n{context}\n</context>"
     if sessions:
         prompt += f"\n\n<recent-sessions>\n{sessions}\n</recent-sessions>"
     return prompt
@@ -244,6 +309,12 @@ and which tools were used (not their payloads).
 Use bullet points. Be brief."""
 
 RECENT_SESSIONS_LIMIT = 2
+
+ROLLUP_PROMPT = """\
+Summarize all of today's sessions into a single daily context summary.
+Include key topics, decisions, and tools used. Use bullet points. Be brief."""
+
+CONTEXT_DATE_RE = re.compile(r"<!--\s*tars:date\s+(\d{4}-\d{2}-\d{2})\s*-->")
 
 
 def _session_path() -> Path | None:
@@ -604,6 +675,11 @@ def repl(provider: str, model: str):
                 _save_session(session_file, summary)
             except Exception as e:
                 print(f"  [warning] session save failed: {e}", file=sys.stderr)
+        # Roll up today's sessions into context/today.md
+        try:
+            _rollup_context(provider, model)
+        except Exception as e:
+            print(f"  [warning] context rollup failed: {e}", file=sys.stderr)
 
 
 def main():
@@ -631,6 +707,10 @@ def main():
                 _save_session(session_file, summary)
             except Exception as e:
                 print(f"  [warning] session save failed: {e}", file=sys.stderr)
+        try:
+            _rollup_context(provider, model)
+        except Exception as e:
+            print(f"  [warning] context rollup failed: {e}", file=sys.stderr)
     else:
         repl(provider, model)
 
