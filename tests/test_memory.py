@@ -4,6 +4,7 @@ import sys
 import tempfile
 import unittest
 from unittest import mock
+from pathlib import Path
 
 sys.modules.setdefault("anthropic", mock.Mock())
 sys.modules.setdefault("ollama", mock.Mock())
@@ -55,6 +56,26 @@ class MemoryToolTests(unittest.TestCase):
         self.assertIn(cli.MEMORY_PROMPT_PREFACE, prompt)
         self.assertIn("<memory>", prompt)
         self.assertIn("- remembered", prompt)
+
+    def test_append_to_file_removes_memory_placeholder(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path = os.path.join(tmpdir, "Memory.md")
+            with open(path, "w", encoding="utf-8") as handle:
+                handle.write("<!-- tars:memory\nplaceholder details\n-->\n- existing\n")
+            cli._append_to_file(Path(path), "new item")
+            updated = Path(path).read_text()
+        self.assertNotIn("tars:memory", updated)
+        self.assertIn("- existing", updated)
+        self.assertIn("- new item", updated)
+
+    def test_ollama_tools_include_memory(self) -> None:
+        tool_names = {
+            tool["function"]["name"]
+            for tool in cli.OLLAMA_TOOLS
+        }
+        self.assertIn("memory_remember", tool_names)
+        self.assertIn("memory_update", tool_names)
+        self.assertIn("memory_recall", tool_names)
 
 
 if __name__ == "__main__":
