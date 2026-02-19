@@ -1,0 +1,115 @@
+import os
+import sys
+import tempfile
+import unittest
+from pathlib import Path
+from unittest import mock
+
+sys.modules.setdefault("anthropic", mock.Mock())
+sys.modules.setdefault("dotenv", mock.Mock(load_dotenv=lambda: None))
+sys.modules.setdefault("ollama", mock.MagicMock())
+
+from tars import embeddings
+from tars.indexer import _discover_files, build_index
+
+_DIM = 4
+
+
+def _fake_embed(**kwargs):
+    texts = kwargs.get("input", [])
+    return {"embeddings": [[0.1] * _DIM for _ in texts]}
+
+
+class DiscoverFilesTests(unittest.TestCase):
+    def test_finds_memory_and_session_files(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            d = Path(td)
+            (d / "Memory.md").write_text("# Memory", encoding="utf-8")
+            (d / "Procedural.md").write_text("# Proc", encoding="utf-8")
+            sessions = d / "sessions"
+            sessions.mkdir()
+            (sessions / "2025-01-01.md").write_text("session 1", encoding="utf-8")
+            (sessions / "2025-01-02.md").write_text("session 2", encoding="utf-8")
+            (sessions / "notes.txt").write_text("not markdown", encoding="utf-8")
+
+            result = _discover_files(d)
+            paths = [str(p) for p, _ in result]
+            types = [t for _, t in result]
+
+            self.assertIn(str(d / "Memory.md"), paths)
+            self.assertIn(str(d / "Procedural.md"), paths)
+            self.assertIn("semantic", types)
+            self.assertIn("procedural", types)
+            self.assertEqual(types.count("episodic"), 2)
+            # .txt file should not be included
+            self.assertNotIn(str(sessions / "notes.txt"), paths)
+
+    def test_empty_dir(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            result = _discover_files(Path(td))
+            self.assertEqual(result, [])
+
+
+class BuildIndexTests(unittest.TestCase):
+    def setUp(self) -> None:
+        # Patch the ollama module reference inside tars.embeddings directly
+        self._patcher = mock.patch.object(embeddings, "ollama")
+        self._mock_ollama = self._patcher.start()
+        self._mock_ollama.embed.side_effect = _fake_embed
+
+    def tearDown(self) -> None:
+        self._patcher.stop()
+
+    def test_no_memory_dir(self) -> None:
+        with mock.patch.dict(os.environ, {}, clear=True):
+            os.environ.pop("TARS_MEMORY_DIR", None)
+            stats = build_index()
+        self.assertEqual(stats, {"indexed": 0, "skipped": 0, "chunks": 0})
+
+    def test_indexes_files(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            d = Path(td)
+            (d / "Memory.md").write_text("# Semantic\n\nSome facts.\n", encoding="utf-8")
+            sessions = d / "sessions"
+            sessions.mkdir()
+            (sessions / "log.md").write_text("# Session\n\nA session.\n", encoding="utf-8")
+
+            with mock.patch.dict(os.environ, {"TARS_MEMORY_DIR": td}):
+                stats = build_index(model="test-model")
+
+            self.assertEqual(stats["indexed"], 2)
+            self.assertEqual(stats["skipped"], 0)
+            self.assertGreater(stats["chunks"], 0)
+
+    def test_incremental_skip(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            d = Path(td)
+            (d / "Memory.md").write_text("# Memory\n\nFacts.\n", encoding="utf-8")
+
+            with mock.patch.dict(os.environ, {"TARS_MEMORY_DIR": td}):
+                stats1 = build_index(model="test-model")
+                stats2 = build_index(model="test-model")
+
+            self.assertEqual(stats1["indexed"], 1)
+            self.assertEqual(stats2["indexed"], 0)
+            self.assertEqual(stats2["skipped"], 1)
+
+    def test_reindex_on_change(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            d = Path(td)
+            (d / "Memory.md").write_text("# Memory\n\nVersion 1.\n", encoding="utf-8")
+
+            with mock.patch.dict(os.environ, {"TARS_MEMORY_DIR": td}):
+                stats1 = build_index(model="test-model")
+                self.assertEqual(stats1["indexed"], 1)
+
+                # Change file content
+                (d / "Memory.md").write_text("# Memory\n\nVersion 2 updated.\n", encoding="utf-8")
+                stats2 = build_index(model="test-model")
+
+            self.assertEqual(stats2["indexed"], 1)
+            self.assertEqual(stats2["skipped"], 0)
+
+
+if __name__ == "__main__":
+    unittest.main()
