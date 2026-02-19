@@ -1,4 +1,6 @@
+import sys
 import os
+from contextlib import asynccontextmanager
 from pathlib import Path
 
 from dotenv import load_dotenv
@@ -13,7 +15,17 @@ from tars.sessions import _session_path
 
 load_dotenv()
 
-app = FastAPI(title="tars")
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    try:
+        build_index()
+    except Exception as e:
+        print(f"  [warning] index update failed ({type(e).__name__}): {e}", file=sys.stderr)
+    yield
+
+
+app = FastAPI(title="tars", lifespan=lifespan)
 
 _conversations: dict[str, Conversation] = {}
 _session_files: dict[str, Path | None] = {}
