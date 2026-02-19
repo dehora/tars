@@ -108,6 +108,35 @@ def _get_vec_dim_from_schema(conn: sqlite3.Connection) -> int | None:
     return int(match.group(1))
 
 
+def _prepare_db(model: str) -> tuple[int | None, bool]:
+    """Pre-init check: handle model changes, return (cached_dim, model_changed).
+
+    If the embedding model changed, drops vec_chunks so init_db recreates it
+    with the correct dimensions. Returns cached dim when model is unchanged.
+    """
+    p = _db_path()
+    if p is None or not p.exists():
+        return None, False
+
+    conn = _connect(p)
+    try:
+        conn.executescript(_SCHEMA_SQL)
+        stored_model = _get_metadata(conn, "embedding_model")
+
+        model_changed = stored_model is not None and stored_model != model
+        if model_changed:
+            if _vec_table_exists(conn):
+                conn.execute("DROP TABLE vec_chunks")
+            conn.execute("DELETE FROM metadata WHERE key = 'vec_dim'")
+            conn.commit()
+            return None, True
+
+        stored_dim = _get_metadata(conn, "vec_dim")
+        return (int(stored_dim) if stored_dim is not None else None), False
+    finally:
+        conn.close()
+
+
 def init_db(*, dim: int) -> sqlite3.Connection | None:
     """Create or open the database, ensuring schema exists.
 

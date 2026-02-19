@@ -172,5 +172,24 @@ class BuildIndexTests(unittest.TestCase):
             self.assertEqual(stats["skipped"], 0)
 
 
+class StartupIndexTests(unittest.TestCase):
+    def test_swallows_exceptions(self) -> None:
+        from tars.cli import _startup_index
+
+        with mock.patch("tars.cli.build_index", side_effect=RuntimeError("boom")):
+            _startup_index()  # should not raise
+
+    def test_prints_exception_type(self) -> None:
+        from tars.cli import _startup_index
+
+        with mock.patch("tars.cli.build_index", side_effect=ValueError("bad dim")):
+            with mock.patch("builtins.print") as mock_print:
+                _startup_index()
+            mock_print.assert_called_once()
+            msg = mock_print.call_args[0][0]
+            self.assertIn("ValueError", msg)
+            self.assertIn("bad dim", msg)
+
+
 if __name__ == "__main__":
     unittest.main()

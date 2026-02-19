@@ -85,7 +85,10 @@ def _startup_index() -> None:
     try:
         build_index()
     except Exception as e:
-        print(f"  [warning] index update failed: {e}", file=sys.stderr)
+        print(
+            f"  [warning] index update failed ({type(e).__name__}): {e}",
+            file=sys.stderr,
+        )
 
 
 def main():

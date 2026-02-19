@@ -5,6 +5,7 @@ from pathlib import Path
 from tars.chunker import _content_hash, chunk_markdown
 from tars.db import (
     _get_metadata,
+    _prepare_db,
     _set_metadata,
     delete_chunks_for_file,
     delete_file,
@@ -40,29 +41,30 @@ def build_index(*, model: str = "qwen3-embedding:0.6b") -> dict:
     if memory_dir is None:
         return stats
 
-    dim = embedding_dimensions(model)
+    # Handle model change before init_db validates dimensions
+    cached_dim, model_changed = _prepare_db(model)
+    dim = cached_dim if cached_dim is not None else embedding_dimensions(model)
+
     conn = init_db(dim=dim)
     if conn is None:
-        return stats
+        raise RuntimeError("Failed to initialize index database")
 
     try:
         collection_id = ensure_collection(conn)
 
-        # Detect embedding model change and force full reindex
-        stored_model = _get_metadata(conn, "embedding_model")
-        model_changed = stored_model is not None and stored_model != model
         if model_changed:
-            # Clear all chunks so every file gets re-embedded
-            for fid in get_indexed_paths(conn, collection_id).values():
-                delete_chunks_for_file(conn, fid)
             # Reset content hashes to force reprocessing
             conn.execute(
                 "UPDATE files SET content_hash = '' WHERE collection_id = ?",
                 (collection_id,),
             )
             conn.commit()
-        _set_metadata(conn, "embedding_model", model)
-        conn.commit()
+
+        # Only write metadata when model actually changed
+        stored_model = _get_metadata(conn, "embedding_model")
+        if stored_model != model:
+            _set_metadata(conn, "embedding_model", model)
+            conn.commit()
 
         files = _discover_files(memory_dir)
 
