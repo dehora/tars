@@ -5,11 +5,15 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from unittest import mock
 
-sys.modules["anthropic"] = mock.Mock()
-sys.modules["ollama"] = mock.Mock()
-sys.modules["dotenv"] = mock.Mock(load_dotenv=lambda: None)
-
-from tars import cli, core, memory, sessions
+with mock.patch.dict(
+    sys.modules,
+    {
+        "anthropic": mock.Mock(),
+        "ollama": mock.Mock(),
+        "dotenv": mock.Mock(load_dotenv=lambda: None),
+    },
+):
+    from tars import cli, core, memory, sessions
 
 
 class SessionLoggingTests(unittest.TestCase):
