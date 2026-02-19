@@ -12,7 +12,7 @@ with mock.patch.dict(
         "dotenv": mock.Mock(load_dotenv=lambda: None),
     },
 ):
-    from tars import cli, core, memory, sessions
+    from tars import cli, conversation, core, memory, sessions
 
 
 class SessionLoggingTests(unittest.TestCase):
@@ -79,9 +79,9 @@ class SessionLoggingTests(unittest.TestCase):
             session_path = Path(tmpdir) / "session.md"
             with (
                 mock.patch.object(cli, "_session_path", return_value=session_path),
-                mock.patch.object(cli, "_summarize_session", return_value="- summary") as summarize,
-                mock.patch.object(cli, "_save_session") as save,
-                mock.patch.object(cli, "chat", return_value="ok"),
+                mock.patch.object(conversation, "_summarize_session", return_value="- summary") as summarize,
+                mock.patch.object(conversation, "_save_session") as save,
+                mock.patch.object(conversation, "chat", return_value="ok"),
                 mock.patch("builtins.input", side_effect=["hello", EOFError()]),
             ):
                 cli.repl("ollama", "fake-model")
@@ -91,15 +91,15 @@ class SessionLoggingTests(unittest.TestCase):
         self.assertFalse(save.call_args.kwargs.get("is_compaction", False))
 
     def test_repl_compacts_every_interval(self) -> None:
-        inputs = [f"msg {i}" for i in range(1, cli.SESSION_COMPACTION_INTERVAL + 1)]
+        inputs = [f"msg {i}" for i in range(1, sessions.SESSION_COMPACTION_INTERVAL + 1)]
         inputs.append(EOFError())
         with tempfile.TemporaryDirectory() as tmpdir:
             session_path = Path(tmpdir) / "session.md"
             with (
                 mock.patch.object(cli, "_session_path", return_value=session_path),
-                mock.patch.object(cli, "_summarize_session", return_value="- summary"),
-                mock.patch.object(cli, "_save_session") as save,
-                mock.patch.object(cli, "chat", return_value="ok"),
+                mock.patch.object(conversation, "_summarize_session", return_value="- summary"),
+                mock.patch.object(conversation, "_save_session") as save,
+                mock.patch.object(conversation, "chat", return_value="ok"),
                 mock.patch("builtins.input", side_effect=inputs),
             ):
                 cli.repl("ollama", "fake-model")
@@ -123,11 +123,11 @@ class SessionLoggingTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmpdir:
             session_path = Path(tmpdir) / "session.md"
             with (
-                mock.patch.object(cli, "SESSION_COMPACTION_INTERVAL", 2),
+                mock.patch.object(conversation, "SESSION_COMPACTION_INTERVAL", 2),
                 mock.patch.object(cli, "_session_path", return_value=session_path),
-                mock.patch.object(cli, "_summarize_session", side_effect=["s1", "s2", "s3"]) as summarize,
-                mock.patch.object(cli, "_save_session"),
-                mock.patch.object(cli, "chat", return_value="ok"),
+                mock.patch.object(conversation, "_summarize_session", side_effect=["s1", "s2", "s3"]) as summarize,
+                mock.patch.object(conversation, "_save_session"),
+                mock.patch.object(conversation, "chat", return_value="ok"),
                 mock.patch("builtins.input", side_effect=inputs),
             ):
                 cli.repl("ollama", "fake-model")
@@ -145,11 +145,11 @@ class SessionLoggingTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmpdir:
             session_path = Path(tmpdir) / "session.md"
             with (
-                mock.patch.object(cli, "SESSION_COMPACTION_INTERVAL", 2),
+                mock.patch.object(conversation, "SESSION_COMPACTION_INTERVAL", 2),
                 mock.patch.object(cli, "_session_path", return_value=session_path),
-                mock.patch.object(cli, "_summarize_session", side_effect=fake_summarize),
-                mock.patch.object(cli, "_save_session"),
-                mock.patch.object(cli, "chat", return_value="ok"),
+                mock.patch.object(conversation, "_summarize_session", side_effect=fake_summarize),
+                mock.patch.object(conversation, "_save_session"),
+                mock.patch.object(conversation, "chat", return_value="ok"),
                 mock.patch("builtins.input", side_effect=inputs),
             ):
                 cli.repl("ollama", "fake-model")
@@ -162,11 +162,11 @@ class SessionLoggingTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmpdir:
             session_path = Path(tmpdir) / "session.md"
             with (
-                mock.patch.object(cli, "SESSION_COMPACTION_INTERVAL", 2),
+                mock.patch.object(conversation, "SESSION_COMPACTION_INTERVAL", 2),
                 mock.patch.object(cli, "_session_path", return_value=session_path),
-                mock.patch.object(cli, "_summarize_session", side_effect=["s1", "s2", "s3"]),
-                mock.patch.object(cli, "_save_session") as save,
-                mock.patch.object(cli, "chat", return_value="ok"),
+                mock.patch.object(conversation, "_summarize_session", side_effect=["s1", "s2", "s3"]),
+                mock.patch.object(conversation, "_save_session") as save,
+                mock.patch.object(conversation, "chat", return_value="ok"),
                 mock.patch("builtins.input", side_effect=inputs),
             ):
                 cli.repl("ollama", "fake-model")
@@ -184,11 +184,11 @@ class SessionLoggingTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmpdir:
             session_path = Path(tmpdir) / "session.md"
             with (
-                mock.patch.object(cli, "SESSION_COMPACTION_INTERVAL", 2),
+                mock.patch.object(conversation, "SESSION_COMPACTION_INTERVAL", 2),
                 mock.patch.object(cli, "_session_path", return_value=session_path),
-                mock.patch.object(cli, "_summarize_session", side_effect=["s1", "s2", "s3"]),
-                mock.patch.object(cli, "_save_session") as save,
-                mock.patch.object(cli, "chat", return_value="ok"),
+                mock.patch.object(conversation, "_summarize_session", side_effect=["s1", "s2", "s3"]),
+                mock.patch.object(conversation, "_save_session") as save,
+                mock.patch.object(conversation, "chat", return_value="ok"),
                 mock.patch("builtins.input", side_effect=inputs),
             ):
                 cli.repl("ollama", "fake-model")

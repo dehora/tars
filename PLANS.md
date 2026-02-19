@@ -189,3 +189,71 @@ uv run tars "what do you know about me?"
 - **RRF k=60:** standard value from the original paper. No tuning needed.
 - **Graceful degradation:** empty DB, missing dir, no index → empty results, no exceptions.
 - **`_load_recent_sessions` removed from startup path** — replaced by search-based retrieval. The function stays in memory.py for now (session compaction still uses it).
+
+---
+
+## Plan: HTTP API for tars
+
+### Context
+
+tars needs an HTTP API layer so frontends (web, WhatsApp, future channels) can talk to it. Currently only the CLI REPL exists. The API is the shared surface — each frontend becomes a thin client that POSTs messages and gets replies.
+
+WhatsApp via Baileys was the original goal but Meta's ban risk on unofficial clients is high (connection-level, not just volume). Building the API first means the plumbing is ready when we revisit WhatsApp or add a web UI.
+
+### Design decisions
+
+**Framework: FastAPI**
+- Lightweight, async, auto-generates OpenAPI docs. Already the default for Python APIs. One dependency add (`fastapi[standard]` bundles uvicorn).
+
+**State: in-memory dict**
+- This is a personal single-user bot. Conversations are ephemeral — if the server restarts, start fresh. No database for conversation state.
+- A dict keyed by `conversation_id` holding messages, search_context, compaction state.
+- If persistence becomes needed later, swap the dict for SQLite. But not yet.
+
+**Conversation lifecycle**
+- Auto-create on first message to a new `conversation_id`. No explicit create endpoint.
+- Client picks the ID (e.g. `"cli"`, `"whatsapp"`, `"web"`, or a UUID). This lets each channel maintain its own conversation naturally.
+- Optional DELETE to clear a conversation.
+
+**Session compaction**
+- Same logic as REPL: compact every N messages, save summary to session file.
+- Extract the compaction logic from `cli.py` into a shared helper rather than duplicating it. This is the one place where extraction is justified — the REPL and API both need identical compaction behaviour.
+
+### Files to modify
+
+**`tars/conversation.py` (new)** — conversation state + compaction
+- `Conversation` dataclass: id, provider, model, messages, search_context, compaction state
+- `process_message(conv, user_input, session_file)` — appends user message, calls `chat()`, appends reply, triggers compaction if needed, returns reply text
+- `_maybe_compact(conv, session_file)` — compaction check + execute
+- `save_session(conv, session_file)` — final session save
+
+**`tars/api.py` (new)** — FastAPI app
+- `POST /chat` — send message, get reply (auto-creates conversations)
+- `GET /conversations` — list active conversations
+- `DELETE /conversations/{id}` — save session and remove
+- `POST /index` — trigger memory reindex
+
+**`tars/cli.py`** — refactor REPL to use Conversation, add `serve` subcommand
+
+**`pyproject.toml`** — add `fastapi[standard]>=0.115.0`
+
+### Implementation order
+
+1. `tars/conversation.py` — Conversation dataclass + `process_message()` + compaction helpers
+2. `tars/cli.py` — refactor REPL to use Conversation (verify existing tests still pass)
+3. `tars/api.py` — FastAPI app with /chat, /conversations, /conversations/{id}, /index
+4. `tars/cli.py` — add `serve` subcommand
+5. `pyproject.toml` — add fastapi dependency
+6. `tests/test_api.py` — test API endpoints using FastAPI TestClient
+7. `tests/test_conversation.py` — test process_message, compaction logic
+8. Run all tests
+
+### Verification
+```
+uv run python -m unittest discover -s tests -v
+uv run tars serve &
+curl -X POST http://localhost:8000/chat -H 'Content-Type: application/json' -d '{"conversation_id": "test", "message": "hello"}'
+curl http://localhost:8000/conversations
+curl -X DELETE http://localhost:8000/conversations/test
+uv run tars   # REPL still works as before
+```

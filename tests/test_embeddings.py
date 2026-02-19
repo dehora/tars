@@ -11,6 +11,10 @@ sys.modules["ollama"] = _mock_ollama
 
 from tars import embeddings
 
+# Rebind in case another test file already imported tars.embeddings with a
+# different ollama mock (test load order issue — see MEMORY.md).
+embeddings.ollama = _mock_ollama
+
 
 class EmbedTests(unittest.TestCase):
     def setUp(self) -> None:

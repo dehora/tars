@@ -5,15 +5,11 @@ from pathlib import Path
 
 from dotenv import load_dotenv
 
-from tars.core import DEFAULT_MODEL, _search_relevant_context, chat, parse_model
+from tars.conversation import Conversation, process_message, save_session
+from tars.core import DEFAULT_MODEL, parse_model
 from tars.indexer import build_index
 from tars.search import search
-from tars.sessions import (
-    SESSION_COMPACTION_INTERVAL,
-    _save_session,
-    _session_path,
-    _summarize_session,
-)
+from tars.sessions import _session_path
 
 load_dotenv()
 
@@ -66,13 +62,8 @@ def _handle_slash_search(user_input: str) -> bool:
 
 
 def repl(provider: str, model: str):
-    messages = []
+    conv = Conversation(id="repl", provider=provider, model=model)
     session_file = _session_path()
-    msg_count = 0
-    last_compaction = 0
-    last_compaction_message_index = 0
-    cumulative_summary = ""
-    search_context = ""
     history_file = Path.home() / ".tars_history"
     try:
         readline.read_history_file(history_file)
@@ -80,12 +71,6 @@ def repl(provider: str, model: str):
         pass
     readline.set_history_length(1000)
     print(f"tars [{provider}:{model}] (ctrl-d to quit)")
-    def _merge_summary(existing: str, new: str) -> str:
-        if not existing:
-            return new
-        if not new:
-            return existing
-        return f"{existing.rstrip()}\n{new.lstrip()}"
     try:
         while True:
             try:
@@ -103,45 +88,14 @@ def repl(provider: str, model: str):
                 continue
             if _handle_slash_search(user_input):
                 continue
-            # Search on first message only
-            if not messages and not search_context:
-                try:
-                    search_context = _search_relevant_context(user_input)
-                except Exception as e:
-                    print(f"  [warning] startup search failed: {e}", file=sys.stderr)
-            messages.append({"role": "user", "content": user_input})
-            reply = chat(messages, provider, model, search_context=search_context)
-            messages.append({"role": "assistant", "content": reply})
+            reply = process_message(conv, user_input, session_file)
             print(f"tars> {reply}")
-            msg_count += 1
-            if session_file and msg_count - last_compaction >= SESSION_COMPACTION_INTERVAL:
-                try:
-                    new_messages = messages[last_compaction_message_index:]
-                    summary = _summarize_session(
-                        new_messages, provider, model, previous_summary=cumulative_summary,
-                    )
-                    cumulative_summary = _merge_summary(cumulative_summary, summary)
-                    _save_session(session_file, cumulative_summary, is_compaction=True)
-                    last_compaction = msg_count
-                    last_compaction_message_index = len(messages)
-                except Exception as e:
-                    print(f"  [warning] session compaction failed: {e}", file=sys.stderr)
     finally:
         try:
             readline.write_history_file(history_file)
         except OSError:
             pass
-        # Save final session on exit
-        if session_file and messages and msg_count > last_compaction:
-            try:
-                new_messages = messages[last_compaction_message_index:]
-                summary = _summarize_session(
-                    new_messages, provider, model, previous_summary=cumulative_summary,
-                )
-                cumulative_summary = _merge_summary(cumulative_summary, summary)
-                _save_session(session_file, cumulative_summary)
-            except Exception as e:
-                print(f"  [warning] session save failed: {e}", file=sys.stderr)
+        save_session(conv, session_file)
 
 
 def _run_index(embedding_model: str) -> None:
@@ -188,6 +142,9 @@ def main():
         sp = sub.add_parser(cmd, help=f"{mode} search over memory index")
         sp.add_argument("query", nargs="+", help="search query")
         sp.add_argument("-n", "--limit", type=int, default=10, help="max results")
+    srv = sub.add_parser("serve", help="start HTTP API server")
+    srv.add_argument("--host", default="127.0.0.1", help="bind address")
+    srv.add_argument("--port", type=int, default=8180, help="port number")
     parser.add_argument("message", nargs="*", help="message for single-shot mode")
     args = parser.parse_args()
 
@@ -205,28 +162,22 @@ def main():
             print(f"  [error] search failed: {e}", file=sys.stderr)
         return
 
+    if args.command == "serve":
+        import uvicorn
+
+        uvicorn.run("tars.api:app", host=args.host, port=args.port)
+        return
+
     provider, model = parse_model(args.model)
 
     _startup_index()
 
     if args.message:
         message = " ".join(args.message)
-        search_context = ""
-        try:
-            search_context = _search_relevant_context(message)
-        except Exception as e:
-            print(f"  [warning] startup search failed: {e}", file=sys.stderr)
-        messages = [{"role": "user", "content": message}]
-        reply = chat(messages, provider, model, search_context=search_context)
-        print(reply)
+        conv = Conversation(id="oneshot", provider=provider, model=model)
         session_file = _session_path()
-        if session_file:
-            try:
-                messages.append({"role": "assistant", "content": reply})
-                summary = _summarize_session(messages, provider, model)
-                _save_session(session_file, summary)
-            except Exception as e:
-                print(f"  [warning] session save failed: {e}", file=sys.stderr)
+        reply = process_message(conv, message, session_file)
+        print(reply)
     else:
         repl(provider, model)
 

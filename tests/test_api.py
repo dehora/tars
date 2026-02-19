@@ -1,0 +1,77 @@
+import sys
+import unittest
+from unittest import mock
+
+sys.modules.setdefault("anthropic", mock.Mock())
+sys.modules.setdefault("ollama", mock.Mock())
+sys.modules.setdefault("dotenv", mock.Mock(load_dotenv=lambda: None))
+
+from tars import api, conversation
+
+from fastapi.testclient import TestClient
+
+
+class ChatEndpointTests(unittest.TestCase):
+    def setUp(self) -> None:
+        api._conversations.clear()
+        api._session_files.clear()
+        self.client = TestClient(api.app)
+
+    def test_chat_creates_conversation(self) -> None:
+        with mock.patch.object(conversation, "chat", return_value="hello back"):
+            resp = self.client.post("/chat", json={
+                "conversation_id": "test1",
+                "message": "hello",
+            })
+        self.assertEqual(resp.status_code, 200)
+        data = resp.json()
+        self.assertEqual(data["conversation_id"], "test1")
+        self.assertEqual(data["reply"], "hello back")
+        self.assertIn("test1", api._conversations)
+
+    def test_chat_continues_conversation(self) -> None:
+        with mock.patch.object(conversation, "chat", return_value="ok"):
+            self.client.post("/chat", json={
+                "conversation_id": "test2",
+                "message": "first",
+            })
+            self.client.post("/chat", json={
+                "conversation_id": "test2",
+                "message": "second",
+            })
+        conv = api._conversations["test2"]
+        self.assertEqual(conv.msg_count, 2)
+        self.assertEqual(len(conv.messages), 4)
+
+    def test_list_conversations(self) -> None:
+        with mock.patch.object(conversation, "chat", return_value="ok"):
+            self.client.post("/chat", json={
+                "conversation_id": "a",
+                "message": "hi",
+            })
+        resp = self.client.get("/conversations")
+        self.assertEqual(resp.status_code, 200)
+        convos = resp.json()["conversations"]
+        self.assertEqual(len(convos), 1)
+        self.assertEqual(convos[0]["id"], "a")
+        self.assertEqual(convos[0]["message_count"], 1)
+
+    def test_delete_conversation(self) -> None:
+        with mock.patch.object(conversation, "chat", return_value="ok"):
+            self.client.post("/chat", json={
+                "conversation_id": "del",
+                "message": "hi",
+            })
+        with mock.patch.object(conversation, "_summarize_session", return_value="s"):
+            with mock.patch.object(conversation, "_save_session"):
+                resp = self.client.delete("/conversations/del")
+        self.assertEqual(resp.status_code, 200)
+        self.assertNotIn("del", api._conversations)
+
+    def test_delete_nonexistent_conversation(self) -> None:
+        resp = self.client.delete("/conversations/nope")
+        self.assertEqual(resp.status_code, 404)
+
+
+if __name__ == "__main__":
+    unittest.main()
