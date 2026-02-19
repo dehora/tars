@@ -20,6 +20,11 @@ Tars is a Python project for AI assistant experiments. Uses uv for package manag
 - Use specific patterns for placeholder comments (e.g. `<!-- tars:memory -->`) — broad regex like `<!--.*?-->` will eat legitimate comments.
 - Always use `encoding="utf-8", errors="replace"` on file I/O for user-managed files — memory files live in an obsidian vault and can be edited externally.
 
+## Notes
+
+- you can ignore the contents of AGENTS.md, it's for other agents.
+
+
 # Development
 
 ## tars assistant ideas
