@@ -52,9 +52,13 @@ class SessionLoggingTests(unittest.TestCase):
             def __str__(self) -> str:
                 return "CustomPayload()"
 
+        circular: dict[str, object] = {}
+        circular["self"] = circular
+
         messages = [
             {"role": "user", "content": {"data": b"\xff"}},
             {"role": "tool", "content": CustomPayload()},
+            {"role": "assistant", "content": circular},
         ]
 
         def fake_chat(prompt_messages, provider, model):
@@ -65,6 +69,7 @@ class SessionLoggingTests(unittest.TestCase):
 
         self.assertIn("CustomPayload()", prompt)
         self.assertIn("b'\\\\xff'", prompt)
+        self.assertIn("'self'", prompt)
 
     def test_repl_saves_final_summary_on_exit(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:

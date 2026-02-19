@@ -26,6 +26,10 @@ Include key topics, decisions, and tools used. Use bullet points. Be brief."""
 CONTEXT_DATE_RE = re.compile(r"<!--\s*tars:date\s+(\d{4}-\d{2}-\d{2})\s*-->")
 
 
+def _escape_prompt_text(text: str) -> str:
+    return text.replace("<", "&lt;").replace(">", "&gt;")
+
+
 def _session_path() -> Path | None:
     """Returns a timestamped session file path, or None if memory not configured."""
     d = _memory_dir()
@@ -41,16 +45,13 @@ def _summarize_session(
     messages: list[dict], provider: str, model: str, *, previous_summary: str = "",
 ) -> str:
     """Ask the model to summarize the conversation for session logging."""
-    def _escape_prompt_text(text: str) -> str:
-        return text.replace("<", "&lt;").replace(">", "&gt;")
-
     def _format_content(value: object) -> str:
         if isinstance(value, str):
             text = value
         else:
             try:
                 text = json.dumps(value, ensure_ascii=True, sort_keys=True, default=str)
-            except TypeError:
+            except (TypeError, ValueError):
                 text = repr(value)
         return _escape_prompt_text(text)
 
@@ -128,7 +129,7 @@ def _rollup_context(provider: str, model: str) -> None:
         session_texts.append(f.read_text(encoding="utf-8", errors="replace").strip())
     combined = "\n\n---\n\n".join(session_texts)
 
-    escaped_combined = combined.replace("<", "&lt;").replace(">", "&gt;")
+    escaped_combined = _escape_prompt_text(combined)
     prompt = f"{ROLLUP_PROMPT}\n\n<sessions>\n{escaped_combined}\n</sessions>"
     summary = chat([{"role": "user", "content": prompt}], provider, model)
 
