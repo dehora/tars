@@ -4,8 +4,12 @@ from pathlib import Path
 
 from tars.chunker import _content_hash, chunk_markdown
 from tars.db import (
+    _get_metadata,
+    _set_metadata,
     delete_chunks_for_file,
+    delete_file,
     ensure_collection,
+    get_indexed_paths,
     init_db,
     insert_chunks,
     upsert_file,
@@ -30,7 +34,7 @@ def _discover_files(memory_dir: Path) -> list[tuple[Path, str]]:
 
 def build_index(*, model: str = "qwen3-embedding:0.6b") -> dict:
     """Index all memory files into sqlite-vec. Returns stats."""
-    stats = {"indexed": 0, "skipped": 0, "chunks": 0}
+    stats = {"indexed": 0, "skipped": 0, "chunks": 0, "deleted": 0}
 
     memory_dir = _memory_dir()
     if memory_dir is None:
@@ -43,7 +47,32 @@ def build_index(*, model: str = "qwen3-embedding:0.6b") -> dict:
 
     try:
         collection_id = ensure_collection(conn)
+
+        # Detect embedding model change and force full reindex
+        stored_model = _get_metadata(conn, "embedding_model")
+        model_changed = stored_model is not None and stored_model != model
+        if model_changed:
+            # Clear all chunks so every file gets re-embedded
+            for fid in get_indexed_paths(conn, collection_id).values():
+                delete_chunks_for_file(conn, fid)
+            # Reset content hashes to force reprocessing
+            conn.execute(
+                "UPDATE files SET content_hash = '' WHERE collection_id = ?",
+                (collection_id,),
+            )
+            conn.commit()
+        _set_metadata(conn, "embedding_model", model)
+        conn.commit()
+
         files = _discover_files(memory_dir)
+
+        # Remove deleted files from the index
+        discovered_paths = {str(fp) for fp, _ in files}
+        indexed_paths = get_indexed_paths(conn, collection_id)
+        for path, file_id in indexed_paths.items():
+            if path not in discovered_paths:
+                delete_file(conn, file_id)
+                stats["deleted"] += 1
 
         for filepath, memory_type in files:
             content = filepath.read_text(encoding="utf-8", errors="replace")
@@ -68,8 +97,13 @@ def build_index(*, model: str = "qwen3-embedding:0.6b") -> dict:
             delete_chunks_for_file(conn, file_id)
             chunks = chunk_markdown(content)
             if chunks:
-                embeddings = embed([c.content for c in chunks], model=model)
-                insert_chunks(conn, file_id, chunks, embeddings)
+                chunk_embeddings = embed([c.content for c in chunks], model=model)
+                if len(chunk_embeddings) != len(chunks):
+                    raise ValueError(
+                        f"Embedding count mismatch for {filepath}: "
+                        f"got {len(chunk_embeddings)} embeddings for {len(chunks)} chunks"
+                    )
+                insert_chunks(conn, file_id, chunks, chunk_embeddings)
                 stats["chunks"] += len(chunks)
 
             stats["indexed"] += 1

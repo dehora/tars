@@ -75,6 +75,7 @@ def _run_index(embedding_model: str) -> None:
     print(
         f"index: {stats['indexed']} indexed, "
         f"{stats['skipped']} skipped, "
+        f"{stats['deleted']} deleted, "
         f"{stats['chunks']} chunks"
     )
 

@@ -64,7 +64,7 @@ class BuildIndexTests(unittest.TestCase):
         with mock.patch.dict(os.environ, {}, clear=True):
             os.environ.pop("TARS_MEMORY_DIR", None)
             stats = build_index()
-        self.assertEqual(stats, {"indexed": 0, "skipped": 0, "chunks": 0})
+        self.assertEqual(stats, {"indexed": 0, "skipped": 0, "chunks": 0, "deleted": 0})
 
     def test_indexes_files(self) -> None:
         with tempfile.TemporaryDirectory() as td:
@@ -109,6 +109,41 @@ class BuildIndexTests(unittest.TestCase):
 
             self.assertEqual(stats2["indexed"], 1)
             self.assertEqual(stats2["skipped"], 0)
+
+
+    def test_reindex_on_model_change(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            d = Path(td)
+            (d / "Memory.md").write_text("# Memory\n\nFacts.\n", encoding="utf-8")
+
+            with mock.patch.dict(os.environ, {"TARS_MEMORY_DIR": td}):
+                stats1 = build_index(model="test-model")
+                self.assertEqual(stats1["indexed"], 1)
+                self.assertEqual(stats1["skipped"], 0)
+
+                # Same content, different model → should reindex
+                stats2 = build_index(model="different-model")
+                self.assertEqual(stats2["indexed"], 1)
+                self.assertEqual(stats2["skipped"], 0)
+
+    def test_deleted_file_removed_from_index(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            d = Path(td)
+            (d / "Memory.md").write_text("# Memory\n\nFacts.\n", encoding="utf-8")
+            sessions = d / "sessions"
+            sessions.mkdir()
+            (sessions / "log.md").write_text("# Session\n\nA session.\n", encoding="utf-8")
+
+            with mock.patch.dict(os.environ, {"TARS_MEMORY_DIR": td}):
+                stats1 = build_index(model="test-model")
+                self.assertEqual(stats1["indexed"], 2)
+
+                # Delete the session file
+                (sessions / "log.md").unlink()
+                stats2 = build_index(model="test-model")
+
+            self.assertEqual(stats2["deleted"], 1)
+            self.assertEqual(stats2["skipped"], 1)  # Memory.md unchanged
 
 
 if __name__ == "__main__":

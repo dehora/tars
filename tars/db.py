@@ -210,6 +210,21 @@ def upsert_file(
     return cur.lastrowid, True
 
 
+def get_indexed_paths(conn: sqlite3.Connection, collection_id: int) -> dict[str, int]:
+    """Return {path: file_id} for all files in a collection."""
+    rows = conn.execute(
+        "SELECT id, path FROM files WHERE collection_id = ?", (collection_id,)
+    ).fetchall()
+    return {row["path"]: row["id"] for row in rows}
+
+
+def delete_file(conn: sqlite3.Connection, file_id: int) -> None:
+    """Remove a file record and all its chunks."""
+    conn.execute("DELETE FROM vec_chunks WHERE file_id = ?", (file_id,))
+    conn.execute("DELETE FROM files WHERE id = ?", (file_id,))
+    conn.commit()
+
+
 def delete_chunks_for_file(conn: sqlite3.Connection, file_id: int) -> None:
     """Remove all chunks for a file before re-indexing."""
     conn.execute("DELETE FROM vec_chunks WHERE file_id = ?", (file_id,))
