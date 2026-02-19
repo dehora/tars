@@ -122,8 +122,15 @@ def _prepare_db(model: str) -> tuple[int | None, bool]:
     try:
         conn.executescript(_SCHEMA_SQL)
         stored_model = _get_metadata(conn, "embedding_model")
+        stored_dim = _get_metadata(conn, "vec_dim")
 
-        model_changed = stored_model is not None and stored_model != model
+        if stored_model is None:
+            if stored_dim is not None:
+                conn.execute("DELETE FROM metadata WHERE key = 'vec_dim'")
+                conn.commit()
+            return None, False
+
+        model_changed = stored_model != model
         if model_changed:
             if _vec_table_exists(conn):
                 conn.execute("DROP TABLE vec_chunks")
@@ -131,8 +138,15 @@ def _prepare_db(model: str) -> tuple[int | None, bool]:
             conn.commit()
             return None, True
 
-        stored_dim = _get_metadata(conn, "vec_dim")
-        return (int(stored_dim) if stored_dim is not None else None), False
+        if stored_dim is None:
+            return None, False
+
+        try:
+            return int(stored_dim), False
+        except ValueError:
+            conn.execute("DELETE FROM metadata WHERE key = 'vec_dim'")
+            conn.commit()
+            return None, False
     finally:
         conn.close()
 

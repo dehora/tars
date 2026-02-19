@@ -22,3 +22,6 @@ This file provides guidance to coding agents.
 
 - Always use `encoding="utf-8", errors="replace"` on file I/O for user-managed files — memory files live in an obsidian vault and can be edited externally.
 
+## Git Commits
+
+Use present tense verbs in commit messages (e.g., "Adds emacs", "Ignores license", "Renames gitconfig template").

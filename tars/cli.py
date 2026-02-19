@@ -71,7 +71,11 @@ def repl(provider: str, model: str):
 
 def _run_index(embedding_model: str) -> None:
     """Index memory files and print stats."""
-    stats = build_index(model=embedding_model)
+    try:
+        stats = build_index(model=embedding_model)
+    except RuntimeError as e:
+        print(f"  [warning] index update failed ({type(e).__name__}): {e}", file=sys.stderr)
+        return
     print(
         f"index: {stats['indexed']} indexed, "
         f"{stats['skipped']} skipped, "

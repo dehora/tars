@@ -25,6 +25,10 @@ Tars is a Python project for AI assistant experiments. Uses uv for package manag
 - you can ignore the contents of AGENTS.md, it's for other agents.
 
 
+## Git Commits
+
+Use present tense verbs in commit messages (e.g., "Adds emacs", "Ignores license", "Renames gitconfig template").
+
 # Development
 
 ## tars assistant ideas

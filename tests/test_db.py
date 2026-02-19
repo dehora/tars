@@ -87,6 +87,56 @@ class InitDbTests(unittest.TestCase):
 
 
 @unittest.skipUnless(_HAS_SQLITE_VEC, "sqlite-vec not installed")
+class PrepareDbTests(unittest.TestCase):
+    def test_missing_model_ignores_cached_dim(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            with mock.patch.dict(os.environ, {"TARS_MEMORY_DIR": tmpdir}, clear=True):
+                conn = db.init_db(dim=4)
+                conn.close()
+
+                cached_dim, model_changed = db._prepare_db("test-model")
+
+                self.assertIsNone(cached_dim)
+                self.assertFalse(model_changed)
+
+                path = db._db_path()
+                self.assertIsNotNone(path)
+                conn = db._connect(path)
+                try:
+                    row = conn.execute(
+                        "SELECT value FROM metadata WHERE key = 'vec_dim'"
+                    ).fetchone()
+                    self.assertIsNone(row)
+                finally:
+                    conn.close()
+
+    def test_corrupt_dim_falls_back(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            with mock.patch.dict(os.environ, {"TARS_MEMORY_DIR": tmpdir}, clear=True):
+                conn = db.init_db(dim=4)
+                db._set_metadata(conn, "embedding_model", "test-model")
+                db._set_metadata(conn, "vec_dim", "not-a-number")
+                conn.commit()
+                conn.close()
+
+                cached_dim, model_changed = db._prepare_db("test-model")
+
+                self.assertIsNone(cached_dim)
+                self.assertFalse(model_changed)
+
+                path = db._db_path()
+                self.assertIsNotNone(path)
+                conn = db._connect(path)
+                try:
+                    row = conn.execute(
+                        "SELECT value FROM metadata WHERE key = 'vec_dim'"
+                    ).fetchone()
+                    self.assertIsNone(row)
+                finally:
+                    conn.close()
+
+
+@unittest.skipUnless(_HAS_SQLITE_VEC, "sqlite-vec not installed")
 class CollectionTests(unittest.TestCase):
     def test_create_and_get(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
