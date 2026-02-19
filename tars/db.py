@@ -1,5 +1,6 @@
 """sqlite-vec database for chunk embeddings."""
 
+import re
 import sqlite3
 import struct
 from pathlib import Path
@@ -50,6 +51,11 @@ CREATE TABLE IF NOT EXISTS files (
     size INTEGER NOT NULL,
     UNIQUE(collection_id, path)
 );
+
+CREATE TABLE IF NOT EXISTS metadata (
+    key TEXT PRIMARY KEY,
+    value TEXT NOT NULL
+);
 """
 
 _VEC_TABLE_SQL = """\
@@ -72,6 +78,36 @@ def _vec_table_exists(conn: sqlite3.Connection) -> bool:
     return row is not None
 
 
+def _get_metadata(conn: sqlite3.Connection, key: str) -> str | None:
+    row = conn.execute(
+        "SELECT value FROM metadata WHERE key = ?",
+        (key,),
+    ).fetchone()
+    return row["value"] if row else None
+
+
+def _set_metadata(conn: sqlite3.Connection, key: str, value: str) -> None:
+    conn.execute(
+        """\
+        INSERT INTO metadata (key, value)
+        VALUES (?, ?)
+        ON CONFLICT(key) DO UPDATE SET value = excluded.value""",
+        (key, value),
+    )
+
+
+def _get_vec_dim_from_schema(conn: sqlite3.Connection) -> int | None:
+    row = conn.execute(
+        "SELECT sql FROM sqlite_master WHERE type='table' AND name='vec_chunks'"
+    ).fetchone()
+    if not row or not row["sql"]:
+        return None
+    match = re.search(r"embedding\s+float\[(\d+)\]", row["sql"])
+    if not match:
+        return None
+    return int(match.group(1))
+
+
 def init_db(*, dim: int) -> sqlite3.Connection | None:
     """Create or open the database, ensuring schema exists.
 
@@ -82,8 +118,30 @@ def init_db(*, dim: int) -> sqlite3.Connection | None:
         return None
     conn = _connect(p)
     conn.executescript(_SCHEMA_SQL)
-    if not _vec_table_exists(conn):
+    if _vec_table_exists(conn):
+        stored_dim = _get_metadata(conn, "vec_dim")
+        schema_dim = _get_vec_dim_from_schema(conn)
+        if stored_dim is not None and schema_dim is not None:
+            if int(stored_dim) != schema_dim:
+                raise ValueError(
+                    f"Vector dimension metadata mismatch: stored {stored_dim}, schema {schema_dim}."
+                )
+        actual_dim = int(stored_dim) if stored_dim is not None else schema_dim
+        if actual_dim is None:
+            raise ValueError(
+                "Could not determine vec_chunks dimension; delete the database or migrate."
+            )
+        if stored_dim is None:
+            _set_metadata(conn, "vec_dim", str(actual_dim))
+            conn.commit()
+        if actual_dim != dim:
+            raise ValueError(
+                f"Vector dimension mismatch: stored {actual_dim}, requested {dim}."
+            )
+    else:
         conn.execute(_VEC_TABLE_SQL.format(dim=dim))
+        _set_metadata(conn, "vec_dim", str(dim))
+        conn.commit()
     return conn
 
 

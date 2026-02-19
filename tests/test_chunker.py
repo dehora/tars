@@ -141,6 +141,15 @@ class ChunkMarkdownTests(unittest.TestCase):
                     "Chunks should have content at boundaries",
                 )
 
+    def test_zero_overlap(self) -> None:
+        text = ""
+        for i in range(6):
+            text += f"## Section {i}\n\n" + ("word " * 120 + "\n") + "\n"
+        chunks = chunk_markdown(text, target_tokens=120, overlap_fraction=0.0)
+        self.assertGreaterEqual(len(chunks), 2)
+        for i in range(len(chunks) - 1):
+            self.assertEqual(chunks[i].end_line + 1, chunks[i + 1].start_line)
+
     def test_large_doc_chunks_near_target(self) -> None:
         text = ""
         for i in range(20):
@@ -151,6 +160,15 @@ class ChunkMarkdownTests(unittest.TestCase):
             tokens = _estimate_tokens(chunk.content)
             # Allow generous range: 50% to 200% of target
             self.assertLessEqual(tokens, 800, f"Chunk too large: {tokens} tokens")
+
+    def test_long_fence_extends_to_close(self) -> None:
+        code = "```python\n" + ("x = 1\n" * 80) + "```\n"
+        text = code + "\nAfter\n"
+        chunks = chunk_markdown(text, target_tokens=50)
+        self.assertGreaterEqual(len(chunks), 1)
+        first = chunks[0].content
+        self.assertIn("```python", first)
+        self.assertIn("```", first.split("```python", 1)[1])
 
 
 if __name__ == "__main__":

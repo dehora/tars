@@ -54,6 +54,7 @@ class InitDbTests(unittest.TestCase):
                 self.assertIn("collections", tables)
                 self.assertIn("files", tables)
                 self.assertIn("vec_chunks", tables)
+                self.assertIn("metadata", tables)
                 conn.close()
 
     def test_idempotent(self) -> None:
@@ -64,6 +65,25 @@ class InitDbTests(unittest.TestCase):
                 conn2 = db.init_db(dim=4)
                 self.assertIsNotNone(conn2)
                 conn2.close()
+
+    def test_stores_vec_dim(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            with mock.patch.dict(os.environ, {"TARS_MEMORY_DIR": tmpdir}, clear=True):
+                conn = db.init_db(dim=4)
+                row = conn.execute(
+                    "SELECT value FROM metadata WHERE key = 'vec_dim'"
+                ).fetchone()
+                self.assertIsNotNone(row)
+                self.assertEqual(row["value"], "4")
+                conn.close()
+
+    def test_dim_mismatch_raises(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            with mock.patch.dict(os.environ, {"TARS_MEMORY_DIR": tmpdir}, clear=True):
+                conn = db.init_db(dim=4)
+                conn.close()
+                with self.assertRaises(ValueError):
+                    db.init_db(dim=5)
 
 
 @unittest.skipUnless(_HAS_SQLITE_VEC, "sqlite-vec not installed")

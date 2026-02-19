@@ -156,6 +156,23 @@ def chunk_markdown(
                 best_score = score
                 best_idx = i  # cut BEFORE this line (this line starts next chunk)
 
+        # If we are inside a fence and found no safe boundary, extend to fence close (with a cap)
+        if best_score < 0 and in_fence:
+            max_tokens = int(target_tokens * 3.0)
+            tokens_ext = tokens
+            extend_end = end
+            fence_state_ext = in_fence
+            while extend_end < total_lines and tokens_ext < max_tokens:
+                kind, _ = classifications[extend_end]
+                tokens_ext += _estimate_tokens(lines[extend_end])
+                extend_end += 1
+                if kind == "fence":
+                    fence_state_ext = not fence_state_ext
+                    if not fence_state_ext:
+                        break
+            if extend_end > end:
+                best_idx = extend_end
+
         # If best_idx == pos, we'd make an empty chunk; push forward
         if best_idx <= pos:
             best_idx = end
@@ -172,7 +189,7 @@ def chunk_markdown(
             seq += 1
 
         # Next chunk starts with overlap
-        overlap_lines = max(1, int((best_idx - pos) * overlap_fraction))
+        overlap_lines = max(0, int((best_idx - pos) * overlap_fraction))
         next_pos = best_idx - overlap_lines
         # Snap to a line boundary (already line-aligned)
         # Don't go backwards
