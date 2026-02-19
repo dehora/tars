@@ -3,7 +3,7 @@ import sys
 
 from dotenv import load_dotenv
 
-from tars.core import DEFAULT_MODEL, chat, parse_model
+from tars.core import DEFAULT_MODEL, _search_relevant_context, chat, parse_model
 from tars.indexer import build_index
 from tars.sessions import (
     SESSION_COMPACTION_INTERVAL,
@@ -22,6 +22,7 @@ def repl(provider: str, model: str):
     last_compaction = 0
     last_compaction_message_index = 0
     cumulative_summary = ""
+    search_context = ""
     print(f"tars [{provider}:{model}] (ctrl-d to quit)")
     def _merge_summary(existing: str, new: str) -> str:
         if not existing:
@@ -38,8 +39,14 @@ def repl(provider: str, model: str):
                 break
             if not user_input.strip():
                 continue
+            # Search on first message only
+            if not messages and not search_context:
+                try:
+                    search_context = _search_relevant_context(user_input)
+                except Exception as e:
+                    print(f"  [warning] startup search failed: {e}", file=sys.stderr)
             messages.append({"role": "user", "content": user_input})
-            reply = chat(messages, provider, model)
+            reply = chat(messages, provider, model, search_context=search_context)
             messages.append({"role": "assistant", "content": reply})
             print(f"tars> {reply}")
             msg_count += 1
@@ -122,8 +129,13 @@ def main():
 
     if args.message:
         message = " ".join(args.message)
+        search_context = ""
+        try:
+            search_context = _search_relevant_context(message)
+        except Exception as e:
+            print(f"  [warning] startup search failed: {e}", file=sys.stderr)
         messages = [{"role": "user", "content": message}]
-        reply = chat(messages, provider, model)
+        reply = chat(messages, provider, model, search_context=search_context)
         print(reply)
         session_file = _session_path()
         if session_file:

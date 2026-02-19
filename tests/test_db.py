@@ -88,21 +88,23 @@ class InitDbTests(unittest.TestCase):
 
 @unittest.skipUnless(_HAS_SQLITE_VEC, "sqlite-vec not installed")
 class PrepareDbTests(unittest.TestCase):
-    def test_missing_model_ignores_cached_dim(self) -> None:
+    def test_missing_model_drops_vec_and_forces_rebuild(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             with mock.patch.dict(os.environ, {"TARS_MEMORY_DIR": tmpdir}, clear=True):
                 conn = db.init_db(dim=4)
+                # DB has vec_chunks and vec_dim but no embedding_model
+                self.assertTrue(db._vec_table_exists(conn))
                 conn.close()
 
                 cached_dim, model_changed = db._prepare_db("test-model")
 
                 self.assertIsNone(cached_dim)
-                self.assertFalse(model_changed)
+                self.assertTrue(model_changed)
 
                 path = db._db_path()
-                self.assertIsNotNone(path)
                 conn = db._connect(path)
                 try:
+                    self.assertFalse(db._vec_table_exists(conn))
                     row = conn.execute(
                         "SELECT value FROM metadata WHERE key = 'vec_dim'"
                     ).fetchone()

@@ -1,7 +1,7 @@
 import anthropic
 import ollama
 
-from tars.memory import _load_memory, _load_recent_sessions
+from tars.memory import _load_memory
 from tars.tools import ANTHROPIC_TOOLS, OLLAMA_TOOLS, run_tool
 
 CLAUDE_MODELS = {
@@ -50,21 +50,34 @@ def parse_model(model_str: str) -> tuple[str, str]:
     return provider, model
 
 
-def _build_system_prompt() -> str:
+def _search_relevant_context(opening_message: str, limit: int = 5) -> str:
+    """Search memory for context relevant to the opening message."""
+    from tars.search import search
+
+    results = search(opening_message, limit=limit, min_score=0.25)
+    if not results:
+        return ""
+    parts = []
+    for r in results:
+        label = f"[{r.memory_type}:{r.file_title}:{r.start_line}-{r.end_line}]"
+        parts.append(f"{label}\n{r.content}")
+    return "\n\n".join(parts)
+
+
+def _build_system_prompt(*, search_context: str = "") -> str:
     prompt = SYSTEM_PROMPT
     memory = _load_memory()
-    sessions = _load_recent_sessions()
-    if not memory and not sessions:
+    if not memory and not search_context:
         return prompt
     prompt += f"\n\n---\n\n{MEMORY_PROMPT_PREFACE}"
     if memory:
         prompt += f"\n\n<memory>\n{_escape_prompt_block(memory)}\n</memory>"
-    if sessions:
-        prompt += f"\n\n<recent-sessions>\n{_escape_prompt_block(sessions)}\n</recent-sessions>"
+    if search_context:
+        prompt += f"\n\n<relevant-context>\n{_escape_prompt_block(search_context)}\n</relevant-context>"
     return prompt
 
 
-def chat_anthropic(messages: list[dict], model: str) -> str:
+def chat_anthropic(messages: list[dict], model: str, *, search_context: str = "") -> str:
     resolved = CLAUDE_MODELS.get(model, model)
     client = anthropic.Anthropic()
     local_messages = [m.copy() for m in messages]
@@ -73,7 +86,7 @@ def chat_anthropic(messages: list[dict], model: str) -> str:
         response = client.messages.create(
             model=resolved,
             max_tokens=1024,
-            system=_build_system_prompt(),
+            system=_build_system_prompt(search_context=search_context),
             messages=local_messages,
             tools=ANTHROPIC_TOOLS,
         )
@@ -100,8 +113,8 @@ def chat_anthropic(messages: list[dict], model: str) -> str:
         local_messages.append({"role": "user", "content": tool_results})
 
 
-def chat_ollama(messages: list[dict], model: str) -> str:
-    local_messages = [{"role": "system", "content": _build_system_prompt()}]
+def chat_ollama(messages: list[dict], model: str, *, search_context: str = "") -> str:
+    local_messages = [{"role": "system", "content": _build_system_prompt(search_context=search_context)}]
     local_messages.extend(m.copy() for m in messages)
 
     while True:
@@ -122,9 +135,9 @@ def chat_ollama(messages: list[dict], model: str) -> str:
             })
 
 
-def chat(messages: list[dict], provider: str, model: str) -> str:
+def chat(messages: list[dict], provider: str, model: str, *, search_context: str = "") -> str:
     if provider == "claude":
-        return chat_anthropic(messages, model)
+        return chat_anthropic(messages, model, search_context=search_context)
     if provider == "ollama":
-        return chat_ollama(messages, model)
+        return chat_ollama(messages, model, search_context=search_context)
     raise ValueError(f"Unknown provider: {provider}")

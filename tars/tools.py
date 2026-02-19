@@ -3,6 +3,7 @@ import subprocess
 import sys
 
 from tars.memory import _run_memory_tool
+from tars.search import _run_search_tool
 from tars.weather import _run_weather_tool
 
 ANTHROPIC_TOOLS = [
@@ -107,6 +108,28 @@ ANTHROPIC_TOOLS = [
             "properties": {},
         },
     },
+    {
+        "name": "memory_search",
+        "description": (
+            "Search persistent memory (semantic, procedural, and episodic) using "
+            "hybrid keyword + semantic search. Use this to find relevant context, "
+            "past conversations, preferences, or facts."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "query": {
+                    "type": "string",
+                    "description": "What to search for in memory",
+                },
+                "limit": {
+                    "type": "integer",
+                    "description": "Max results to return (default 5)",
+                },
+            },
+            "required": ["query"],
+        },
+    },
 ]
 
 OLLAMA_TOOLS = [
@@ -127,6 +150,8 @@ def run_tool(name: str, args: dict) -> str:
     try:
         if name in ("memory_remember", "memory_recall", "memory_update"):
             return _run_memory_tool(name, args)
+        if name == "memory_search":
+            return _run_search_tool(name, args)
         if name in ("weather_now", "weather_forecast"):
             return _run_weather_tool(name, args)
         if name == "todoist_add_task":

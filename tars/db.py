@@ -78,6 +78,31 @@ def _vec_table_exists(conn: sqlite3.Connection) -> bool:
     return row is not None
 
 
+def _fts_table_exists(conn: sqlite3.Connection) -> bool:
+    row = conn.execute(
+        "SELECT name FROM sqlite_master WHERE type='table' AND name='chunks_fts'"
+    ).fetchone()
+    return row is not None
+
+
+def _ensure_fts(conn: sqlite3.Connection) -> None:
+    """Create chunks_fts if missing and backfill from vec_chunks."""
+    if _fts_table_exists(conn):
+        return
+    conn.execute(
+        "CREATE VIRTUAL TABLE chunks_fts USING fts5("
+        "content, tokenize='porter unicode61')"
+    )
+    if _vec_table_exists(conn):
+        rows = conn.execute("SELECT rowid, content FROM vec_chunks").fetchall()
+        for r in rows:
+            conn.execute(
+                "INSERT INTO chunks_fts (rowid, content) VALUES (?, ?)",
+                (r["rowid"], r["content"]),
+            )
+    conn.commit()
+
+
 def _get_metadata(conn: sqlite3.Connection, key: str) -> str | None:
     row = conn.execute(
         "SELECT value FROM metadata WHERE key = ?",
@@ -125,15 +150,22 @@ def _prepare_db(model: str) -> tuple[int | None, bool]:
         stored_dim = _get_metadata(conn, "vec_dim")
 
         if stored_model is None:
+            # Unknown model — drop old embeddings to avoid mixing models
+            if _vec_table_exists(conn):
+                conn.execute("DROP TABLE vec_chunks")
+            if _fts_table_exists(conn):
+                conn.execute("DROP TABLE chunks_fts")
             if stored_dim is not None:
                 conn.execute("DELETE FROM metadata WHERE key = 'vec_dim'")
-                conn.commit()
-            return None, False
+            conn.commit()
+            return None, True
 
         model_changed = stored_model != model
         if model_changed:
             if _vec_table_exists(conn):
                 conn.execute("DROP TABLE vec_chunks")
+            if _fts_table_exists(conn):
+                conn.execute("DROP TABLE chunks_fts")
             conn.execute("DELETE FROM metadata WHERE key = 'vec_dim'")
             conn.commit()
             return None, True
@@ -185,6 +217,7 @@ def init_db(*, dim: int) -> sqlite3.Connection | None:
         conn.execute(_VEC_TABLE_SQL.format(dim=dim))
         _set_metadata(conn, "vec_dim", str(dim))
         conn.commit()
+    _ensure_fts(conn)
     return conn
 
 
@@ -263,13 +296,30 @@ def get_indexed_paths(conn: sqlite3.Connection, collection_id: int) -> dict[str,
 
 def delete_file(conn: sqlite3.Connection, file_id: int) -> None:
     """Remove a file record and all its chunks."""
+    _delete_fts_for_file(conn, file_id)
     conn.execute("DELETE FROM vec_chunks WHERE file_id = ?", (file_id,))
     conn.execute("DELETE FROM files WHERE id = ?", (file_id,))
     conn.commit()
 
 
+def _delete_fts_for_file(conn: sqlite3.Connection, file_id: int) -> None:
+    """Remove FTS entries for a file's chunks."""
+    if not _fts_table_exists(conn):
+        return
+    rows = conn.execute(
+        "SELECT rowid FROM vec_chunks WHERE file_id = ?", (file_id,)
+    ).fetchall()
+    if rows:
+        rowids = [r["rowid"] for r in rows]
+        placeholders = ",".join("?" * len(rowids))
+        conn.execute(
+            f"DELETE FROM chunks_fts WHERE rowid IN ({placeholders})", rowids
+        )
+
+
 def delete_chunks_for_file(conn: sqlite3.Connection, file_id: int) -> None:
     """Remove all chunks for a file before re-indexing."""
+    _delete_fts_for_file(conn, file_id)
     conn.execute("DELETE FROM vec_chunks WHERE file_id = ?", (file_id,))
     conn.commit()
 
@@ -280,11 +330,11 @@ def insert_chunks(
     chunks: list,
     embeddings: list[list[float]],
 ) -> None:
-    """Bulk insert chunks with their embeddings."""
+    """Bulk insert chunks with their embeddings into vec_chunks and chunks_fts."""
     count = min(len(chunks), len(embeddings))
     for i in range(count):
         chunk = chunks[i]
-        conn.execute(
+        cur = conn.execute(
             """\
             INSERT INTO vec_chunks (embedding, file_id, chunk_sequence,
                                     content_hash, start_line, end_line, content)
@@ -298,5 +348,9 @@ def insert_chunks(
                 chunk.end_line,
                 chunk.content,
             ),
+        )
+        conn.execute(
+            "INSERT INTO chunks_fts (rowid, content) VALUES (?, ?)",
+            (cur.lastrowid, chunk.content),
         )
     conn.commit()
