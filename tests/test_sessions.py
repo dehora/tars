@@ -180,6 +180,29 @@ class SessionLoggingTests(unittest.TestCase):
         self.assertGreaterEqual(len(final_calls), 1)
         self.assertEqual(final_calls[-1].args[1], "s1\ns2\ns3")
 
+    def test_repl_compaction_save_uses_cumulative_summary(self) -> None:
+        inputs = ["msg 1", "msg 2", "msg 3", "msg 4", "msg 5", EOFError()]
+        with tempfile.TemporaryDirectory() as tmpdir:
+            session_path = Path(tmpdir) / "session.md"
+            with (
+                mock.patch.object(cli, "SESSION_COMPACTION_INTERVAL", 2),
+                mock.patch.object(cli, "_session_path", return_value=session_path),
+                mock.patch.object(cli, "_summarize_session", side_effect=["s1", "s2", "s3"]),
+                mock.patch.object(cli, "_save_session") as save,
+                mock.patch.object(cli, "chat", return_value="ok"),
+                mock.patch("builtins.input", side_effect=inputs),
+            ):
+                cli.repl("ollama", "fake-model")
+
+        compaction_calls = [
+            call
+            for call in save.call_args_list
+            if call.kwargs.get("is_compaction", False)
+        ]
+        self.assertGreaterEqual(len(compaction_calls), 2)
+        self.assertEqual(compaction_calls[0].args[1], "s1")
+        self.assertEqual(compaction_calls[1].args[1], "s1\ns2")
+
 
 class ContextRollupTests(unittest.TestCase):
     def test_rollup_creates_today_md(self) -> None:

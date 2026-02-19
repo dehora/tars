@@ -50,7 +50,7 @@ def repl(provider: str, model: str):
                         new_messages, provider, model, previous_summary=cumulative_summary,
                     )
                     cumulative_summary = _merge_summary(cumulative_summary, summary)
-                    _save_session(session_file, summary, is_compaction=True)
+                    _save_session(session_file, cumulative_summary, is_compaction=True)
                     last_compaction = msg_count
                     last_compaction_message_index = len(messages)
                 except Exception as e:
