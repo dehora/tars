@@ -49,8 +49,8 @@ def repl(provider: str, model: str):
                     summary = _summarize_session(
                         new_messages, provider, model, previous_summary=cumulative_summary,
                     )
-                    _save_session(session_file, summary, is_compaction=True)
                     cumulative_summary = _merge_summary(cumulative_summary, summary)
+                    _save_session(session_file, summary, is_compaction=True)
                     last_compaction = msg_count
                     last_compaction_message_index = len(messages)
                 except Exception as e:
@@ -63,7 +63,8 @@ def repl(provider: str, model: str):
                 summary = _summarize_session(
                     new_messages, provider, model, previous_summary=cumulative_summary,
                 )
-                _save_session(session_file, summary)
+                cumulative_summary = _merge_summary(cumulative_summary, summary)
+                _save_session(session_file, cumulative_summary)
             except Exception as e:
                 print(f"  [warning] session save failed: {e}", file=sys.stderr)
         # Roll up today's sessions into context/today.md
