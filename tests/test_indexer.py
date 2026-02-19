@@ -146,5 +146,31 @@ class BuildIndexTests(unittest.TestCase):
             self.assertEqual(stats2["skipped"], 1)  # Memory.md unchanged
 
 
+    def test_embedding_mismatch_leaves_file_reindexable(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            d = Path(td)
+            (d / "Memory.md").write_text("# Memory\n\nFacts.\n", encoding="utf-8")
+
+            with mock.patch.dict(os.environ, {"TARS_MEMORY_DIR": td}):
+                # First run succeeds normally
+                build_index(model="test-model")
+
+                # Change content to trigger reindex, but with bad embeddings
+                (d / "Memory.md").write_text(
+                    "# Memory\n\nUpdated facts.\n\n## Section\n\nMore content.\n",
+                    encoding="utf-8",
+                )
+                # Patch embed at the indexer level so embedding_dimensions still works
+                with mock.patch("tars.indexer.embed", return_value=[]):
+                    with self.assertRaises(ValueError):
+                        build_index(model="test-model")
+
+                # Restore good embeddings — file should be reindexed, not skipped
+                stats = build_index(model="test-model")
+
+            self.assertEqual(stats["indexed"], 1)
+            self.assertEqual(stats["skipped"], 0)
+
+
 if __name__ == "__main__":
     unittest.main()

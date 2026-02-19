@@ -99,6 +99,12 @@ def build_index(*, model: str = "qwen3-embedding:0.6b") -> dict:
             if chunks:
                 chunk_embeddings = embed([c.content for c in chunks], model=model)
                 if len(chunk_embeddings) != len(chunks):
+                    # Reset hash so the file is reindexed on next run
+                    conn.execute(
+                        "UPDATE files SET content_hash = '' WHERE id = ?",
+                        (file_id,),
+                    )
+                    conn.commit()
                     raise ValueError(
                         f"Embedding count mismatch for {filepath}: "
                         f"got {len(chunk_embeddings)} embeddings for {len(chunks)} chunks"
