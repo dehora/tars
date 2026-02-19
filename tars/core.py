@@ -1,7 +1,7 @@
 import anthropic
 import ollama
 
-from tars.memory import _load_context, _load_memory, _load_recent_sessions
+from tars.memory import _load_memory, _load_recent_sessions
 from tars.tools import ANTHROPIC_TOOLS, OLLAMA_TOOLS, run_tool
 
 CLAUDE_MODELS = {
@@ -53,15 +53,12 @@ def parse_model(model_str: str) -> tuple[str, str]:
 def _build_system_prompt() -> str:
     prompt = SYSTEM_PROMPT
     memory = _load_memory()
-    context = _load_context()
     sessions = _load_recent_sessions()
-    if not memory and not context and not sessions:
+    if not memory and not sessions:
         return prompt
     prompt += f"\n\n---\n\n{MEMORY_PROMPT_PREFACE}"
     if memory:
         prompt += f"\n\n<memory>\n{_escape_prompt_block(memory)}\n</memory>"
-    if context:
-        prompt += f"\n\n<context>\n{_escape_prompt_block(context)}\n</context>"
     if sessions:
         prompt += f"\n\n<recent-sessions>\n{_escape_prompt_block(sessions)}\n</recent-sessions>"
     return prompt

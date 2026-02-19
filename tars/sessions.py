@@ -1,6 +1,5 @@
 import json
-import re
-from datetime import datetime, timedelta
+from datetime import datetime
 from pathlib import Path
 
 from tars.core import chat
@@ -18,12 +17,6 @@ Summarize only what is NEW in this conversation since the previous summary.
 Do not repeat anything already covered. Include new topics discussed, decisions made, \
 and which tools were used (not their payloads).
 Use bullet points. Be brief."""
-
-ROLLUP_PROMPT = """\
-Summarize all of today's sessions into a single daily context summary.
-Include key topics, decisions, and tools used. Use bullet points. Be brief."""
-
-CONTEXT_DATE_RE = re.compile(r"<!--\s*tars:date\s+(\d{4}-\d{2}-\d{2})\s*-->")
 
 
 def _escape_prompt_text(text: str) -> str:
@@ -89,52 +82,3 @@ def _save_session(path: Path, summary: str, *, is_compaction: bool = False) -> N
     path.write_text(text, encoding="utf-8", errors="replace")
 
 
-def _rollup_context(provider: str, model: str) -> None:
-    """Summarize today's sessions into context/today.md, rotating yesterday.md."""
-    d = _memory_dir()
-    if d is None:
-        return
-    sessions_dir = d / "sessions"
-    if not sessions_dir.is_dir():
-        return
-
-    today = datetime.now().strftime("%Y-%m-%d")
-    today_files = sorted(sessions_dir.glob(f"{today}*.md"))
-    if not today_files:
-        return
-
-    context_dir = d / "context"
-    context_dir.mkdir(parents=True, exist_ok=True)
-    today_path = context_dir / "today.md"
-    yesterday_path = context_dir / "yesterday.md"
-
-    # Rotate: if today.md exists with a different date (or no marker), move it to yesterday.md
-    if today_path.exists():
-        text = today_path.read_text(encoding="utf-8", errors="replace")
-        match = CONTEXT_DATE_RE.search(text)
-        if not match or match.group(1) != today:
-            today_path.replace(yesterday_path)
-
-    # Clean up: if yesterday.md is older than yesterday, delete it
-    yesterday = (datetime.now() - timedelta(days=1)).strftime("%Y-%m-%d")
-    if yesterday_path.exists():
-        text = yesterday_path.read_text(encoding="utf-8", errors="replace")
-        match = CONTEXT_DATE_RE.search(text)
-        if match and match.group(1) != today and match.group(1) != yesterday:
-            yesterday_path.unlink()
-
-    # Concatenate today's session files and ask for a rollup summary
-    session_texts = []
-    for f in today_files:
-        session_texts.append(f.read_text(encoding="utf-8", errors="replace").strip())
-    combined = "\n\n---\n\n".join(session_texts)
-
-    escaped_combined = _escape_prompt_text(combined)
-    prompt = f"{ROLLUP_PROMPT}\n\n<sessions>\n{escaped_combined}\n</sessions>"
-    summary = chat([{"role": "user", "content": prompt}], provider, model)
-
-    today_path.write_text(
-        f"<!-- tars:date {today} -->\n# Context {today}\n\n{summary}\n",
-        encoding="utf-8",
-        errors="replace",
-    )

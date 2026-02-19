@@ -55,21 +55,6 @@ def _load_recent_sessions() -> str:
     return "\n\n---\n\n".join(parts)
 
 
-def _load_context() -> str:
-    """Load today.md and yesterday.md from context/ for episodic context."""
-    d = _memory_dir()
-    if d is None:
-        return ""
-    context_dir = d / "context"
-    if not context_dir.is_dir():
-        return ""
-    parts = []
-    for name in ("today.md", "yesterday.md"):
-        p = context_dir / name
-        if p.exists():
-            parts.append(p.read_text(encoding="utf-8", errors="replace").strip())
-    return "\n\n---\n\n".join(parts)
-
 
 def _append_to_file(p: Path, content: str) -> None:
     """Append a list item to a memory file, replacing comment placeholders."""

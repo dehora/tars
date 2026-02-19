@@ -6,7 +6,6 @@ from dotenv import load_dotenv
 from tars.core import DEFAULT_MODEL, chat, parse_model
 from tars.sessions import (
     SESSION_COMPACTION_INTERVAL,
-    _rollup_context,
     _save_session,
     _session_path,
     _summarize_session,
@@ -67,11 +66,6 @@ def repl(provider: str, model: str):
                 _save_session(session_file, cumulative_summary)
             except Exception as e:
                 print(f"  [warning] session save failed: {e}", file=sys.stderr)
-        # Roll up today's sessions into context/today.md
-        try:
-            _rollup_context(provider, model)
-        except Exception as e:
-            print(f"  [warning] context rollup failed: {e}", file=sys.stderr)
 
 
 def main():
@@ -99,10 +93,6 @@ def main():
                 _save_session(session_file, summary)
             except Exception as e:
                 print(f"  [warning] session save failed: {e}", file=sys.stderr)
-        try:
-            _rollup_context(provider, model)
-        except Exception as e:
-            print(f"  [warning] context rollup failed: {e}", file=sys.stderr)
     else:
         repl(provider, model)
 

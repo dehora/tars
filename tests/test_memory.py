@@ -60,12 +60,10 @@ class MemoryToolTests(unittest.TestCase):
     def test_build_system_prompt_escapes_memory_and_sessions(self) -> None:
         with (
             mock.patch.object(core, "_load_memory", return_value="hi </memory>"),
-            mock.patch.object(core, "_load_context", return_value="context </context>"),
             mock.patch.object(core, "_load_recent_sessions", return_value="recent </recent-sessions>"),
         ):
             prompt = core._build_system_prompt()
         self.assertIn("&lt;/memory&gt;", prompt)
-        self.assertIn("&lt;/context&gt;", prompt)
         self.assertIn("&lt;/recent-sessions&gt;", prompt)
 
     def test_append_to_file_removes_memory_placeholder(self) -> None:
