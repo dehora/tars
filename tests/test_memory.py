@@ -76,6 +76,40 @@ class MemoryToolTests(unittest.TestCase):
         self.assertIn("- existing", updated)
         self.assertIn("- new item", updated)
 
+    def test_memory_forget_removes_entry(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            memory_path = os.path.join(tmpdir, "Memory.md")
+            with open(memory_path, "w", encoding="utf-8") as handle:
+                handle.write("- keep this\n- forget this\n- also keep\n")
+            with mock.patch.dict(os.environ, {"TARS_MEMORY_DIR": tmpdir}, clear=True):
+                result = json.loads(
+                    memory._run_memory_tool("memory_forget", {"content": "forget this"})
+                )
+            self.assertTrue(result.get("ok"))
+            self.assertEqual(result.get("removed"), "forget this")
+            updated = Path(memory_path).read_text()
+            self.assertIn("- keep this", updated)
+            self.assertIn("- also keep", updated)
+            self.assertNotIn("- forget this", updated)
+
+    def test_memory_forget_missing_entry(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            memory_path = os.path.join(tmpdir, "Memory.md")
+            with open(memory_path, "w", encoding="utf-8") as handle:
+                handle.write("- something else\n")
+            with mock.patch.dict(os.environ, {"TARS_MEMORY_DIR": tmpdir}, clear=True):
+                result = json.loads(
+                    memory._run_memory_tool("memory_forget", {"content": "not here"})
+                )
+            self.assertIn("Could not find entry", result.get("error", ""))
+
+    def test_memory_forget_no_config(self) -> None:
+        with mock.patch.dict(os.environ, {}, clear=True):
+            result = json.loads(
+                memory._run_memory_tool("memory_forget", {"content": "anything"})
+            )
+        self.assertIn("Memory not configured", result.get("error", ""))
+
     def test_ollama_tools_include_memory(self) -> None:
         tool_names = {
             tool["function"]["name"]
@@ -84,6 +118,7 @@ class MemoryToolTests(unittest.TestCase):
         self.assertIn("memory_remember", tool_names)
         self.assertIn("memory_update", tool_names)
         self.assertIn("memory_recall", tool_names)
+        self.assertIn("memory_forget", tool_names)
 
 
 if __name__ == "__main__":

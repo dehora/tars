@@ -101,6 +101,17 @@ ANTHROPIC_TOOLS = [
         },
     },
     {
+        "name": "memory_forget",
+        "description": "Remove an entry from persistent memory. Use when the user asks to forget something or when information is no longer relevant.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "content": {"type": "string", "description": "The exact memory line to remove"},
+            },
+            "required": ["content"],
+        },
+    },
+    {
         "name": "memory_recall",
         "description": "Read current persistent memory. Use before adding new memories to check for duplicates or contradictions.",
         "input_schema": {
@@ -148,7 +159,7 @@ OLLAMA_TOOLS = [
 def run_tool(name: str, args: dict) -> str:
     print(f"  [tool] {name}({args})", file=sys.stderr)
     try:
-        if name in ("memory_remember", "memory_recall", "memory_update"):
+        if name in ("memory_remember", "memory_recall", "memory_update", "memory_forget"):
             return _run_memory_tool(name, args)
         if name == "memory_search":
             return _run_search_tool(name, args)

@@ -1,5 +1,7 @@
 import argparse
+import readline
 import sys
+from pathlib import Path
 
 from dotenv import load_dotenv
 
@@ -71,6 +73,12 @@ def repl(provider: str, model: str):
     last_compaction_message_index = 0
     cumulative_summary = ""
     search_context = ""
+    history_file = Path.home() / ".tars_history"
+    try:
+        readline.read_history_file(history_file)
+    except (FileNotFoundError, OSError):
+        pass
+    readline.set_history_length(1000)
     print(f"tars [{provider}:{model}] (ctrl-d to quit)")
     def _merge_summary(existing: str, new: str) -> str:
         if not existing:
@@ -86,6 +94,12 @@ def repl(provider: str, model: str):
                 print()
                 break
             if not user_input.strip():
+                continue
+            if user_input.strip() == "/help":
+                print("  /search <query>  hybrid keyword + semantic search")
+                print("  /sgrep <query>   keyword search (FTS5/BM25)")
+                print("  /svec <query>    semantic search (vector KNN)")
+                print("  /help            show this help")
                 continue
             if _handle_slash_search(user_input):
                 continue
@@ -113,6 +127,10 @@ def repl(provider: str, model: str):
                 except Exception as e:
                     print(f"  [warning] session compaction failed: {e}", file=sys.stderr)
     finally:
+        try:
+            readline.write_history_file(history_file)
+        except OSError:
+            pass
         # Save final session on exit
         if session_file and messages and msg_count > last_compaction:
             try:

@@ -97,6 +97,22 @@ def _run_memory_tool(name: str, args: dict) -> str:
                 return json.dumps({"ok": True, "old": args["old_content"], "new": args["new_content"]})
         return json.dumps({"error": f"Could not find existing entry: {args['old_content']}"})
 
+    if name == "memory_forget":
+        d = _memory_dir()
+        if d is None:
+            return json.dumps({"error": "Memory not configured (TARS_MEMORY_DIR not set)"})
+        target = f"- {args['content'].strip()}"
+        for filename in _MEMORY_FILES.values():
+            p = d / filename
+            if not p.exists():
+                continue
+            text = p.read_text(encoding="utf-8", errors="replace")
+            if target in text:
+                text = text.replace(target + "\n", "", 1)
+                p.write_text(text, encoding="utf-8", errors="replace")
+                return json.dumps({"ok": True, "removed": args["content"]})
+        return json.dumps({"error": f"Could not find entry: {args['content']}"})
+
     # memory_remember
     section = args["section"]
     if section not in _MEMORY_FILES:
