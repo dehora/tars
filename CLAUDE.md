@@ -19,6 +19,9 @@ Tars is a Python project for AI assistant experiments. Uses uv for package manag
 - Wrap untrusted user data in tagged blocks with a preface when injecting into prompts — never concatenate raw content into system prompts.
 - Use specific patterns for placeholder comments (e.g. `<!-- tars:memory -->`) — broad regex like `<!--.*?-->` will eat legitimate comments.
 - Always use `encoding="utf-8", errors="replace"` on file I/O for user-managed files — memory files live in an obsidian vault and can be edited externally.
+- Inline duplication is cheaper than premature abstraction — three similar lines beat a shared helper you'll only call twice.
+- Restructure at the last responsible moment, not the first available one. A long file you can read top to bottom beats a multi-file abstraction you have to hold in your head.
+- Push back when a request is driven by principle rather than practical need. "Should we refactor X?" deserves an honest "not yet" if X isn't causing problems.
 
 ## Notes
 
