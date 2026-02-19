@@ -34,7 +34,7 @@ def _load_memory() -> str:
     p = _memory_file("semantic")
     if p is None or not p.exists():
         return ""
-    return p.read_text()
+    return p.read_text(encoding="utf-8", errors="replace")
 
 
 def _load_recent_sessions() -> str:
@@ -73,11 +73,11 @@ def _load_context() -> str:
 
 def _append_to_file(p: Path, content: str) -> None:
     """Append a list item to a memory file, replacing comment placeholders."""
-    text = p.read_text() if p.exists() else ""
+    text = p.read_text(encoding="utf-8", errors="replace") if p.exists() else ""
     # Remove only the dedicated placeholder comment, not arbitrary HTML comments.
     text = MEMORY_PLACEHOLDER_RE.sub("", text)
     text = text.rstrip() + f"\n- {content}\n"
-    p.write_text(text)
+    p.write_text(text, encoding="utf-8", errors="replace")
 
 
 def _run_memory_tool(name: str, args: dict) -> str:
@@ -89,7 +89,7 @@ def _run_memory_tool(name: str, args: dict) -> str:
         for section, filename in _MEMORY_FILES.items():
             p = d / filename
             if p.exists():
-                result[section] = p.read_text()
+                result[section] = p.read_text(encoding="utf-8", errors="replace")
         if not result:
             return json.dumps({"error": "No memory files found"})
         return json.dumps(result)
@@ -105,10 +105,10 @@ def _run_memory_tool(name: str, args: dict) -> str:
             p = d / filename
             if not p.exists():
                 continue
-            text = p.read_text()
+            text = p.read_text(encoding="utf-8", errors="replace")
             if old_line in text:
                 text = text.replace(old_line, new_line, 1)
-                p.write_text(text)
+                p.write_text(text, encoding="utf-8", errors="replace")
                 return json.dumps({"ok": True, "old": args["old_content"], "new": args["new_content"]})
         return json.dumps({"error": f"Could not find existing entry: {args['old_content']}"})
 

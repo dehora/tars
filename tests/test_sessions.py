@@ -47,6 +47,25 @@ class SessionLoggingTests(unittest.TestCase):
         self.assertIn("&lt;/previous-summary&gt;", prompt)
         self.assertIn("&lt;tag&gt;", prompt)
 
+    def test_summarize_session_handles_non_serializable_content(self) -> None:
+        class CustomPayload:
+            def __str__(self) -> str:
+                return "CustomPayload()"
+
+        messages = [
+            {"role": "user", "content": {"data": b"\xff"}},
+            {"role": "tool", "content": CustomPayload()},
+        ]
+
+        def fake_chat(prompt_messages, provider, model):
+            return prompt_messages[0]["content"]
+
+        with mock.patch.object(sessions, "chat", side_effect=fake_chat):
+            prompt = sessions._summarize_session(messages, "ollama", "fake-model")
+
+        self.assertIn("CustomPayload()", prompt)
+        self.assertIn("b'\\\\xff'", prompt)
+
     def test_repl_saves_final_summary_on_exit(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             session_path = Path(tmpdir) / "session.md"
