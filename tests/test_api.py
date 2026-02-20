@@ -160,6 +160,25 @@ class ChatEndpointTests(unittest.TestCase):
         })
         self.assertEqual(resp.status_code, 400)
 
+    def test_tool_endpoint(self) -> None:
+        with mock.patch.object(api, "run_tool", return_value='{"ok": true}') as rt:
+            resp = self.client.post("/tool", json={
+                "name": "todoist_today",
+                "args": {},
+            })
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(resp.json()["result"], '{"ok": true}')
+        rt.assert_called_once_with("todoist_today", {})
+
+    def test_tool_endpoint_with_args(self) -> None:
+        with mock.patch.object(api, "run_tool", return_value='{"ok": true}') as rt:
+            resp = self.client.post("/tool", json={
+                "name": "todoist_add_task",
+                "args": {"content": "buy eggs", "due": "today"},
+            })
+        self.assertEqual(resp.status_code, 200)
+        rt.assert_called_once_with("todoist_add_task", {"content": "buy eggs", "due": "today"})
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -16,6 +16,7 @@ from tars.core import DEFAULT_MODEL, parse_model
 from tars.indexer import build_index
 from tars.memory import save_correction, save_reward
 from tars.sessions import _session_path
+from tars.tools import run_tool
 
 load_dotenv()
 
@@ -60,6 +61,11 @@ class FeedbackRequest(BaseModel):
     conversation_id: str
     note: str = ""
     kind: str = "correction"  # "correction" or "reward"
+
+
+class ToolRequest(BaseModel):
+    name: str
+    args: dict = {}
 
 
 @app.post("/chat", response_model=ChatResponse)
@@ -144,6 +150,12 @@ def feedback_endpoint(req: FeedbackRequest) -> dict:
     fn = save_reward if req.kind == "reward" else save_correction
     result = fn(user_msg, assistant_msg, req.note)
     return {"ok": True, "message": result}
+
+
+@app.post("/tool")
+def tool_endpoint(req: ToolRequest) -> dict:
+    result = run_tool(req.name, req.args)
+    return {"result": result}
 
 
 @app.post("/index")

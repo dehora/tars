@@ -111,6 +111,35 @@ for (const entry of history) {
   addMsg(entry.role, entry.text);
 }
 
+function parseToolCommand(text) {
+  const parts = text.split(/\s+/);
+  const cmd = parts[0];
+  if (cmd === "/todoist") {
+    const sub = parts[1] || "";
+    if (sub === "add" && parts.length > 2) {
+      const args = {content: ""};
+      const content = [];
+      for (let i = 2; i < parts.length; i++) {
+        if (parts[i] === "--due" && i + 1 < parts.length) { args.due = parts[++i]; }
+        else if (parts[i] === "--project" && i + 1 < parts.length) { args.project = parts[++i]; }
+        else if (parts[i] === "--priority" && i + 1 < parts.length) { args.priority = parseInt(parts[++i]); }
+        else { content.push(parts[i]); }
+      }
+      args.content = content.join(" ");
+      return {name: "todoist_add_task", args};
+    }
+    if (sub === "today") return {name: "todoist_today", args: {}};
+    if (sub === "upcoming") return {name: "todoist_upcoming", args: {days: parseInt(parts[2]) || 7}};
+    if (sub === "complete" && parts.length > 2) return {name: "todoist_complete_task", args: {ref: parts.slice(2).join(" ")}};
+    return null;
+  }
+  if (cmd === "/weather") return {name: "weather_now", args: {}};
+  if (cmd === "/forecast") return {name: "weather_forecast", args: {}};
+  if (cmd === "/memory") return {name: "memory_recall", args: {}};
+  if (cmd === "/remember" && parts.length >= 3) return {name: "memory_remember", args: {section: parts[1], content: parts.slice(2).join(" ")}};
+  return null;
+}
+
 async function sendMessage() {
   const text = input.value.trim();
   if (!text) return;
@@ -139,6 +168,25 @@ async function sendMessage() {
       addMsg("assistant", resp.ok ? data.message : (data.detail || "feedback failed"));
     } catch (e) {
       addMsg("error", "feedback failed: " + e.message);
+    }
+    return;
+  }
+
+  // Direct tool commands — bypass the model entirely.
+  const toolCmd = parseToolCommand(text);
+  if (toolCmd) {
+    input.value = "";
+    addMsg("user", text);
+    try {
+      const resp = await fetch("/tool", {
+        method: "POST",
+        headers: {"Content-Type": "application/json"},
+        body: JSON.stringify(toolCmd),
+      });
+      const data = await resp.json();
+      addMsg("assistant", resp.ok ? data.result : (data.detail || "tool failed"));
+    } catch (e) {
+      addMsg("error", "tool failed: " + e.message);
     }
     return;
   }

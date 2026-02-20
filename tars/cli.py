@@ -11,6 +11,7 @@ from tars.indexer import build_index
 from tars.memory import save_correction, save_reward
 from tars.search import search
 from tars.sessions import _session_path
+from tars.tools import run_tool
 
 load_dotenv()
 
@@ -62,6 +63,76 @@ def _handle_slash_search(user_input: str) -> bool:
     return True
 
 
+def _parse_todoist_add(tokens: list[str]) -> dict:
+    """Parse '/todoist add content --due D --project P --priority N' into args dict."""
+    args: dict = {}
+    content_parts: list[str] = []
+    i = 0
+    while i < len(tokens):
+        t = tokens[i]
+        if t == "--due" and i + 1 < len(tokens):
+            args["due"] = tokens[i + 1]
+            i += 2
+        elif t == "--project" and i + 1 < len(tokens):
+            args["project"] = tokens[i + 1]
+            i += 2
+        elif t == "--priority" and i + 1 < len(tokens):
+            args["priority"] = int(tokens[i + 1])
+            i += 2
+        else:
+            content_parts.append(t)
+            i += 1
+    args["content"] = " ".join(content_parts)
+    return args
+
+
+def _handle_slash_tool(user_input: str) -> bool:
+    """Handle direct tool commands. Returns True if handled."""
+    parts = user_input.strip().split()
+    cmd = parts[0] if parts else ""
+
+    if cmd == "/todoist":
+        sub = parts[1] if len(parts) > 1 else ""
+        if sub == "add" and len(parts) > 2:
+            args = _parse_todoist_add(parts[2:])
+            result = run_tool("todoist_add_task", args)
+        elif sub == "today":
+            result = run_tool("todoist_today", {})
+        elif sub == "upcoming":
+            days = int(parts[2]) if len(parts) > 2 else 7
+            result = run_tool("todoist_upcoming", {"days": days})
+        elif sub == "complete" and len(parts) > 2:
+            result = run_tool("todoist_complete_task", {"ref": " ".join(parts[2:])})
+        else:
+            print("  usage: /todoist add|today|upcoming|complete ...")
+            return True
+        print(f"  {result}")
+        return True
+
+    if cmd == "/weather":
+        print(f"  {run_tool('weather_now', {})}")
+        return True
+
+    if cmd == "/forecast":
+        print(f"  {run_tool('weather_forecast', {})}")
+        return True
+
+    if cmd == "/memory":
+        print(f"  {run_tool('memory_recall', {})}")
+        return True
+
+    if cmd == "/remember":
+        if len(parts) < 3:
+            print("  usage: /remember <semantic|procedural> <content>")
+            return True
+        section = parts[1]
+        content = " ".join(parts[2:])
+        print(f"  {run_tool('memory_remember', {'section': section, 'content': content})}")
+        return True
+
+    return False
+
+
 def repl(provider: str, model: str):
     conv = Conversation(id="repl", provider=provider, model=model)
     session_file = _session_path()
@@ -82,12 +153,21 @@ def repl(provider: str, model: str):
             if not user_input.strip():
                 continue
             if user_input.strip() == "/help":
-                print("  /search <query>  hybrid keyword + semantic search")
-                print("  /sgrep <query>   keyword search (FTS5/BM25)")
-                print("  /svec <query>    semantic search (vector KNN)")
-                print("  /w [note]        flag last response as wrong")
-                print("  /r [note]        flag last response as good")
-                print("  /help            show this help")
+                print("  tools:")
+                print("    /todoist add <text> [--due D] [--project P] [--priority N]")
+                print("    /todoist today|upcoming [days]|complete <ref>")
+                print("    /weather         current conditions")
+                print("    /forecast        today's hourly forecast")
+                print("    /memory          show persistent memory")
+                print("    /remember <semantic|procedural> <text>")
+                print("  search:")
+                print("    /search <query>  hybrid keyword + semantic")
+                print("    /sgrep <query>   keyword (FTS5/BM25)")
+                print("    /svec <query>    semantic (vector KNN)")
+                print("  feedback:")
+                print("    /w [note]        flag last response as wrong")
+                print("    /r [note]        flag last response as good")
+                print("  /help              show this help")
                 continue
             if user_input.strip().startswith(("/w", "/r")):
                 parts = user_input.strip().split(None, 1)
@@ -105,6 +185,8 @@ def repl(provider: str, model: str):
                         )
                         print(f"  {result}")
                     continue
+            if _handle_slash_tool(user_input):
+                continue
             if _handle_slash_search(user_input):
                 continue
             reply = process_message(conv, user_input, session_file)
