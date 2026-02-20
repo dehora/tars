@@ -123,6 +123,24 @@ async function sendMessage() {
     return;
   }
 
+  // /w [note] — flag last response as wrong.
+  if (text === "/w" || text.startsWith("/w ")) {
+    input.value = "";
+    const note = text.startsWith("/w ") ? text.slice(3) : "";
+    try {
+      const resp = await fetch("/feedback", {
+        method: "POST",
+        headers: {"Content-Type": "application/json"},
+        body: JSON.stringify({conversation_id: convId, note}),
+      });
+      const data = await resp.json();
+      addMsg("assistant", resp.ok ? data.message : (data.detail || "feedback failed"));
+    } catch (e) {
+      addMsg("error", "feedback failed: " + e.message);
+    }
+    return;
+  }
+
   input.value = "";
   addMsg("user", text);
   history.push({role: "user", text});

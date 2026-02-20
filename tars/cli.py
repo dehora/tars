@@ -8,6 +8,7 @@ from dotenv import load_dotenv
 from tars.conversation import Conversation, process_message, save_session
 from tars.core import DEFAULT_MODEL, parse_model
 from tars.indexer import build_index
+from tars.memory import save_correction
 from tars.search import search
 from tars.sessions import _session_path
 
@@ -84,8 +85,23 @@ def repl(provider: str, model: str):
                 print("  /search <query>  hybrid keyword + semantic search")
                 print("  /sgrep <query>   keyword search (FTS5/BM25)")
                 print("  /svec <query>    semantic search (vector KNN)")
+                print("  /w [note]        flag last response as wrong")
                 print("  /help            show this help")
                 continue
+            if user_input.strip().startswith("/w"):
+                parts = user_input.strip().split(None, 1)
+                if parts[0] == "/w":
+                    if len(conv.messages) < 2:
+                        print("  nothing to flag yet")
+                    else:
+                        note = parts[1] if len(parts) > 1 else ""
+                        result = save_correction(
+                            conv.messages[-2]["content"],
+                            conv.messages[-1]["content"],
+                            note,
+                        )
+                        print(f"  {result}")
+                    continue
             if _handle_slash_search(user_input):
                 continue
             reply = process_message(conv, user_input, session_file)

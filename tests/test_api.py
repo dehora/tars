@@ -95,5 +95,39 @@ class ChatEndpointTests(unittest.TestCase):
         self.assertEqual(api._conversations["stream1"].msg_count, 1)
 
 
+    def test_feedback_saves_correction(self) -> None:
+        with mock.patch.object(conversation, "chat", return_value="bad reply"):
+            self.client.post("/chat", json={
+                "conversation_id": "fb1",
+                "message": "add eggs",
+            })
+        with mock.patch.object(api, "save_correction", return_value="feedback saved") as save:
+            resp = self.client.post("/feedback", json={
+                "conversation_id": "fb1",
+            })
+        self.assertEqual(resp.status_code, 200)
+        save.assert_called_once_with("add eggs", "bad reply", "")
+
+    def test_feedback_with_note(self) -> None:
+        with mock.patch.object(conversation, "chat", return_value="wrong"):
+            self.client.post("/chat", json={
+                "conversation_id": "fb2",
+                "message": "hello",
+            })
+        with mock.patch.object(api, "save_correction", return_value="feedback saved") as save:
+            resp = self.client.post("/feedback", json={
+                "conversation_id": "fb2",
+                "note": "should use todoist",
+            })
+        self.assertEqual(resp.status_code, 200)
+        save.assert_called_once_with("hello", "wrong", "should use todoist")
+
+    def test_feedback_no_messages(self) -> None:
+        resp = self.client.post("/feedback", json={
+            "conversation_id": "empty",
+        })
+        self.assertEqual(resp.status_code, 400)
+
+
 if __name__ == "__main__":
     unittest.main()

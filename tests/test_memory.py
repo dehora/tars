@@ -110,6 +110,38 @@ class MemoryToolTests(unittest.TestCase):
             )
         self.assertIn("Memory not configured", result.get("error", ""))
 
+    def test_save_correction_creates_file(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            with mock.patch.dict(os.environ, {"TARS_MEMORY_DIR": tmpdir}, clear=True):
+                result = memory.save_correction("hello", "wrong answer")
+            text = (Path(tmpdir) / "corrections.md").read_text()
+        self.assertEqual(result, "feedback saved")
+        self.assertIn("# Corrections", text)
+        self.assertIn("- input: hello", text)
+        self.assertIn("- got: wrong answer", text)
+
+    def test_save_correction_appends(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path = Path(tmpdir) / "corrections.md"
+            path.write_text("# Corrections\n\n## 2026-01-01T00:00:00\n- input: old\n- got: old reply\n")
+            with mock.patch.dict(os.environ, {"TARS_MEMORY_DIR": tmpdir}, clear=True):
+                memory.save_correction("new q", "new reply")
+            text = path.read_text()
+            self.assertIn("- input: old", text)
+            self.assertIn("- input: new q", text)
+
+    def test_save_correction_with_note(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            with mock.patch.dict(os.environ, {"TARS_MEMORY_DIR": tmpdir}, clear=True):
+                memory.save_correction("q", "a", "should have used todoist")
+            text = (Path(tmpdir) / "corrections.md").read_text()
+            self.assertIn("- note: should have used todoist", text)
+
+    def test_save_correction_no_memory_dir(self) -> None:
+        with mock.patch.dict(os.environ, {}, clear=True):
+            result = memory.save_correction("q", "a")
+        self.assertEqual(result, "no memory dir configured")
+
     def test_ollama_tools_include_memory(self) -> None:
         tool_names = {
             tool["function"]["name"]

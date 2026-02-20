@@ -14,6 +14,7 @@ from pydantic import BaseModel
 from tars.conversation import Conversation, process_message, process_message_stream, save_session
 from tars.core import DEFAULT_MODEL, parse_model
 from tars.indexer import build_index
+from tars.memory import save_correction
 from tars.sessions import _session_path
 
 load_dotenv()
@@ -46,6 +47,11 @@ class ChatRequest(BaseModel):
 class ChatResponse(BaseModel):
     conversation_id: str
     reply: str
+
+
+class FeedbackRequest(BaseModel):
+    conversation_id: str
+    note: str = ""
 
 
 @app.post("/chat", response_model=ChatResponse)
@@ -108,6 +114,17 @@ def chat_stream_endpoint(req: ChatRequest):
         yield f"data: {json.dumps({'done': True})}\n\n"
 
     return StreamingResponse(event_stream(), media_type="text/event-stream")
+
+
+@app.post("/feedback")
+def feedback_endpoint(req: FeedbackRequest) -> dict:
+    conv = _conversations.get(req.conversation_id)
+    if not conv or len(conv.messages) < 2:
+        raise HTTPException(status_code=400, detail="No messages to flag")
+    user_msg = conv.messages[-2]["content"]
+    assistant_msg = conv.messages[-1]["content"]
+    result = save_correction(user_msg, assistant_msg, req.note)
+    return {"ok": True, "message": result}
 
 
 @app.post("/index")

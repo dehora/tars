@@ -1,6 +1,7 @@
 import json
 import os
 import re
+from datetime import datetime
 from pathlib import Path
 
 MEMORY_PLACEHOLDER_RE = re.compile(r"<!--\s*tars:memory\b.*?-->\n?", re.DOTALL | re.IGNORECASE)
@@ -54,6 +55,25 @@ def _load_recent_sessions() -> str:
         parts.append(f.read_text(encoding="utf-8", errors="replace").strip())
     return "\n\n---\n\n".join(parts)
 
+
+
+def save_correction(user_msg: str, assistant_msg: str, note: str = "") -> str:
+    """Append a flagged exchange to corrections.md in the memory dir."""
+    md = _memory_dir()
+    if not md:
+        return "no memory dir configured"
+    path = md / "corrections.md"
+    ts = datetime.now().strftime("%Y-%m-%dT%H:%M:%S")
+    entry = f"\n## {ts}\n- input: {user_msg}\n- got: {assistant_msg}\n"
+    if note:
+        entry += f"- note: {note}\n"
+    if path.exists():
+        text = path.read_text(encoding="utf-8", errors="replace")
+    else:
+        text = "# Corrections\n"
+    text = text.rstrip() + "\n" + entry
+    path.write_text(text, encoding="utf-8", errors="replace")
+    return "feedback saved"
 
 
 def _append_to_file(p: Path, content: str) -> None:
