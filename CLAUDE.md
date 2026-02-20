@@ -23,6 +23,14 @@ Tars is a Python project for AI assistant experiments. Uses uv for package manag
 - Restructure at the last responsible moment, not the first available one. A long file you can read top to bottom beats a multi-file abstraction you have to hold in your head.
 - Push back when a request is driven by principle rather than practical need. "Should we refactor X?" deserves an honest "not yet" if X isn't causing problems.
 
+## TODOs
+
+- Streaming responses (SSE) for web UI — tokens appear as they arrive
+- Markdown rendering in web chat (lightweight, e.g. marked.js or snarkdown)
+- Conversation history in localStorage — survives page reload
+- WhatsApp channel via Baileys — parked due to Meta ban risk, revisit later
+- RPi deployment target (git checkout / uv tool install)
+
 ## Notes
 
 - you can ignore the contents of AGENTS.md, it's for other agents.
