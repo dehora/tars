@@ -9,7 +9,13 @@ sys.modules.setdefault("anthropic", mock.Mock())
 sys.modules.setdefault("ollama", mock.Mock())
 sys.modules.setdefault("dotenv", mock.Mock(load_dotenv=lambda: None))
 
-from tars.cli import _handle_review, _parse_todoist_add
+from tars.cli import (
+    _completer,
+    _handle_review,
+    _handle_slash_search,
+    _handle_slash_tool,
+    _parse_todoist_add,
+)
 
 
 class ParseTodoistAddTests(unittest.TestCase):
@@ -112,6 +118,85 @@ class HandleReviewTests(unittest.TestCase):
                         with mock.patch("builtins.print") as mock_print:
                             _handle_review("ollama", "test-model")
         mock_print.assert_any_call("  no memory dir configured")
+
+
+class HandleSlashToolTests(unittest.TestCase):
+    def test_weather_dispatches(self) -> None:
+        with mock.patch("tars.cli._print_tool") as m:
+            result = _handle_slash_tool("/weather")
+        self.assertTrue(result)
+        m.assert_called_once_with("weather_now", {})
+
+    def test_forecast_dispatches(self) -> None:
+        with mock.patch("tars.cli._print_tool") as m:
+            result = _handle_slash_tool("/forecast")
+        self.assertTrue(result)
+        m.assert_called_once_with("weather_forecast", {})
+
+    def test_todoist_today_dispatches(self) -> None:
+        with mock.patch("tars.cli._print_tool") as m:
+            result = _handle_slash_tool("/todoist today")
+        self.assertTrue(result)
+        m.assert_called_once_with("todoist_today", {})
+
+    def test_unknown_returns_false(self) -> None:
+        result = _handle_slash_tool("/unknown")
+        self.assertFalse(result)
+
+    def test_empty_content_prints_usage(self) -> None:
+        with mock.patch("builtins.print") as m:
+            result = _handle_slash_tool("/todoist add --due tomorrow")
+        self.assertTrue(result)
+        m.assert_any_call("  usage: /todoist add <text> [--due D] [--project P] [--priority N]")
+
+    def test_upcoming_bad_days_prints_usage(self) -> None:
+        with mock.patch("builtins.print") as m:
+            result = _handle_slash_tool("/todoist upcoming abc")
+        self.assertTrue(result)
+        m.assert_any_call("  usage: /todoist upcoming [days]")
+
+
+class HandleSlashSearchTests(unittest.TestCase):
+    def test_search_dispatches(self) -> None:
+        with mock.patch("tars.cli.search", return_value=[]) as m:
+            with mock.patch("tars.cli._print_search_results"):
+                result = _handle_slash_search("/search weather")
+        self.assertTrue(result)
+        m.assert_called_once_with("weather", mode="hybrid", limit=10)
+
+    def test_sgrep_dispatches(self) -> None:
+        with mock.patch("tars.cli.search", return_value=[]) as m:
+            with mock.patch("tars.cli._print_search_results"):
+                result = _handle_slash_search("/sgrep test query")
+        self.assertTrue(result)
+        m.assert_called_once_with("test query", mode="fts", limit=10)
+
+    def test_no_query_prints_usage(self) -> None:
+        with mock.patch("builtins.print") as m:
+            result = _handle_slash_search("/search")
+        self.assertTrue(result)
+        m.assert_any_call("  usage: /search <query>")
+
+    def test_unknown_returns_false(self) -> None:
+        result = _handle_slash_search("/notasearch foo")
+        self.assertFalse(result)
+
+
+class CompleterTests(unittest.TestCase):
+    def test_matches_slash_commands(self) -> None:
+        with mock.patch("readline.get_line_buffer", return_value="/we"):
+            result = _completer("/we", 0)
+        self.assertEqual(result, "/weather")
+
+    def test_todoist_subcommands(self) -> None:
+        with mock.patch("readline.get_line_buffer", return_value="/todoist a"):
+            result = _completer("/todoist a", 0)
+        self.assertEqual(result, "/todoist add ")
+
+    def test_returns_none_past_end(self) -> None:
+        with mock.patch("readline.get_line_buffer", return_value="/weather"):
+            result = _completer("/weather", 99)
+        self.assertIsNone(result)
 
 
 if __name__ == "__main__":

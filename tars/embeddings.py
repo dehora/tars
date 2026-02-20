@@ -2,11 +2,13 @@
 
 import ollama
 
+DEFAULT_EMBEDDING_MODEL = "qwen3-embedding:0.6b"
+
 
 def embed(
     texts: str | list[str],
     *,
-    model: str = "qwen3-embedding:0.6b",
+    model: str = DEFAULT_EMBEDDING_MODEL,
 ) -> list[list[float]]:
     """Embed one or more texts. Returns a list of embedding vectors."""
     if isinstance(texts, str):
@@ -20,7 +22,7 @@ def embed(
     return embeddings[:count]
 
 
-def embedding_dimensions(model: str = "qwen3-embedding:0.6b") -> int:
+def embedding_dimensions(model: str = DEFAULT_EMBEDDING_MODEL) -> int:
     """Probe the model to determine embedding dimensionality."""
     vecs = embed("dimension probe", model=model)
     if not vecs:

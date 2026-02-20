@@ -8,6 +8,7 @@ sys.modules.setdefault("ollama", mock.Mock())
 sys.modules.setdefault("dotenv", mock.Mock(load_dotenv=lambda: None))
 
 from tars import api, conversation
+from tars.search import SearchResult
 
 from fastapi.testclient import TestClient
 
@@ -189,6 +190,31 @@ class ChatEndpointTests(unittest.TestCase):
         })
         self.assertEqual(resp.status_code, 400)
         self.assertIn("Unknown tool", resp.json()["detail"])
+
+
+    def test_search_endpoint_returns_results(self) -> None:
+        result = SearchResult(
+            content="test content", score=0.9, file_path="/a.md",
+            file_title="A", memory_type="semantic",
+            start_line=1, end_line=5, chunk_rowid=1,
+        )
+        with mock.patch.object(api, "memory_search", return_value=[result]):
+            resp = self.client.get("/search?q=test")
+        self.assertEqual(resp.status_code, 200)
+        data = resp.json()
+        self.assertEqual(len(data["results"]), 1)
+        self.assertEqual(data["results"][0]["content"], "test content")
+        self.assertAlmostEqual(data["results"][0]["score"], 0.9)
+
+    def test_search_endpoint_empty_query(self) -> None:
+        resp = self.client.get("/search?q=")
+        self.assertEqual(resp.status_code, 400)
+
+    def test_search_endpoint_no_results(self) -> None:
+        with mock.patch.object(api, "memory_search", return_value=[]):
+            resp = self.client.get("/search?q=nothing")
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(resp.json()["results"], [])
 
 
 if __name__ == "__main__":

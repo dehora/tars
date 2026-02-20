@@ -16,6 +16,7 @@ from tars.core import DEFAULT_MODEL, parse_model
 from tars.format import format_tool_result
 from tars.indexer import build_index
 from tars.memory import save_correction, save_reward
+from tars.search import search as memory_search
 from tars.sessions import _session_path
 from tars.tools import run_tool
 
@@ -167,6 +168,27 @@ def tool_endpoint(req: ToolRequest) -> dict:
     raw = run_tool(req.name, req.args, quiet=True)
     formatted = format_tool_result(req.name, raw)
     return {"result": formatted}
+
+
+@app.get("/search")
+def search_endpoint(q: str = "", mode: str = "hybrid", limit: int = 10) -> dict:
+    if not q.strip():
+        raise HTTPException(status_code=400, detail="Missing query parameter 'q'")
+    results = memory_search(q, mode=mode, limit=limit)
+    return {
+        "results": [
+            {
+                "content": r.content,
+                "score": r.score,
+                "file_path": r.file_path,
+                "file_title": r.file_title,
+                "memory_type": r.memory_type,
+                "start_line": r.start_line,
+                "end_line": r.end_line,
+            }
+            for r in results
+        ]
+    }
 
 
 @app.post("/index")

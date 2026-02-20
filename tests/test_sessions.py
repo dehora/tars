@@ -81,7 +81,7 @@ class SessionLoggingTests(unittest.TestCase):
                 mock.patch.object(cli, "_session_path", return_value=session_path),
                 mock.patch.object(conversation, "_summarize_session", return_value="- summary") as summarize,
                 mock.patch.object(conversation, "_save_session") as save,
-                mock.patch.object(conversation, "chat", return_value="ok"),
+                mock.patch.object(conversation, "chat_stream", side_effect=lambda *a, **kw: iter(["ok"])),
                 mock.patch("builtins.input", side_effect=["hello", EOFError()]),
             ):
                 cli.repl("ollama", "fake-model")
@@ -99,7 +99,7 @@ class SessionLoggingTests(unittest.TestCase):
                 mock.patch.object(cli, "_session_path", return_value=session_path),
                 mock.patch.object(conversation, "_summarize_session", return_value="- summary"),
                 mock.patch.object(conversation, "_save_session") as save,
-                mock.patch.object(conversation, "chat", return_value="ok"),
+                mock.patch.object(conversation, "chat_stream", side_effect=lambda *a, **kw: iter(["ok"])),
                 mock.patch("builtins.input", side_effect=inputs),
             ):
                 cli.repl("ollama", "fake-model")
@@ -127,7 +127,7 @@ class SessionLoggingTests(unittest.TestCase):
                 mock.patch.object(cli, "_session_path", return_value=session_path),
                 mock.patch.object(conversation, "_summarize_session", side_effect=["s1", "s2", "s3"]) as summarize,
                 mock.patch.object(conversation, "_save_session"),
-                mock.patch.object(conversation, "chat", return_value="ok"),
+                mock.patch.object(conversation, "chat_stream", side_effect=lambda *a, **kw: iter(["ok"])),
                 mock.patch("builtins.input", side_effect=inputs),
             ):
                 cli.repl("ollama", "fake-model")
@@ -149,7 +149,7 @@ class SessionLoggingTests(unittest.TestCase):
                 mock.patch.object(cli, "_session_path", return_value=session_path),
                 mock.patch.object(conversation, "_summarize_session", side_effect=fake_summarize),
                 mock.patch.object(conversation, "_save_session"),
-                mock.patch.object(conversation, "chat", return_value="ok"),
+                mock.patch.object(conversation, "chat_stream", side_effect=lambda *a, **kw: iter(["ok"])),
                 mock.patch("builtins.input", side_effect=inputs),
             ):
                 cli.repl("ollama", "fake-model")
@@ -166,7 +166,7 @@ class SessionLoggingTests(unittest.TestCase):
                 mock.patch.object(cli, "_session_path", return_value=session_path),
                 mock.patch.object(conversation, "_summarize_session", side_effect=["s1", "s2", "s3"]),
                 mock.patch.object(conversation, "_save_session") as save,
-                mock.patch.object(conversation, "chat", return_value="ok"),
+                mock.patch.object(conversation, "chat_stream", side_effect=lambda *a, **kw: iter(["ok"])),
                 mock.patch("builtins.input", side_effect=inputs),
             ):
                 cli.repl("ollama", "fake-model")
@@ -188,7 +188,7 @@ class SessionLoggingTests(unittest.TestCase):
                 mock.patch.object(cli, "_session_path", return_value=session_path),
                 mock.patch.object(conversation, "_summarize_session", side_effect=["s1", "s2", "s3"]),
                 mock.patch.object(conversation, "_save_session") as save,
-                mock.patch.object(conversation, "chat", return_value="ok"),
+                mock.patch.object(conversation, "chat_stream", side_effect=lambda *a, **kw: iter(["ok"])),
                 mock.patch("builtins.input", side_effect=inputs),
             ):
                 cli.repl("ollama", "fake-model")

@@ -15,7 +15,7 @@ from tars.db import (
     insert_chunks,
     upsert_file,
 )
-from tars.embeddings import embed, embedding_dimensions
+from tars.embeddings import DEFAULT_EMBEDDING_MODEL, embed, embedding_dimensions
 from tars.memory import _MEMORY_FILES, _memory_dir
 
 
@@ -33,7 +33,7 @@ def _discover_files(memory_dir: Path) -> list[tuple[Path, str]]:
     return found
 
 
-def build_index(*, model: str = "qwen3-embedding:0.6b") -> dict:
+def build_index(*, model: str = DEFAULT_EMBEDDING_MODEL) -> dict:
     """Index all memory files into sqlite-vec. Returns stats."""
     stats = {"indexed": 0, "skipped": 0, "chunks": 0, "deleted": 0}
 

@@ -4,7 +4,7 @@ import json
 from dataclasses import dataclass
 
 from tars.db import _connect, _db_path, _fts_table_exists, _serialize_f32, _vec_table_exists
-from tars.embeddings import embed
+from tars.embeddings import DEFAULT_EMBEDDING_MODEL, embed
 
 
 @dataclass(frozen=True, slots=True)
@@ -75,7 +75,7 @@ def _reciprocal_rank_fusion(
 def search(
     query: str,
     *,
-    model: str = "qwen3-embedding:0.6b",
+    model: str = DEFAULT_EMBEDDING_MODEL,
     limit: int = 10,
     min_score: float = 0.0,
     mode: str = "hybrid",

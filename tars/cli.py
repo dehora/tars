@@ -2,12 +2,15 @@ import argparse
 import os
 import readline
 import sys
+import threading
+import time
 from pathlib import Path
 
 from dotenv import load_dotenv
 
-from tars.conversation import Conversation, process_message, save_session
+from tars.conversation import Conversation, process_message, process_message_stream, save_session
 from tars.core import DEFAULT_MODEL, chat, parse_model
+from tars.embeddings import DEFAULT_EMBEDDING_MODEL
 from tars.format import format_tool_result
 from tars.indexer import build_index
 from tars.memory import (
@@ -270,6 +273,42 @@ def _completer(text: str, state: int) -> str | None:
     return options[state] if state < len(options) else None
 
 
+_SPINNER_FRAMES = "⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏"
+
+
+class _Spinner:
+    """Braille spinner for CLI thinking indicator."""
+
+    def __init__(self) -> None:
+        self._spinning = False
+        self._thread: threading.Thread | None = None
+
+    @property
+    def spinning(self) -> bool:
+        return self._spinning
+
+    def start(self) -> None:
+        self._spinning = True
+        self._thread = threading.Thread(target=self._run, daemon=True)
+        self._thread.start()
+
+    def _run(self) -> None:
+        i = 0
+        while self._spinning:
+            frame = _SPINNER_FRAMES[i % len(_SPINNER_FRAMES)]
+            sys.stdout.write(f"\r  {frame} thinking...")
+            sys.stdout.flush()
+            i += 1
+            time.sleep(0.08)
+
+    def stop(self) -> None:
+        self._spinning = False
+        if self._thread:
+            self._thread.join(timeout=0.2)
+        sys.stdout.write("\r" + " " * 20 + "\r")
+        sys.stdout.flush()
+
+
 def repl(provider: str, model: str):
     conv = Conversation(id="repl", provider=provider, model=model)
     session_file = _session_path()
@@ -333,8 +372,21 @@ def repl(provider: str, model: str):
                 continue
             if _handle_slash_search(user_input):
                 continue
-            reply = process_message(conv, user_input, session_file)
-            print(f"tars> {reply}")
+            spinner = _Spinner()
+            spinner.start()
+            got_output = False
+            for delta in process_message_stream(conv, user_input, session_file):
+                if spinner.spinning:
+                    spinner.stop()
+                if not got_output:
+                    sys.stdout.write("tars> ")
+                    got_output = True
+                sys.stdout.write(delta)
+                sys.stdout.flush()
+            if got_output:
+                print()  # final newline
+            elif spinner.spinning:
+                spinner.stop()
     finally:
         try:
             readline.write_history_file(history_file)
@@ -380,7 +432,7 @@ def main():
     idx = sub.add_parser("index", help="rebuild memory search index")
     idx.add_argument(
         "--embedding-model",
-        default="qwen3-embedding:0.6b",
+        default=DEFAULT_EMBEDDING_MODEL,
         help="ollama embedding model to use",
     )
     for cmd, mode in [("search", "hybrid"), ("sgrep", "fts"), ("svec", "vec")]:

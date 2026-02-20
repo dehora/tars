@@ -1,3 +1,4 @@
+import os
 from collections.abc import Generator
 
 import anthropic
@@ -5,6 +6,8 @@ import ollama
 
 from tars.memory import _load_memory
 from tars.tools import ANTHROPIC_TOOLS, OLLAMA_TOOLS, run_tool
+
+_MAX_TOKENS = int(os.environ.get("TARS_MAX_TOKENS", "1024"))
 
 CLAUDE_MODELS = {
     "sonnet": "claude-sonnet-4-5-20250929",
@@ -90,7 +93,7 @@ def chat_anthropic(messages: list[dict], model: str, *, search_context: str = ""
     while True:
         response = client.messages.create(
             model=resolved,
-            max_tokens=1024,
+            max_tokens=_MAX_TOKENS,
             system=_build_system_prompt(search_context=search_context),
             messages=local_messages,
             tools=ANTHROPIC_TOOLS,
@@ -185,7 +188,7 @@ def chat_anthropic_stream(
     # Keep going until the model stops requesting tools.
     while True:
         response = client.messages.create(
-            model=resolved, max_tokens=1024,
+            model=resolved, max_tokens=_MAX_TOKENS,
             system=system, messages=local_messages, tools=ANTHROPIC_TOOLS,
         )
 
@@ -213,7 +216,7 @@ def chat_anthropic_stream(
     # tokens). The caller (web UI) sends each chunk to the browser as an
     # SSE event, so the user sees tokens appear incrementally.
     with client.messages.stream(
-        model=resolved, max_tokens=1024,
+        model=resolved, max_tokens=_MAX_TOKENS,
         system=system, messages=local_messages, tools=ANTHROPIC_TOOLS,
     ) as stream:
         for text in stream.text_stream:
