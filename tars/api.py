@@ -17,7 +17,7 @@ from tars.format import format_tool_result
 from tars.indexer import build_index
 from tars.memory import save_correction, save_reward
 from tars.search import search as memory_search
-from tars.sessions import _session_path
+from tars.sessions import _session_path, list_sessions
 from tars.tools import run_tool
 
 load_dotenv()
@@ -158,6 +158,7 @@ _ALLOWED_TOOLS = {
     "todoist_add_task", "todoist_today", "todoist_upcoming", "todoist_complete_task",
     "weather_now", "weather_forecast",
     "memory_recall", "memory_remember", "memory_update", "memory_forget", "memory_search",
+    "note_daily",
 }
 
 
@@ -201,6 +202,38 @@ def brief_endpoint() -> dict:
         except Exception as e:
             sections[name] = f"unavailable: {e}"
     return {"sections": sections}
+
+
+@app.get("/sessions")
+def sessions_endpoint(limit: int = 10) -> dict:
+    sessions = list_sessions(limit=limit)
+    return {
+        "sessions": [
+            {"date": s.date, "title": s.title, "filename": s.filename}
+            for s in sessions
+        ]
+    }
+
+
+@app.get("/sessions/search")
+def session_search_endpoint(q: str = "", limit: int = 10) -> dict:
+    if not q.strip():
+        raise HTTPException(status_code=400, detail="Missing query parameter 'q'")
+    results = memory_search(q, mode="hybrid", limit=limit)
+    episodic = [r for r in results if r.memory_type == "episodic"]
+    return {
+        "results": [
+            {
+                "content": r.content,
+                "score": r.score,
+                "file_path": r.file_path,
+                "file_title": r.file_title,
+                "start_line": r.start_line,
+                "end_line": r.end_line,
+            }
+            for r in episodic
+        ]
+    }
 
 
 @app.post("/index")

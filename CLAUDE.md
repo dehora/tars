@@ -43,7 +43,8 @@ Tars is a personal AI assistant with CLI, web, and (future) WhatsApp channels. R
 | Env var | Default | Purpose |
 |---------|---------|---------|
 | `TARS_MODEL` | `claude:sonnet` | Provider and model (`provider:model`) |
-| `TARS_MEMORY_DIR` | — | Path to obsidian vault |
+| `TARS_MEMORY_DIR` | — | Path to tars obsidian vault |
+| `TARS_NOTES_DIR` | — | Path to personal obsidian vault (daily notes) |
 | `TARS_MAX_TOKENS` | `1024` | Max tokens for Anthropic responses |
 | `ANTHROPIC_API_KEY` | — | Required for Claude provider |
 | `DEFAULT_LAT` / `DEFAULT_LON` | — | Weather location |

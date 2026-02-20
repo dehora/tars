@@ -13,6 +13,7 @@ from tars.cli import (
     _completer,
     _handle_brief,
     _handle_review,
+    _handle_sessions,
     _handle_slash_search,
     _handle_slash_tool,
     _handle_tidy,
@@ -122,6 +123,20 @@ class HandleReviewTests(unittest.TestCase):
         mock_print.assert_any_call("  no memory dir configured")
 
 
+class HandleNoteTests(unittest.TestCase):
+    def test_note_dispatches(self) -> None:
+        with mock.patch("tars.cli._print_tool") as m:
+            result = _handle_slash_tool("/note interesting idea")
+        self.assertTrue(result)
+        m.assert_called_once_with("note_daily", {"content": "interesting idea"})
+
+    def test_note_no_content(self) -> None:
+        with mock.patch("builtins.print") as m:
+            result = _handle_slash_tool("/note")
+        self.assertTrue(result)
+        m.assert_any_call("  usage: /note <text>")
+
+
 class HandleSlashToolTests(unittest.TestCase):
     def test_weather_dispatches(self) -> None:
         with mock.patch("tars.cli._print_tool") as m:
@@ -156,6 +171,60 @@ class HandleSlashToolTests(unittest.TestCase):
             result = _handle_slash_tool("/todoist upcoming abc")
         self.assertTrue(result)
         m.assert_any_call("  usage: /todoist upcoming [days]")
+
+
+class HandleSessionsTests(unittest.TestCase):
+    def test_sessions_lists(self) -> None:
+        from tars.sessions import SessionInfo
+        fake = [
+            SessionInfo(path=Path("/a.md"), date="2026-02-20 15:45", title="Weather talk", filename="2026-02-20T15-45-00"),
+        ]
+        with mock.patch("tars.cli.list_sessions", return_value=fake):
+            with mock.patch("builtins.print") as m:
+                result = _handle_sessions("/sessions")
+        self.assertTrue(result)
+        output = " ".join(str(c) for c in m.call_args_list)
+        self.assertIn("Weather talk", output)
+        self.assertIn("2026-02-20 15:45", output)
+
+    def test_sessions_empty(self) -> None:
+        with mock.patch("tars.cli.list_sessions", return_value=[]):
+            with mock.patch("builtins.print") as m:
+                result = _handle_sessions("/sessions")
+        self.assertTrue(result)
+        m.assert_any_call("  no sessions found")
+
+    def test_session_search_dispatches(self) -> None:
+        from tars.search import SearchResult
+        r = SearchResult(
+            content="weather chat", score=0.8, file_path="/s.md",
+            file_title="S", memory_type="episodic",
+            start_line=1, end_line=5, chunk_rowid=1,
+        )
+        non_episodic = SearchResult(
+            content="memory", score=0.9, file_path="/m.md",
+            file_title="M", memory_type="semantic",
+            start_line=1, end_line=3, chunk_rowid=2,
+        )
+        with mock.patch("tars.cli.search", return_value=[r, non_episodic]) as m:
+            with mock.patch("tars.cli._print_search_results") as pr:
+                result = _handle_sessions("/session weather")
+        self.assertTrue(result)
+        m.assert_called_once_with("weather", mode="hybrid", limit=10)
+        # Should only pass episodic results
+        passed_results = pr.call_args[0][0]
+        self.assertEqual(len(passed_results), 1)
+        self.assertEqual(passed_results[0].memory_type, "episodic")
+
+    def test_session_search_no_query(self) -> None:
+        with mock.patch("builtins.print") as m:
+            result = _handle_sessions("/session")
+        self.assertTrue(result)
+        m.assert_any_call("  usage: /session <query>")
+
+    def test_unrelated_returns_false(self) -> None:
+        result = _handle_sessions("/something")
+        self.assertFalse(result)
 
 
 class HandleSlashSearchTests(unittest.TestCase):

@@ -142,6 +142,7 @@ function parseToolCommand(text) {
   if (cmd === "/forecast") return {name: "weather_forecast", args: {}};
   if (cmd === "/memory") return {name: "memory_recall", args: {}};
   if (cmd === "/remember" && parts.length >= 3) return {name: "memory_remember", args: {section: parts[1], content: parts.slice(2).join(" ")}};
+  if (cmd === "/note" && parts.length >= 2) return {name: "note_daily", args: {content: parts.slice(1).join(" ")}};
   return null;
 }
 
@@ -154,6 +155,43 @@ async function sendMessage() {
     input.value = "";
     try { fetch("/conversations/" + convId, {method: "DELETE"}); } catch {}
     clearConversation();
+    return;
+  }
+
+  // /help — show available commands.
+  if (text === "/help") {
+    input.value = "";
+    addMsg("assistant", [
+      "**tools:**",
+      "`/todoist add <text> [--due D] [--project P] [--priority N]`",
+      "`/todoist today|upcoming [days]|complete <ref>`",
+      "`/weather` — current conditions",
+      "`/forecast` — today's hourly forecast",
+      "`/memory` — show persistent memory",
+      "`/remember <semantic|procedural> <text>`",
+      "`/note <text>` — append to today's daily note",
+      "**search:**",
+      "`/search <query>` — hybrid keyword + semantic",
+      "`/sgrep <query>` — keyword (FTS5/BM25)",
+      "`/svec <query>` — semantic (vector KNN)",
+      "**sessions:**",
+      "`/sessions` — list recent sessions",
+      "`/session <query>` — search session logs",
+      "**feedback:**",
+      "`/w [note]` — flag last response as wrong",
+      "`/r [note]` — flag last response as good",
+      "**daily:**",
+      "`/brief` — todoist + weather digest",
+      "`/clear` — reset conversation",
+      "`/help` — this help",
+    ].join("\n"));
+    return;
+  }
+
+  // /review and /tidy — CLI-only interactive commands.
+  if (text === "/review" || text === "/tidy") {
+    input.value = "";
+    addMsg("assistant", `\`${text}\` is only available in the CLI`);
     return;
   }
 
@@ -192,6 +230,74 @@ async function sendMessage() {
       addMsg("assistant", lines.join("\n\n"));
     } catch (e) {
       addMsg("error", "brief failed: " + e.message);
+    }
+    return;
+  }
+
+  // /sessions — list recent sessions.
+  if (text === "/sessions") {
+    input.value = "";
+    addMsg("user", text);
+    try {
+      const resp = await fetch("/sessions");
+      const data = await resp.json();
+      if (!data.sessions.length) {
+        addMsg("assistant", "no sessions found");
+      } else {
+        const lines = data.sessions.map(s => `\`${s.date}\`  ${s.title}`);
+        addMsg("assistant", lines.join("\n"));
+      }
+    } catch (e) {
+      addMsg("error", "sessions failed: " + e.message);
+    }
+    return;
+  }
+
+  // /session <query> — search session logs.
+  if (text.startsWith("/session ")) {
+    const query = text.slice(9).trim();
+    if (!query) { addMsg("assistant", "usage: /session <query>"); input.value = ""; return; }
+    input.value = "";
+    addMsg("user", text);
+    try {
+      const resp = await fetch("/sessions/search?q=" + encodeURIComponent(query));
+      const data = await resp.json();
+      if (!data.results.length) {
+        addMsg("assistant", "no session results");
+      } else {
+        const lines = data.results.map((r, i) =>
+          `**${i+1}.** [${r.score.toFixed(3)}] ${r.file_title}:${r.start_line}-${r.end_line}\n${r.content.slice(0, 200)}`
+        );
+        addMsg("assistant", lines.join("\n\n"));
+      }
+    } catch (e) {
+      addMsg("error", "session search failed: " + e.message);
+    }
+    return;
+  }
+
+  // /search, /sgrep, /svec — memory search commands.
+  const searchMatch = text.match(/^\/(search|sgrep|svec)(?:\s(.*))?$/);
+  if (searchMatch) {
+    const mode = {search: "hybrid", sgrep: "fts", svec: "vec"}[searchMatch[1]];
+    const query = (searchMatch[2] || "").trim();
+    if (!query) { addMsg("assistant", `usage: /${searchMatch[1]} <query>`); input.value = ""; return; }
+    input.value = "";
+    addMsg("user", text);
+    try {
+      const resp = await fetch(`/search?q=${encodeURIComponent(query)}&mode=${mode}`);
+      const data = await resp.json();
+      if (!resp.ok) { addMsg("error", data.detail || "search failed"); return; }
+      if (!data.results.length) {
+        addMsg("assistant", `no results (${mode})`);
+      } else {
+        const lines = data.results.map((r, i) =>
+          `**${i+1}.** [${r.score.toFixed(3)}] ${r.file_title || r.file_path}:${r.start_line}-${r.end_line} (${r.memory_type})\n${r.content.slice(0, 200)}`
+        );
+        addMsg("assistant", lines.join("\n\n"));
+      }
+    } catch (e) {
+      addMsg("error", "search failed: " + e.message);
     }
     return;
   }

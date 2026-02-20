@@ -387,3 +387,47 @@ uv run python -m unittest discover -s tests -v
 # Accept with y, check Procedural.md has new entries
 # Verify corrections.md is archived with timestamp
 ```
+
+## Plan: Bug fixes — tool leakage, web UI gaps
+
+### Context
+
+After shipping session browsing, routing confidence, web search, and daily notes in one session, testing revealed several issues. Some were code bugs, others were prompt/state problems. The interesting ones were all variations of "tools firing in contexts where they shouldn't."
+
+### Bug analysis
+
+**1. note_daily called during session save (CLI + web)**
+
+Root cause: `_summarize_session()` in `sessions.py` calls `chat()`, which passes the full tool list to the provider. The summarization prompt asks the model to summarize a conversation — but the model sees the tools and sometimes decides to act on conversation content instead of summarizing it. For example, if the conversation mentioned "jot this down", the model would call `note_daily` during summarization.
+
+The fix was structural, not prompt-based. Added `use_tools: bool = True` to `chat()`, `chat_anthropic()`, and `chat_ollama()`. When `False`, no tools are passed to the provider API — the model physically cannot call them. `_summarize_session()` now passes `use_tools=False`.
+
+Why not fix with a prompt? Because "please don't call tools" in a system prompt is a suggestion. Removing tools from the API call is a guarantee. Defence in depth: if a code path should never use tools, don't offer them.
+
+**2. /review calling todoist on web**
+
+Root cause: the web UI didn't handle `/review`. Unrecognised commands fell through to the chat endpoint, where the model received "/review" as a user message. The model interpreted this as a request and called todoist. Same issue for `/tidy`.
+
+Fix: intercept `/review` and `/tidy` in the web UI JS before they reach the chat endpoint. These are interactive CLI commands (they need `input()` for approval), so the web UI shows "CLI only" instead.
+
+**3. /help missing from web**
+
+Straightforward omission — `/help` was implemented in the CLI REPL but never added to the web UI. Added a handler that renders the full command list as markdown, matching CLI parity.
+
+**4. Web UI doesn't know its own capabilities**
+
+The model's system prompt describes tools (todoist, weather, memory, notes) but not slash commands. Users typing "what can you do?" get tool descriptions but not `/search`, `/sessions`, etc. The `/help` command fixes discoverability. The system prompt intentionally doesn't list slash commands because they're client-side — the model doesn't need to know about them.
+
+### Key insight
+
+The tool leakage bug (#1) is a class of problem worth watching for: any code path that calls `chat()` for an internal purpose (summarization, review, tidy) risks the model calling tools as a side effect. The `use_tools=False` parameter makes this opt-in rather than default. The existing `_handle_review()` and `_handle_tidy()` in `cli.py` also call `chat()` but those are intentional model interactions where tool calls would be harmless (the model is analysing text, not acting on user requests). If they ever cause problems, same fix applies.
+
+### Changes
+
+| File | Change |
+|------|--------|
+| `tars/core.py` | Added `use_tools` param to `chat()`, `chat_anthropic()`, `chat_ollama()` |
+| `tars/sessions.py` | `_summarize_session()` passes `use_tools=False` |
+| `tars/static/index.html` | Added `/help` handler, `/review` and `/tidy` interception |
+| `tests/test_core.py` | Updated `test_chat_passes_search_context` for new kwarg |
+| `tests/test_sessions.py` | Updated `fake_chat` signatures with `**kwargs` |

@@ -216,6 +216,42 @@ class ChatEndpointTests(unittest.TestCase):
         self.assertEqual(resp.status_code, 200)
         self.assertEqual(resp.json()["results"], [])
 
+    def test_sessions_endpoint(self) -> None:
+        from tars.sessions import SessionInfo
+        fake = [
+            SessionInfo(path=None, date="2026-02-20 15:45", title="Weather chat", filename="2026-02-20T15-45-00"),
+        ]
+        with mock.patch.object(api, "list_sessions", return_value=fake):
+            resp = self.client.get("/sessions")
+        self.assertEqual(resp.status_code, 200)
+        data = resp.json()
+        self.assertEqual(len(data["sessions"]), 1)
+        self.assertEqual(data["sessions"][0]["title"], "Weather chat")
+        self.assertEqual(data["sessions"][0]["date"], "2026-02-20 15:45")
+
+    def test_session_search_endpoint(self) -> None:
+        episodic = SearchResult(
+            content="session content", score=0.8, file_path="/s.md",
+            file_title="S", memory_type="episodic",
+            start_line=1, end_line=5, chunk_rowid=1,
+        )
+        semantic = SearchResult(
+            content="memory", score=0.9, file_path="/m.md",
+            file_title="M", memory_type="semantic",
+            start_line=1, end_line=3, chunk_rowid=2,
+        )
+        with mock.patch.object(api, "memory_search", return_value=[episodic, semantic]):
+            resp = self.client.get("/sessions/search?q=weather")
+        self.assertEqual(resp.status_code, 200)
+        data = resp.json()
+        # Should only return episodic results
+        self.assertEqual(len(data["results"]), 1)
+        self.assertEqual(data["results"][0]["content"], "session content")
+
+    def test_session_search_empty_query(self) -> None:
+        resp = self.client.get("/sessions/search?q=")
+        self.assertEqual(resp.status_code, 400)
+
     def test_brief_endpoint(self) -> None:
         def fake_run_tool(name, args, *, quiet=False):
             if name == "todoist_today":

@@ -22,7 +22,7 @@ class SessionLoggingTests(unittest.TestCase):
             {"role": "tool", "content": {"tool": "x", "args": [1, 2]}},
         ]
 
-        def fake_chat(prompt_messages, provider, model):
+        def fake_chat(prompt_messages, provider, model, **kwargs):
             return prompt_messages[0]["content"]
 
         with mock.patch.object(sessions, "chat", side_effect=fake_chat):
@@ -36,7 +36,7 @@ class SessionLoggingTests(unittest.TestCase):
     def test_summarize_session_escapes_previous_summary(self) -> None:
         messages = [{"role": "user", "content": "hi"}]
 
-        def fake_chat(prompt_messages, provider, model):
+        def fake_chat(prompt_messages, provider, model, **kwargs):
             return prompt_messages[0]["content"]
 
         with mock.patch.object(sessions, "chat", side_effect=fake_chat):
@@ -64,7 +64,7 @@ class SessionLoggingTests(unittest.TestCase):
             {"role": "assistant", "content": circular},
         ]
 
-        def fake_chat(prompt_messages, provider, model):
+        def fake_chat(prompt_messages, provider, model, **kwargs):
             return prompt_messages[0]["content"]
 
         with mock.patch.object(sessions, "chat", side_effect=fake_chat):
@@ -201,6 +201,65 @@ class SessionLoggingTests(unittest.TestCase):
         self.assertGreaterEqual(len(compaction_calls), 2)
         self.assertEqual(compaction_calls[0].args[1], "s1")
         self.assertEqual(compaction_calls[1].args[1], "s1\ns2")
+
+
+class ListSessionsTests(unittest.TestCase):
+    def test_list_sessions_returns_recent(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            sessions_dir = Path(tmpdir) / "sessions"
+            sessions_dir.mkdir()
+            (sessions_dir / "2026-01-01T10-00-00.md").write_text(
+                "# Session\n\n**Topics Discussed:**\n- First topic\n"
+            )
+            (sessions_dir / "2026-01-02T10-00-00.md").write_text(
+                "# Session\n\n**Topics Discussed:**\n- Second topic\n"
+            )
+            (sessions_dir / "2026-01-03T10-00-00.md").write_text(
+                "# Session\n\n**Topics Discussed:**\n- Third topic\n"
+            )
+            with mock.patch.dict("os.environ", {"TARS_MEMORY_DIR": tmpdir}):
+                result = sessions.list_sessions(limit=2)
+            self.assertEqual(len(result), 2)
+            # Newest first
+            self.assertEqual(result[0].filename, "2026-01-03T10-00-00")
+            self.assertEqual(result[1].filename, "2026-01-02T10-00-00")
+            self.assertEqual(result[0].title, "Third topic")
+            self.assertIn("2026-01-03", result[0].date)
+
+    def test_list_sessions_empty(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            sessions_dir = Path(tmpdir) / "sessions"
+            sessions_dir.mkdir()
+            with mock.patch.dict("os.environ", {"TARS_MEMORY_DIR": tmpdir}):
+                result = sessions.list_sessions()
+            self.assertEqual(result, [])
+
+    def test_list_sessions_no_memory_dir(self) -> None:
+        with mock.patch.dict("os.environ", {}, clear=True):
+            with mock.patch.object(sessions, "_memory_dir", return_value=None):
+                result = sessions.list_sessions()
+        self.assertEqual(result, [])
+
+    def test_extract_title_topics_discussed(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            p = Path(tmpdir) / "test.md"
+            p.write_text("# Session\n\n**Topics Discussed:**\n- Weather and tasks\n")
+            title = sessions._extract_title(p)
+        self.assertEqual(title, "Weather and tasks")
+
+    def test_extract_title_fallback(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            p = Path(tmpdir) / "test.md"
+            p.write_text("# Session\n\nJust a plain summary line here.\n")
+            title = sessions._extract_title(p)
+        self.assertEqual(title, "Just a plain summary line here.")
+
+    def test_extract_title_topic_singular(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            p = Path(tmpdir) / "test.md"
+            p.write_text("# Session\n\n**Topic Discussed:**\n- Dog info lookup\n")
+            title = sessions._extract_title(p)
+        self.assertEqual(title, "Dog info lookup")
 
 
 class RecentSessionsTests(unittest.TestCase):

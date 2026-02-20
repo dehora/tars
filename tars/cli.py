@@ -23,7 +23,7 @@ from tars.memory import (
     save_reward,
 )
 from tars.search import search
-from tars.sessions import _session_path
+from tars.sessions import _session_path, list_sessions
 from tars.tools import run_tool
 
 load_dotenv()
@@ -55,6 +55,35 @@ def _print_search_results(results, mode: str) -> None:
             print(f"     {line}")
         if i < len(results):
             print()
+
+
+def _handle_sessions(user_input: str) -> bool:
+    """Handle /sessions and /session commands. Returns True if handled."""
+    stripped = user_input.strip()
+    if stripped == "/sessions":
+        sessions = list_sessions(limit=10)
+        if not sessions:
+            print("  no sessions found")
+        else:
+            for s in sessions:
+                print(f"  {s.date}  {s.title}")
+        return True
+    if stripped.startswith("/session "):
+        query = stripped[9:].strip()
+        if not query:
+            print("  usage: /session <query>")
+            return True
+        try:
+            results = search(query, mode="hybrid", limit=10)
+            episodic = [r for r in results if r.memory_type == "episodic"]
+            _print_search_results(episodic, "episodic")
+        except Exception as e:
+            print(f"  [error] search failed: {e}", file=sys.stderr)
+        return True
+    if stripped == "/session":
+        print("  usage: /session <query>")
+        return True
+    return False
 
 
 def _handle_slash_search(user_input: str) -> bool:
@@ -350,12 +379,21 @@ def _handle_slash_tool(user_input: str) -> bool:
         _print_tool("memory_remember", {"section": section, "content": content})
         return True
 
+    if cmd == "/note":
+        if len(parts) < 2:
+            print("  usage: /note <text>")
+            return True
+        content = " ".join(parts[1:])
+        _print_tool("note_daily", {"content": content})
+        return True
+
     return False
 
 
 _SLASH_COMMANDS = [
-    "/todoist ", "/weather", "/forecast", "/memory", "/remember ",
+    "/todoist ", "/weather", "/forecast", "/memory", "/remember ", "/note ",
     "/search ", "/sgrep ", "/svec ",
+    "/sessions", "/session ",
     "/w ", "/r ", "/review", "/tidy", "/brief",
     "/help", "/clear",
 ]
@@ -447,10 +485,14 @@ def repl(provider: str, model: str):
                 print("    /forecast        today's hourly forecast")
                 print("    /memory          show persistent memory")
                 print("    /remember <semantic|procedural> <text>")
+                print("    /note <text>         append to today's daily note")
                 print("  search:")
                 print("    /search <query>  hybrid keyword + semantic")
                 print("    /sgrep <query>   keyword (FTS5/BM25)")
                 print("    /svec <query>    semantic (vector KNN)")
+                print("  sessions:")
+                print("    /sessions        list recent sessions")
+                print("    /session <query> search session logs")
                 print("  feedback:")
                 print("    /w [note]        flag last response as wrong")
                 print("    /r [note]        flag last response as good")
@@ -485,6 +527,8 @@ def repl(provider: str, model: str):
             if user_input.strip() == "/brief":
                 _handle_brief()
                 continue
+            if _handle_sessions(user_input):
+                continue
             if _handle_slash_tool(user_input):
                 continue
             if _handle_slash_search(user_input):
@@ -500,6 +544,7 @@ def repl(provider: str, model: str):
                     got_output = True
                 sys.stdout.write(delta)
                 sys.stdout.flush()
+                time.sleep(0.016)
             if got_output:
                 print()  # final newline
             elif spinner.spinning:
@@ -509,7 +554,10 @@ def repl(provider: str, model: str):
             readline.write_history_file(history_file)
         except OSError:
             pass
-        save_session(conv, session_file)
+        try:
+            save_session(conv, session_file)
+        except KeyboardInterrupt:
+            pass
 
 
 def _run_index(embedding_model: str) -> None:

@@ -3,6 +3,7 @@ import subprocess
 import sys
 
 from tars.memory import _run_memory_tool
+from tars.notes import _run_note_tool
 from tars.search import _run_search_tool
 from tars.weather import _run_weather_tool
 
@@ -141,6 +142,17 @@ ANTHROPIC_TOOLS = [
             "required": ["query"],
         },
     },
+    {
+        "name": "note_daily",
+        "description": "Append a note to today's Obsidian daily note. Use when the user wants to jot something down or save a thought.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "content": {"type": "string", "description": "The note content to append"},
+            },
+            "required": ["content"],
+        },
+    },
 ]
 
 OLLAMA_TOOLS = [
@@ -166,6 +178,8 @@ def run_tool(name: str, args: dict, *, quiet: bool = False) -> str:
             return _run_search_tool(name, args)
         if name in ("weather_now", "weather_forecast"):
             return _run_weather_tool(name, args)
+        if name == "note_daily":
+            return _run_note_tool(name, args)
         if name == "todoist_add_task":
             cmd = ["td", "task", "add", args["content"]]
             if due := args.get("due"):

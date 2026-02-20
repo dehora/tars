@@ -45,7 +45,16 @@ class ChatRoutingTests(unittest.TestCase):
     def test_chat_passes_search_context(self) -> None:
         with mock.patch.object(core, "chat_ollama", return_value="ok") as m:
             core.chat([], "ollama", "m", search_context="ctx")
-        m.assert_called_once_with([], "m", search_context="ctx")
+        m.assert_called_once_with([], "m", search_context="ctx", use_tools=True)
+
+
+class SystemPromptContentTests(unittest.TestCase):
+    def test_prompt_contains_routing_confidence(self) -> None:
+        self.assertIn("ambiguous", core.SYSTEM_PROMPT)
+        self.assertIn("clarifying question", core.SYSTEM_PROMPT)
+
+    def test_prompt_no_blanket_must_call(self) -> None:
+        self.assertNotIn("You MUST call", core.SYSTEM_PROMPT)
 
 
 class BuildSystemPromptTests(unittest.TestCase):

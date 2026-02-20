@@ -146,6 +146,7 @@ _FORMATTERS = {
     "weather_now": format_weather_now,
     "weather_forecast": format_weather_forecast,
     "memory_recall": format_memory_recall,
+    "note_daily": format_todoist_action,
 }
 
 

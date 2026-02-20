@@ -20,8 +20,6 @@ Runs todoist_today + weather_now + weather_forecast in parallel, formats into a 
 
 Why: compound command saves time, natural morning routine. Also a template for other compound commands.
 
-## Backlog
-
 ### 2. Session browsing (`/sessions`, `/session <query>`)
 
 Session logs exist but there's no way to browse them. `/sessions` shows recent session summaries (date + topic line), `/session <query>` searches them. Makes episodic memory visible — "what did we talk about on Tuesday?"
@@ -40,17 +38,19 @@ The `GET /search` endpoint exists but the web UI doesn't use it. Add a `/search`
 
 Why: if using the web UI, not having search is a gap.
 
-### 7. Context-aware tool suggestions
-
-A lightweight intent pre-filter (few-shot prompt or regex patterns) before the main model to improve tool routing. When Memory.md says "I use Todoist for todos" and the user says "remind me to buy eggs", route confidently to todoist.
-
-Why: better routing = fewer `/w` corrections = better Procedural.md rules = better routing. Virtuous cycle.
-
 ### 8. Obsidian daily note integration (`/note`)
 
 Appends to today's Obsidian daily note (or creates it). "Note: interesting idea about X" → appends to `2026-02-20.md` in the vault. Bridges tars and existing note-taking.
 
 Why: tars writing to daily notes means AI conversations feed back into PKM without manual effort.
+
+## Backlog
+
+### 7. Context-aware tool suggestions
+
+A lightweight intent pre-filter (few-shot prompt or regex patterns) before the main model to improve tool routing. When Memory.md says "I use Todoist for todos" and the user says "remind me to buy eggs", route confidently to todoist.
+
+Why: better routing = fewer `/w` corrections = better Procedural.md rules = better routing. Virtuous cycle.
 
 ### 9. Scheduled / recurring commands
 

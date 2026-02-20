@@ -1,4 +1,6 @@
 import json
+import re
+from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 
@@ -62,7 +64,64 @@ def _summarize_session(
         )
     else:
         prompt = f"{SUMMARIZE_PROMPT}\n\n<conversation>\n{convo_text}\n</conversation>"
-    return chat([{"role": "user", "content": prompt}], provider, model)
+    return chat([{"role": "user", "content": prompt}], provider, model, use_tools=False)
+
+
+@dataclass
+class SessionInfo:
+    path: Path
+    date: str       # "2026-02-19 23:10"
+    title: str      # extracted topic line
+    filename: str   # stem for reference
+
+
+def _extract_title(path: Path) -> str:
+    """Extract a short topic from a session file."""
+    try:
+        text = path.read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        return path.stem
+    lines = text.splitlines()
+    # Look for **Topics Discussed:** or **Discussion Topics:** or **Topic**:
+    for i, line in enumerate(lines):
+        if re.match(r"\*\*(Topics?\s+Discussed|Discussion\s+Topics)\s*:?\*\*", line, re.IGNORECASE):
+            # Take the next non-blank line, strip "- " prefix
+            for subsequent in lines[i + 1 :]:
+                stripped = subsequent.strip()
+                if stripped:
+                    if stripped.startswith("- "):
+                        stripped = stripped[2:]
+                    return stripped[:80]
+    # Fallback: first non-heading, non-blank line, truncated
+    for line in lines:
+        stripped = line.strip()
+        if stripped and not stripped.startswith("#") and not stripped.startswith("**Session"):
+            if stripped.startswith("- "):
+                stripped = stripped[2:]
+            return stripped[:80]
+    return path.stem
+
+
+def list_sessions(*, limit: int = 10) -> list[SessionInfo]:
+    """List recent sessions with date and topic, newest first."""
+    d = _memory_dir()
+    if d is None:
+        return []
+    sessions_dir = d / "sessions"
+    if not sessions_dir.is_dir():
+        return []
+    files = sorted(sessions_dir.glob("*.md"), key=lambda p: p.name, reverse=True)
+    result = []
+    for f in files[:limit]:
+        # Parse date from filename like 2026-02-18T22-38-51
+        parts = f.stem.split("T")
+        if len(parts) == 2:
+            date_str = f"{parts[0]} {parts[1][:5].replace('-', ':')}"
+        else:
+            date_str = f.stem
+        title = _extract_title(f)
+        result.append(SessionInfo(path=f, date=date_str, title=title, filename=f.stem))
+    return result
 
 
 def _save_session(path: Path, summary: str, *, is_compaction: bool = False) -> None:
