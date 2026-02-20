@@ -177,6 +177,25 @@ async function sendMessage() {
     return;
   }
 
+  // /brief — compound command, uses dedicated endpoint.
+  if (text === "/brief") {
+    input.value = "";
+    addMsg("user", text);
+    try {
+      const resp = await fetch("/brief");
+      const data = await resp.json();
+      const lines = [];
+      for (const [name, content] of Object.entries(data.sections)) {
+        const label = name.replace("todoist_today", "tasks").replace("weather_now", "weather").replace("weather_forecast", "forecast");
+        lines.push(`**[${label}]**\n${content}`);
+      }
+      addMsg("assistant", lines.join("\n\n"));
+    } catch (e) {
+      addMsg("error", "brief failed: " + e.message);
+    }
+    return;
+  }
+
   // Direct tool commands — bypass the model entirely.
   const toolCmd = parseToolCommand(text);
   if (toolCmd) {

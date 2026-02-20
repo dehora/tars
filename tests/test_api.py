@@ -216,6 +216,39 @@ class ChatEndpointTests(unittest.TestCase):
         self.assertEqual(resp.status_code, 200)
         self.assertEqual(resp.json()["results"], [])
 
+    def test_brief_endpoint(self) -> None:
+        def fake_run_tool(name, args, *, quiet=False):
+            if name == "todoist_today":
+                return '{"results": [{"content": "buy eggs", "priority": 1, "due": {"string": "today"}, "duration": null}], "nextCursor": null}'
+            if name == "weather_now":
+                return '{"current": {"temperature_c": 10, "conditions": "Clear", "wind_speed_kmh": 5, "precipitation_mm": 0}}'
+            if name == "weather_forecast":
+                return '{"hourly": []}'
+            return '{}'
+
+        with mock.patch.object(api, "run_tool", side_effect=fake_run_tool):
+            resp = self.client.get("/brief")
+        self.assertEqual(resp.status_code, 200)
+        data = resp.json()
+        self.assertIn("todoist_today", data["sections"])
+        self.assertIn("weather_now", data["sections"])
+        self.assertIn("weather_forecast", data["sections"])
+
+    def test_brief_endpoint_handles_failure(self) -> None:
+        def fake_run_tool(name, args, *, quiet=False):
+            if name == "todoist_today":
+                raise FileNotFoundError("td not found")
+            if name == "weather_now":
+                return '{"current": {"temperature_c": 10, "conditions": "Clear", "wind_speed_kmh": 5, "precipitation_mm": 0}}'
+            return '{"hourly": []}'
+
+        with mock.patch.object(api, "run_tool", side_effect=fake_run_tool):
+            resp = self.client.get("/brief")
+        self.assertEqual(resp.status_code, 200)
+        data = resp.json()
+        self.assertIn("unavailable", data["sections"]["todoist_today"])
+        self.assertNotIn("unavailable", data["sections"]["weather_now"])
+
 
 if __name__ == "__main__":
     unittest.main()

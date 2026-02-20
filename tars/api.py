@@ -191,6 +191,18 @@ def search_endpoint(q: str = "", mode: str = "hybrid", limit: int = 10) -> dict:
     }
 
 
+@app.get("/brief")
+def brief_endpoint() -> dict:
+    sections = {}
+    for name in ("todoist_today", "weather_now", "weather_forecast"):
+        try:
+            raw = run_tool(name, {}, quiet=True)
+            sections[name] = format_tool_result(name, raw)
+        except Exception as e:
+            sections[name] = f"unavailable: {e}"
+    return {"sections": sections}
+
+
 @app.post("/index")
 def index_endpoint() -> dict:
     stats = build_index()

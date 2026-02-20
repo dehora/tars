@@ -57,6 +57,19 @@ def _load_recent_sessions() -> str:
 
 
 
+def load_memory_files() -> dict[str, str]:
+    """Load all memory files as {section: content}."""
+    md = _memory_dir()
+    if not md:
+        return {}
+    result = {}
+    for section, filename in _MEMORY_FILES.items():
+        p = md / filename
+        if p.exists():
+            result[section] = p.read_text(encoding="utf-8", errors="replace")
+    return result
+
+
 def _save_feedback(filename: str, header: str, user_msg: str, assistant_msg: str, note: str = "") -> str:
     """Append a flagged exchange to a feedback file in the memory dir."""
     md = _memory_dir()
@@ -181,5 +194,8 @@ def _run_memory_tool(name: str, args: dict) -> str:
     if p is None:
         return json.dumps({"error": "Memory not configured (TARS_MEMORY_DIR not set)"})
     content = args["content"].strip()
+    existing = p.read_text(encoding="utf-8", errors="replace") if p.exists() else ""
+    if f"- {content}" in existing:
+        return json.dumps({"ok": True, "section": section, "content": content, "note": "already exists"})
     _append_to_file(p, content)
     return json.dumps({"ok": True, "section": section, "content": content})

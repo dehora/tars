@@ -11,9 +11,11 @@ sys.modules.setdefault("dotenv", mock.Mock(load_dotenv=lambda: None))
 
 from tars.cli import (
     _completer,
+    _handle_brief,
     _handle_review,
     _handle_slash_search,
     _handle_slash_tool,
+    _handle_tidy,
     _parse_todoist_add,
 )
 
@@ -197,6 +199,75 @@ class CompleterTests(unittest.TestCase):
         with mock.patch("readline.get_line_buffer", return_value="/weather"):
             result = _completer("/weather", 99)
         self.assertIsNone(result)
+
+
+class HandleTidyTests(unittest.TestCase):
+    def test_nothing_to_tidy(self) -> None:
+        with mock.patch("tars.cli.load_memory_files", return_value={}):
+            with mock.patch("builtins.print") as m:
+                _handle_tidy("ollama", "test-model")
+        m.assert_any_call("  nothing to tidy")
+
+    def test_tidy_applies_removals(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            p = Path(tmpdir) / "Memory.md"
+            p.write_text("# Memory\n- real fact\n- lorem ipsum\n")
+            files = {"semantic": p.read_text()}
+            model_reply = "- [semantic] lorem ipsum\n"
+            with mock.patch("tars.cli.load_memory_files", return_value=files):
+                with mock.patch("tars.cli.chat", return_value=model_reply):
+                    with mock.patch("builtins.input", return_value="y"):
+                        with mock.patch("tars.cli._memory_file", return_value=p):
+                            with mock.patch("builtins.print"):
+                                _handle_tidy("ollama", "test-model")
+            text = p.read_text()
+            self.assertIn("- real fact", text)
+            self.assertNotIn("- lorem ipsum", text)
+
+    def test_tidy_declined(self) -> None:
+        files = {"semantic": "- fact\n- junk\n"}
+        model_reply = "- [semantic] junk\n"
+        with mock.patch("tars.cli.load_memory_files", return_value=files):
+            with mock.patch("tars.cli.chat", return_value=model_reply):
+                with mock.patch("builtins.input", return_value="n"):
+                    with mock.patch("builtins.print") as m:
+                        _handle_tidy("ollama", "test-model")
+        m.assert_any_call("  skipped")
+
+
+class HandleBriefTests(unittest.TestCase):
+    def test_brief_formats_all_sections(self) -> None:
+        def fake_run_tool(name, args, *, quiet=False):
+            if name == "todoist_today":
+                return '{"results": []}'
+            if name == "weather_now":
+                return '{"current": {"temperature_c": 10, "conditions": "Clear", "wind_speed_kmh": 5, "precipitation_mm": 0}}'
+            if name == "weather_forecast":
+                return '{"hourly": []}'
+            return '{}'
+
+        with mock.patch("tars.cli.run_tool", side_effect=fake_run_tool):
+            with mock.patch("builtins.print") as m:
+                _handle_brief()
+        output = " ".join(str(c) for c in m.call_args_list)
+        self.assertIn("[tasks]", output)
+        self.assertIn("[weather]", output)
+        self.assertIn("[forecast]", output)
+
+    def test_brief_handles_tool_failure(self) -> None:
+        def fake_run_tool(name, args, *, quiet=False):
+            if name == "todoist_today":
+                raise FileNotFoundError("td not found")
+            if name == "weather_now":
+                return '{"current": {"temperature_c": 10, "conditions": "Clear", "wind_speed_kmh": 5, "precipitation_mm": 0}}'
+            return '{"hourly": []}'
+
+        with mock.patch("tars.cli.run_tool", side_effect=fake_run_tool):
+            with mock.patch("builtins.print") as m:
+                _handle_brief()
+        output = " ".join(str(c) for c in m.call_args_list)
+        self.assertIn("unavailable", output)
+        self.assertIn("[weather]", output)
 
 
 if __name__ == "__main__":

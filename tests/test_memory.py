@@ -202,6 +202,47 @@ class MemoryToolTests(unittest.TestCase):
                 # Should not raise
                 memory.archive_feedback()
 
+    def test_memory_remember_skips_duplicate(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            p = Path(tmpdir) / "Memory.md"
+            p.write_text("# Memory\n- existing fact\n")
+            with mock.patch.dict(os.environ, {"TARS_MEMORY_DIR": tmpdir}, clear=True):
+                result = json.loads(
+                    memory._run_memory_tool("memory_remember", {"section": "semantic", "content": "existing fact"})
+                )
+            self.assertTrue(result.get("ok"))
+            self.assertEqual(result.get("note"), "already exists")
+            # File should be unchanged
+            text = p.read_text()
+            self.assertEqual(text.count("- existing fact"), 1)
+
+    def test_memory_remember_allows_new(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            p = Path(tmpdir) / "Memory.md"
+            p.write_text("# Memory\n- old fact\n")
+            with mock.patch.dict(os.environ, {"TARS_MEMORY_DIR": tmpdir}, clear=True):
+                result = json.loads(
+                    memory._run_memory_tool("memory_remember", {"section": "semantic", "content": "new fact"})
+                )
+            self.assertTrue(result.get("ok"))
+            self.assertNotIn("note", result)
+            text = p.read_text()
+            self.assertIn("- new fact", text)
+
+    def test_load_memory_files(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            (Path(tmpdir) / "Memory.md").write_text("semantic data")
+            (Path(tmpdir) / "Procedural.md").write_text("procedural data")
+            with mock.patch.dict(os.environ, {"TARS_MEMORY_DIR": tmpdir}, clear=True):
+                files = memory.load_memory_files()
+        self.assertEqual(files["semantic"], "semantic data")
+        self.assertEqual(files["procedural"], "procedural data")
+
+    def test_load_memory_files_empty(self) -> None:
+        with mock.patch.dict(os.environ, {}, clear=True):
+            files = memory.load_memory_files()
+        self.assertEqual(files, {})
+
     def test_ollama_tools_include_memory(self) -> None:
         tool_names = {
             tool["function"]["name"]
