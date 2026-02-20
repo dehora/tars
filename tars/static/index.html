@@ -8,9 +8,24 @@
   * { box-sizing: border-box; margin: 0; padding: 0; }
   body { font-family: system-ui, -apple-system, sans-serif; background: #1a1a1a; color: #e0e0e0; height: 100dvh; display: flex; flex-direction: column; }
   #messages { flex: 1; overflow-y: auto; padding: 1rem; display: flex; flex-direction: column; gap: 0.5rem; }
-  .msg { max-width: 80%; padding: 0.5rem 0.75rem; border-radius: 0.5rem; line-height: 1.4; white-space: pre-wrap; word-wrap: break-word; }
-  .msg.user { align-self: flex-end; background: #2563eb; color: #fff; }
-  .msg.assistant { align-self: flex-start; background: #2a2a2a; }
+  .msg { max-width: 80%; padding: 0.5rem 0.75rem; border-radius: 0.5rem; line-height: 1.4; word-wrap: break-word; }
+  .msg.user { white-space: pre-wrap; align-self: flex-end; background: #2563eb; color: #fff; }
+  .msg.assistant { align-self: flex-start; background: #2a2a2a; overflow-wrap: break-word; }
+  /* Markdown inside assistant messages */
+  .msg.assistant p { margin: 0.4em 0; }
+  .msg.assistant p:first-child { margin-top: 0; }
+  .msg.assistant p:last-child { margin-bottom: 0; }
+  .msg.assistant pre { background: #1a1a1a; padding: 0.5rem; border-radius: 0.375rem; overflow-x: auto; margin: 0.4em 0; }
+  .msg.assistant code { font-family: ui-monospace, "SF Mono", Menlo, monospace; font-size: 0.9em; }
+  .msg.assistant :not(pre) > code { background: #1a1a1a; padding: 0.1em 0.3em; border-radius: 0.25rem; }
+  .msg.assistant ul, .msg.assistant ol { margin: 0.4em 0; padding-left: 1.5em; }
+  .msg.assistant li { margin: 0.2em 0; }
+  .msg.assistant blockquote { border-left: 3px solid #555; padding-left: 0.75rem; margin: 0.4em 0; color: #aaa; }
+  .msg.assistant table { border-collapse: collapse; margin: 0.4em 0; }
+  .msg.assistant th, .msg.assistant td { border: 1px solid #444; padding: 0.3em 0.6em; }
+  .msg.assistant th { background: #333; }
+  .msg.assistant h1, .msg.assistant h2, .msg.assistant h3 { margin: 0.5em 0 0.3em; }
+  .msg.assistant a { color: #60a5fa; }
   .msg.error { align-self: flex-start; background: #7f1d1d; }
   .msg.thinking { align-self: flex-start; background: #2a2a2a; color: #888; }
   @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.4; } }
@@ -28,7 +43,11 @@
   <input id="input" type="text" placeholder="message tars..." autocomplete="off">
   <button id="send">Send</button>
 </div>
+<script src="https://cdn.jsdelivr.net/npm/marked@15/marked.min.js"></script>
 <script>
+// Configure marked for GitHub-Flavored Markdown.
+marked.use({gfm: true, breaks: true});
+
 const messages = document.getElementById("messages");
 const input = document.getElementById("input");
 const send = document.getElementById("send");
@@ -76,7 +95,12 @@ let history = loadHistory();
 function addMsg(role, text) {
   const div = document.createElement("div");
   div.className = "msg " + role;
-  div.textContent = text;
+  // Render assistant messages as GFM markdown; everything else as plain text.
+  if (role === "assistant") {
+    div.innerHTML = marked.parse(text);
+  } else {
+    div.textContent = text;
+  }
   messages.appendChild(div);
   messages.scrollTop = messages.scrollHeight;
   return div;
@@ -123,6 +147,7 @@ async function sendMessage() {
     const div = addMsg("assistant", "");
     div.style.display = "none";
     let firstToken = true;
+    let rawText = "";  // accumulate raw markdown source
 
     const reader = resp.body.getReader();
     const decoder = new TextDecoder();
@@ -144,15 +169,16 @@ async function sendMessage() {
             div.style.display = "";
             firstToken = false;
           }
-          div.textContent += data.delta;
+          rawText += data.delta;
+          div.innerHTML = marked.parse(rawText);
           messages.scrollTop = messages.scrollHeight;
         }
       }
     }
 
-    // Save the complete assistant reply to history.
-    if (div.textContent) {
-      history.push({role: "assistant", text: div.textContent});
+    // Save the raw markdown source so history restores render correctly.
+    if (rawText) {
+      history.push({role: "assistant", text: rawText});
       saveHistory(history);
     }
   } catch (e) {
