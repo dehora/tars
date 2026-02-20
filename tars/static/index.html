@@ -32,7 +32,46 @@
 const messages = document.getElementById("messages");
 const input = document.getElementById("input");
 const send = document.getElementById("send");
-const convId = "web-" + Math.random().toString(36).slice(2, 10);
+
+// Persist conversation ID in localStorage so the same server-side
+// conversation is resumed after a page reload.
+const STORAGE_KEY = "tars_conversation";
+let convId = localStorage.getItem("tars_convId");
+if (!convId) {
+  convId = "web-" + Math.random().toString(36).slice(2, 10);
+  localStorage.setItem("tars_convId", convId);
+}
+
+// --- localStorage history ---
+// Store as a JSON array of {role, text} objects. Capped to avoid
+// localStorage bloat (5MB limit shared with the whole origin).
+const MAX_HISTORY = 200;
+
+function loadHistory() {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    return raw ? JSON.parse(raw) : [];
+  } catch { return []; }
+}
+
+function saveHistory(history) {
+  try {
+    // Keep only the most recent messages if we're over the cap.
+    const trimmed = history.slice(-MAX_HISTORY);
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(trimmed));
+  } catch { /* localStorage full or unavailable — ignore */ }
+}
+
+function clearConversation() {
+  localStorage.removeItem(STORAGE_KEY);
+  localStorage.removeItem("tars_convId");
+  convId = "web-" + Math.random().toString(36).slice(2, 10);
+  localStorage.setItem("tars_convId", convId);
+  messages.innerHTML = "";
+  history = [];
+}
+
+let history = loadHistory();
 
 function addMsg(role, text) {
   const div = document.createElement("div");
@@ -43,17 +82,31 @@ function addMsg(role, text) {
   return div;
 }
 
+// Restore previous messages on page load.
+for (const entry of history) {
+  addMsg(entry.role, entry.text);
+}
+
 async function sendMessage() {
   const text = input.value.trim();
   if (!text) return;
+
+  // /clear command — reset conversation locally and on server.
+  if (text === "/clear") {
+    input.value = "";
+    try { fetch("/conversations/" + convId, {method: "DELETE"}); } catch {}
+    clearConversation();
+    return;
+  }
+
   input.value = "";
   addMsg("user", text);
+  history.push({role: "user", text});
+  saveHistory(history);
   send.disabled = true;
   input.disabled = true;
 
   try {
-    // POST to the streaming endpoint. The server returns Server-Sent Events
-    // (SSE) — a text stream where each line is "data: {json}\n\n".
     const resp = await fetch("/chat/stream", {
       method: "POST",
       headers: {"Content-Type": "application/json"},
@@ -66,17 +119,11 @@ async function sendMessage() {
       return;
     }
 
-    // Show a thinking indicator while waiting for the first token.
-    // This covers the delay from tool execution and model warmup.
     const thinking = addMsg("thinking", "thinking...");
-
-    // Create an empty assistant message div that we'll append tokens to.
     const div = addMsg("assistant", "");
     div.style.display = "none";
     let firstToken = true;
 
-    // Read the response body as a stream. The browser gives us chunks of
-    // bytes — we decode them to text and parse the SSE "data:" lines.
     const reader = resp.body.getReader();
     const decoder = new TextDecoder();
     let buffer = "";
@@ -84,22 +131,13 @@ async function sendMessage() {
     while (true) {
       const {done, value} = await reader.read();
       if (done) break;
-
-      // Decode the chunk and add it to our buffer. {stream: true} tells
-      // the decoder not to flush — important for multi-byte characters
-      // that might be split across chunks.
       buffer += decoder.decode(value, {stream: true});
-
-      // SSE events are separated by double newlines. Split on \n and
-      // process complete lines, keeping the last (potentially incomplete)
-      // line in the buffer.
       const lines = buffer.split("\n");
       buffer = lines.pop();
 
       for (const line of lines) {
         if (!line.startsWith("data: ")) continue;
         const data = JSON.parse(line.slice(6));
-        // Each event is either a text delta or a done signal.
         if (data.delta) {
           if (firstToken) {
             thinking.remove();
@@ -111,8 +149,14 @@ async function sendMessage() {
         }
       }
     }
+
+    // Save the complete assistant reply to history.
+    if (div.textContent) {
+      history.push({role: "assistant", text: div.textContent});
+      saveHistory(history);
+    }
   } catch (e) {
-    if (document.contains(thinking)) thinking.remove();
+    if (typeof thinking !== "undefined" && document.contains(thinking)) thinking.remove();
     addMsg("error", "connection failed: " + e.message);
   } finally {
     send.disabled = false;
