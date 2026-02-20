@@ -153,8 +153,17 @@ def feedback_endpoint(req: FeedbackRequest) -> dict:
     return {"ok": True, "message": result}
 
 
+_ALLOWED_TOOLS = {
+    "todoist_add_task", "todoist_today", "todoist_upcoming", "todoist_complete_task",
+    "weather_now", "weather_forecast",
+    "memory_recall", "memory_remember", "memory_update", "memory_forget", "memory_search",
+}
+
+
 @app.post("/tool")
 def tool_endpoint(req: ToolRequest) -> dict:
+    if req.name not in _ALLOWED_TOOLS:
+        raise HTTPException(status_code=400, detail=f"Unknown tool: {req.name}")
     raw = run_tool(req.name, req.args, quiet=True)
     formatted = format_tool_result(req.name, raw)
     return {"result": formatted}

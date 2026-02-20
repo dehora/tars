@@ -182,6 +182,14 @@ class ChatEndpointTests(unittest.TestCase):
         self.assertEqual(resp.json()["result"], "done")
         rt.assert_called_once_with("todoist_add_task", {"content": "buy eggs", "due": "today"}, quiet=True)
 
+    def test_tool_endpoint_rejects_unknown_tool(self) -> None:
+        resp = self.client.post("/tool", json={
+            "name": "evil_tool",
+            "args": {},
+        })
+        self.assertEqual(resp.status_code, 400)
+        self.assertIn("Unknown tool", resp.json()["detail"])
+
 
 if __name__ == "__main__":
     unittest.main()

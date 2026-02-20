@@ -134,7 +134,7 @@ function parseToolCommand(text) {
       return {name: "todoist_add_task", args};
     }
     if (sub === "today") return {name: "todoist_today", args: {}};
-    if (sub === "upcoming") return {name: "todoist_upcoming", args: {days: parseInt(parts[2]) || 7}};
+    if (sub === "upcoming") { const d = parseInt(parts[2]); return {name: "todoist_upcoming", args: {days: Number.isNaN(d) ? 7 : d}}; }
     if (sub === "complete" && parts.length > 2) return {name: "todoist_complete_task", args: {ref: parts.slice(2).join(" ")}};
     return null;
   }
