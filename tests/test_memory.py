@@ -181,7 +181,7 @@ class MemoryToolTests(unittest.TestCase):
         self.assertEqual(corrections, "")
         self.assertEqual(rewards, "")
 
-    def test_archive_feedback_renames_files(self) -> None:
+    def test_archive_feedback_moves_to_feedback_dir(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             (Path(tmpdir) / "corrections.md").write_text("data")
             (Path(tmpdir) / "rewards.md").write_text("data")
@@ -190,11 +190,11 @@ class MemoryToolTests(unittest.TestCase):
             # Originals should be gone
             self.assertFalse((Path(tmpdir) / "corrections.md").exists())
             self.assertFalse((Path(tmpdir) / "rewards.md").exists())
-            # Archived files should exist with timestamp pattern
-            archived = list(Path(tmpdir).glob("corrections-*.md"))
-            self.assertEqual(len(archived), 1)
-            archived = list(Path(tmpdir).glob("rewards-*.md"))
-            self.assertEqual(len(archived), 1)
+            # Archived files should be in feedback/ subdirectory
+            fb_dir = Path(tmpdir) / "feedback"
+            self.assertTrue(fb_dir.is_dir())
+            self.assertEqual(len(list(fb_dir.glob("corrections-*.md"))), 1)
+            self.assertEqual(len(list(fb_dir.glob("rewards-*.md"))), 1)
 
     def test_archive_feedback_no_files(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:

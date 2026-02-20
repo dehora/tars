@@ -93,15 +93,17 @@ def load_feedback() -> tuple[str, str]:
 
 
 def archive_feedback() -> None:
-    """Rename corrections.md and rewards.md with timestamp suffix."""
+    """Move corrections.md and rewards.md into feedback/ with timestamp suffix."""
     md = _memory_dir()
     if not md:
         return
+    fb_dir = md / "feedback"
+    fb_dir.mkdir(exist_ok=True)
     ts = datetime.now().strftime("%Y%m%d-%H%M%S")
     for name in ("corrections.md", "rewards.md"):
         p = md / name
         if p.exists():
-            p.rename(md / f"{p.stem}-{ts}.md")
+            p.rename(fb_dir / f"{p.stem}-{ts}.md")
 
 
 def save_correction(user_msg: str, assistant_msg: str, note: str = "") -> str:
