@@ -26,8 +26,10 @@ Tars is a Python project for AI assistant experiments. Uses uv for package manag
 ## TODOs
 
 - ~~Streaming responses (SSE) for web UI — tokens appear as they arrive~~
-- Markdown rendering in web chat (lightweight, e.g. marked.js or snarkdown)
-- Conversation history in localStorage — survives page reload
+- ~~Markdown rendering in web chat (marked.js, GFM)~~
+- ~~Conversation history in localStorage — survives page reload~~
+- ~~Session saving on server shutdown and browser close~~
+- ~~Feedback commands (/w wrong, /r good) — saves to corrections.md / rewards.md~~
 - WhatsApp channel via Baileys — parked due to Meta ban risk, revisit later
 - RPi deployment target (git checkout / uv tool install)
 
