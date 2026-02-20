@@ -13,6 +13,7 @@ from pydantic import BaseModel
 
 from tars.conversation import Conversation, process_message, process_message_stream, save_session
 from tars.core import DEFAULT_MODEL, parse_model
+from tars.format import format_tool_result
 from tars.indexer import build_index
 from tars.memory import save_correction, save_reward
 from tars.sessions import _session_path
@@ -154,8 +155,9 @@ def feedback_endpoint(req: FeedbackRequest) -> dict:
 
 @app.post("/tool")
 def tool_endpoint(req: ToolRequest) -> dict:
-    result = run_tool(req.name, req.args)
-    return {"result": result}
+    raw = run_tool(req.name, req.args)
+    formatted = format_tool_result(req.name, raw)
+    return {"result": formatted}
 
 
 @app.post("/index")

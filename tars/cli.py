@@ -7,6 +7,7 @@ from dotenv import load_dotenv
 
 from tars.conversation import Conversation, process_message, save_session
 from tars.core import DEFAULT_MODEL, parse_model
+from tars.format import format_tool_result
 from tars.indexer import build_index
 from tars.memory import save_correction, save_reward
 from tars.search import search
@@ -86,6 +87,14 @@ def _parse_todoist_add(tokens: list[str]) -> dict:
     return args
 
 
+def _print_tool(name: str, args: dict) -> None:
+    """Run a tool and print its formatted result."""
+    raw = run_tool(name, args)
+    formatted = format_tool_result(name, raw)
+    for line in formatted.splitlines():
+        print(f"  {line}")
+
+
 def _handle_slash_tool(user_input: str) -> bool:
     """Handle direct tool commands. Returns True if handled."""
     parts = user_input.strip().split()
@@ -95,30 +104,33 @@ def _handle_slash_tool(user_input: str) -> bool:
         sub = parts[1] if len(parts) > 1 else ""
         if sub == "add" and len(parts) > 2:
             args = _parse_todoist_add(parts[2:])
-            result = run_tool("todoist_add_task", args)
+            name = "todoist_add_task"
         elif sub == "today":
-            result = run_tool("todoist_today", {})
+            args = {}
+            name = "todoist_today"
         elif sub == "upcoming":
             days = int(parts[2]) if len(parts) > 2 else 7
-            result = run_tool("todoist_upcoming", {"days": days})
+            args = {"days": days}
+            name = "todoist_upcoming"
         elif sub == "complete" and len(parts) > 2:
-            result = run_tool("todoist_complete_task", {"ref": " ".join(parts[2:])})
+            args = {"ref": " ".join(parts[2:])}
+            name = "todoist_complete_task"
         else:
             print("  usage: /todoist add|today|upcoming|complete ...")
             return True
-        print(f"  {result}")
+        _print_tool(name, args)
         return True
 
     if cmd == "/weather":
-        print(f"  {run_tool('weather_now', {})}")
+        _print_tool("weather_now", {})
         return True
 
     if cmd == "/forecast":
-        print(f"  {run_tool('weather_forecast', {})}")
+        _print_tool("weather_forecast", {})
         return True
 
     if cmd == "/memory":
-        print(f"  {run_tool('memory_recall', {})}")
+        _print_tool("memory_recall", {})
         return True
 
     if cmd == "/remember":
@@ -127,7 +139,7 @@ def _handle_slash_tool(user_input: str) -> bool:
             return True
         section = parts[1]
         content = " ".join(parts[2:])
-        print(f"  {run_tool('memory_remember', {'section': section, 'content': content})}")
+        _print_tool("memory_remember", {"section": section, "content": content})
         return True
 
     return False
