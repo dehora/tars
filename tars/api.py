@@ -14,7 +14,7 @@ from pydantic import BaseModel
 from tars.conversation import Conversation, process_message, process_message_stream, save_session
 from tars.core import DEFAULT_MODEL, parse_model
 from tars.indexer import build_index
-from tars.memory import save_correction
+from tars.memory import save_correction, save_reward
 from tars.sessions import _session_path
 
 load_dotenv()
@@ -52,6 +52,7 @@ class ChatResponse(BaseModel):
 class FeedbackRequest(BaseModel):
     conversation_id: str
     note: str = ""
+    kind: str = "correction"  # "correction" or "reward"
 
 
 @app.post("/chat", response_model=ChatResponse)
@@ -123,7 +124,8 @@ def feedback_endpoint(req: FeedbackRequest) -> dict:
         raise HTTPException(status_code=400, detail="No messages to flag")
     user_msg = conv.messages[-2]["content"]
     assistant_msg = conv.messages[-1]["content"]
-    result = save_correction(user_msg, assistant_msg, req.note)
+    fn = save_reward if req.kind == "reward" else save_correction
+    result = fn(user_msg, assistant_msg, req.note)
     return {"ok": True, "message": result}
 
 

@@ -57,12 +57,12 @@ def _load_recent_sessions() -> str:
 
 
 
-def save_correction(user_msg: str, assistant_msg: str, note: str = "") -> str:
-    """Append a flagged exchange to corrections.md in the memory dir."""
+def _save_feedback(filename: str, header: str, user_msg: str, assistant_msg: str, note: str = "") -> str:
+    """Append a flagged exchange to a feedback file in the memory dir."""
     md = _memory_dir()
     if not md:
         return "no memory dir configured"
-    path = md / "corrections.md"
+    path = md / filename
     ts = datetime.now().strftime("%Y-%m-%dT%H:%M:%S")
     entry = f"\n## {ts}\n- input: {user_msg}\n- got: {assistant_msg}\n"
     if note:
@@ -70,10 +70,20 @@ def save_correction(user_msg: str, assistant_msg: str, note: str = "") -> str:
     if path.exists():
         text = path.read_text(encoding="utf-8", errors="replace")
     else:
-        text = "# Corrections\n"
+        text = f"# {header}\n"
     text = text.rstrip() + "\n" + entry
     path.write_text(text, encoding="utf-8", errors="replace")
     return "feedback saved"
+
+
+def save_correction(user_msg: str, assistant_msg: str, note: str = "") -> str:
+    """Flag a wrong response."""
+    return _save_feedback("corrections.md", "Corrections", user_msg, assistant_msg, note)
+
+
+def save_reward(user_msg: str, assistant_msg: str, note: str = "") -> str:
+    """Flag a good response."""
+    return _save_feedback("rewards.md", "Rewards", user_msg, assistant_msg, note)
 
 
 def _append_to_file(p: Path, content: str) -> None:

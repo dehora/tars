@@ -122,6 +122,21 @@ class ChatEndpointTests(unittest.TestCase):
         self.assertEqual(resp.status_code, 200)
         save.assert_called_once_with("hello", "wrong", "should use todoist")
 
+    def test_feedback_reward(self) -> None:
+        with mock.patch.object(conversation, "chat", return_value="good reply"):
+            self.client.post("/chat", json={
+                "conversation_id": "fb3",
+                "message": "add eggs",
+            })
+        with mock.patch.object(api, "save_reward", return_value="feedback saved") as save:
+            resp = self.client.post("/feedback", json={
+                "conversation_id": "fb3",
+                "kind": "reward",
+                "note": "nice",
+            })
+        self.assertEqual(resp.status_code, 200)
+        save.assert_called_once_with("add eggs", "good reply", "nice")
+
     def test_feedback_no_messages(self) -> None:
         resp = self.client.post("/feedback", json={
             "conversation_id": "empty",

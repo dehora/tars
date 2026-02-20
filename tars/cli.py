@@ -8,7 +8,7 @@ from dotenv import load_dotenv
 from tars.conversation import Conversation, process_message, save_session
 from tars.core import DEFAULT_MODEL, parse_model
 from tars.indexer import build_index
-from tars.memory import save_correction
+from tars.memory import save_correction, save_reward
 from tars.search import search
 from tars.sessions import _session_path
 
@@ -86,16 +86,19 @@ def repl(provider: str, model: str):
                 print("  /sgrep <query>   keyword search (FTS5/BM25)")
                 print("  /svec <query>    semantic search (vector KNN)")
                 print("  /w [note]        flag last response as wrong")
+                print("  /r [note]        flag last response as good")
                 print("  /help            show this help")
                 continue
-            if user_input.strip().startswith("/w"):
+            if user_input.strip().startswith(("/w", "/r")):
                 parts = user_input.strip().split(None, 1)
-                if parts[0] == "/w":
+                cmd = parts[0]
+                if cmd in ("/w", "/r"):
                     if len(conv.messages) < 2:
                         print("  nothing to flag yet")
                     else:
                         note = parts[1] if len(parts) > 1 else ""
-                        result = save_correction(
+                        fn = save_correction if cmd == "/w" else save_reward
+                        result = fn(
                             conv.messages[-2]["content"],
                             conv.messages[-1]["content"],
                             note,

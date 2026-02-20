@@ -123,15 +123,17 @@ async function sendMessage() {
     return;
   }
 
-  // /w [note] — flag last response as wrong.
-  if (text === "/w" || text.startsWith("/w ")) {
+  // /w [note] — flag last response as wrong; /r [note] — flag as good.
+  const fbMatch = text.match(/^\/([wr])(?:\s(.*))?$/);
+  if (fbMatch) {
     input.value = "";
-    const note = text.startsWith("/w ") ? text.slice(3) : "";
+    const kind = fbMatch[1] === "r" ? "reward" : "correction";
+    const note = (fbMatch[2] || "").trim();
     try {
       const resp = await fetch("/feedback", {
         method: "POST",
         headers: {"Content-Type": "application/json"},
-        body: JSON.stringify({conversation_id: convId, note}),
+        body: JSON.stringify({conversation_id: convId, note, kind}),
       });
       const data = await resp.json();
       addMsg("assistant", resp.ok ? data.message : (data.detail || "feedback failed"));

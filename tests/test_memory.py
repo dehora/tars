@@ -142,6 +142,23 @@ class MemoryToolTests(unittest.TestCase):
             result = memory.save_correction("q", "a")
         self.assertEqual(result, "no memory dir configured")
 
+    def test_save_reward_creates_file(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            with mock.patch.dict(os.environ, {"TARS_MEMORY_DIR": tmpdir}, clear=True):
+                result = memory.save_reward("hello", "great answer")
+            text = (Path(tmpdir) / "rewards.md").read_text()
+        self.assertEqual(result, "feedback saved")
+        self.assertIn("# Rewards", text)
+        self.assertIn("- input: hello", text)
+        self.assertIn("- got: great answer", text)
+
+    def test_save_reward_with_note(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            with mock.patch.dict(os.environ, {"TARS_MEMORY_DIR": tmpdir}, clear=True):
+                memory.save_reward("q", "a", "nailed the todoist routing")
+            text = (Path(tmpdir) / "rewards.md").read_text()
+        self.assertIn("- note: nailed the todoist routing", text)
+
     def test_ollama_tools_include_memory(self) -> None:
         tool_names = {
             tool["function"]["name"]
