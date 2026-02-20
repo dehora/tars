@@ -170,7 +170,7 @@ class ChatEndpointTests(unittest.TestCase):
         self.assertEqual(resp.status_code, 200)
         # Result should be formatted, not raw JSON
         self.assertIn("[p1] task", resp.json()["result"])
-        rt.assert_called_once_with("todoist_today", {})
+        rt.assert_called_once_with("todoist_today", {}, quiet=True)
 
     def test_tool_endpoint_with_args(self) -> None:
         with mock.patch.object(api, "run_tool", return_value='{"ok": true}') as rt:
@@ -180,7 +180,7 @@ class ChatEndpointTests(unittest.TestCase):
             })
         self.assertEqual(resp.status_code, 200)
         self.assertEqual(resp.json()["result"], "done")
-        rt.assert_called_once_with("todoist_add_task", {"content": "buy eggs", "due": "today"})
+        rt.assert_called_once_with("todoist_add_task", {"content": "buy eggs", "due": "today"}, quiet=True)
 
 
 if __name__ == "__main__":

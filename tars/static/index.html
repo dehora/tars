@@ -117,13 +117,18 @@ function parseToolCommand(text) {
   if (cmd === "/todoist") {
     const sub = parts[1] || "";
     if (sub === "add" && parts.length > 2) {
+      const flags = new Set(["--due", "--project", "--priority"]);
       const args = {content: ""};
       const content = [];
       for (let i = 2; i < parts.length; i++) {
-        if (parts[i] === "--due" && i + 1 < parts.length) { args.due = parts[++i]; }
-        else if (parts[i] === "--project" && i + 1 < parts.length) { args.project = parts[++i]; }
-        else if (parts[i] === "--priority" && i + 1 < parts.length) { args.priority = parseInt(parts[++i]); }
-        else { content.push(parts[i]); }
+        if (flags.has(parts[i]) && i + 1 < parts.length) {
+          const flag = parts[i].slice(2);
+          const vals = [];
+          i++;
+          while (i < parts.length && !flags.has(parts[i])) { vals.push(parts[i++]); }
+          i--;
+          args[flag] = flag === "priority" ? parseInt(vals.join(" ")) : vals.join(" ");
+        } else { content.push(parts[i]); }
       }
       args.content = content.join(" ");
       return {name: "todoist_add_task", args};

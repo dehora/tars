@@ -65,22 +65,32 @@ def _handle_slash_search(user_input: str) -> bool:
     return True
 
 
+_FLAGS = {"--due", "--project", "--priority"}
+
+
 def _parse_todoist_add(tokens: list[str]) -> dict:
-    """Parse '/todoist add content --due D --project P --priority N' into args dict."""
+    """Parse '/todoist add content --due D --project P --priority N' into args dict.
+
+    Flag values are greedy — they consume tokens until the next flag or end.
+    This lets --due accept multi-word values like 'tomorrow 3pm'.
+    """
     args: dict = {}
     content_parts: list[str] = []
     i = 0
     while i < len(tokens):
         t = tokens[i]
-        if t == "--due" and i + 1 < len(tokens):
-            args["due"] = tokens[i + 1]
-            i += 2
-        elif t == "--project" and i + 1 < len(tokens):
-            args["project"] = tokens[i + 1]
-            i += 2
-        elif t == "--priority" and i + 1 < len(tokens):
-            args["priority"] = int(tokens[i + 1])
-            i += 2
+        if t in _FLAGS and i + 1 < len(tokens):
+            flag = t[2:]  # "due", "project", "priority"
+            i += 1
+            val_parts: list[str] = []
+            while i < len(tokens) and tokens[i] not in _FLAGS:
+                val_parts.append(tokens[i])
+                i += 1
+            val = " ".join(val_parts)
+            if flag == "priority":
+                args[flag] = int(val)
+            else:
+                args[flag] = val
         else:
             content_parts.append(t)
             i += 1
@@ -90,7 +100,7 @@ def _parse_todoist_add(tokens: list[str]) -> dict:
 
 def _print_tool(name: str, args: dict) -> None:
     """Run a tool and print its formatted result."""
-    raw = run_tool(name, args)
+    raw = run_tool(name, args, quiet=True)
     formatted = format_tool_result(name, raw)
     for line in formatted.splitlines():
         print(f"  {line}")
@@ -146,6 +156,34 @@ def _handle_slash_tool(user_input: str) -> bool:
     return False
 
 
+_SLASH_COMMANDS = [
+    "/todoist ", "/weather", "/forecast", "/memory", "/remember ",
+    "/search ", "/sgrep ", "/svec ",
+    "/w ", "/r ",
+    "/help", "/clear",
+]
+
+_TODOIST_SUBS = ["add ", "today", "upcoming ", "complete "]
+_REMEMBER_SUBS = ["semantic ", "procedural "]
+
+
+def _completer(text: str, state: int) -> str | None:
+    """Readline tab completer for slash commands."""
+    buf = readline.get_line_buffer()
+    if buf.startswith("/todoist "):
+        # Complete todoist subcommands
+        sub = buf[9:]
+        matches = [s for s in _TODOIST_SUBS if s.startswith(sub)]
+        options = [f"/todoist {m}" for m in matches]
+    elif buf.startswith("/remember "):
+        sub = buf[10:]
+        matches = [s for s in _REMEMBER_SUBS if s.startswith(sub)]
+        options = [f"/remember {m}" for m in matches]
+    else:
+        options = [c for c in _SLASH_COMMANDS if c.startswith(text)]
+    return options[state] if state < len(options) else None
+
+
 def repl(provider: str, model: str):
     conv = Conversation(id="repl", provider=provider, model=model)
     session_file = _session_path()
@@ -155,6 +193,9 @@ def repl(provider: str, model: str):
     except (FileNotFoundError, OSError):
         pass
     readline.set_history_length(1000)
+    readline.set_completer(_completer)
+    readline.set_completer_delims("")
+    readline.parse_and_bind("tab: complete")
     print(f"tars [{provider}:{model}] (ctrl-d to quit)")
     try:
         while True:

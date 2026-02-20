@@ -155,7 +155,7 @@ def feedback_endpoint(req: FeedbackRequest) -> dict:
 
 @app.post("/tool")
 def tool_endpoint(req: ToolRequest) -> dict:
-    raw = run_tool(req.name, req.args)
+    raw = run_tool(req.name, req.args, quiet=True)
     formatted = format_tool_result(req.name, raw)
     return {"result": formatted}
 

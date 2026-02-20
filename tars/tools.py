@@ -156,8 +156,9 @@ OLLAMA_TOOLS = [
 ]
 
 
-def run_tool(name: str, args: dict) -> str:
-    print(f"  [tool] {name}({args})", file=sys.stderr)
+def run_tool(name: str, args: dict, *, quiet: bool = False) -> str:
+    if not quiet:
+        print(f"  [tool] {name}({args})", file=sys.stderr)
     try:
         if name in ("memory_remember", "memory_recall", "memory_update", "memory_forget"):
             return _run_memory_tool(name, args)
