@@ -607,6 +607,7 @@ def main():
     srv = sub.add_parser("serve", help="start HTTP API server")
     srv.add_argument("--host", default="127.0.0.1", help="bind address")
     srv.add_argument("--port", type=int, default=8180, help="port number")
+    sub.add_parser("email", help="start email polling channel")
     parser.add_argument("message", nargs="*", help="message for single-shot mode")
     args = parser.parse_args()
 
@@ -631,6 +632,12 @@ def main():
         return
 
     provider, model = parse_model(args.model)
+
+    if args.command == "email":
+        from tars.email import run_email
+
+        run_email(provider, model)
+        return
 
     _startup_index()
 

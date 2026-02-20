@@ -44,6 +44,10 @@ Appends to today's Obsidian daily note (or creates it). "Note: interesting idea 
 
 Why: tars writing to daily notes means AI conversations feed back into PKM without manual effort.
 
+### 10. Email channel (`tars email`)
+
+IMAP polling + SMTP reply via dedicated Gmail account with app password. Polls inbox every 60s, processes emails from whitelisted senders through `conversation.py`, replies in-thread. Python stdlib only (`imaplib`, `smtplib`, `email`). Enables mobile input — email tars from your phone to add tasks, make notes, ask questions.
+
 ## Backlog
 
 ### 7. Context-aware tool suggestions

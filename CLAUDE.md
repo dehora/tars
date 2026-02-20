@@ -4,12 +4,13 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project
 
-Tars is a personal AI assistant with CLI, web, and (future) WhatsApp channels. Routes messages to configurable AI providers (ollama, claude), manages persistent memory in an Obsidian vault, and integrates with Todoist and weather APIs. Uses uv for package management with Python 3.14.
+Tars is a personal AI assistant with CLI, web, and email channels. Routes messages to configurable AI providers (ollama, claude), manages persistent memory in an Obsidian vault, and integrates with Todoist and weather APIs. Uses uv for package management with Python 3.14.
 
 ## Commands
 
 - **Run CLI**: `uv run tars` (REPL) or `uv run tars "message"` (one-shot)
 - **Run server**: `uv run tars serve`
+- **Run email**: `uv run tars email`
 - **Rebuild index**: `uv run tars index`
 - **Run tests**: `uv run python -m unittest discover -s tests -v`
 - **Add dependency**: `uv add <package>`
@@ -17,7 +18,7 @@ Tars is a personal AI assistant with CLI, web, and (future) WhatsApp channels. R
 ## Architecture
 
 ```
-[cli/web] → [conversation.py] → [core.py] → ollama / claude
+[cli/web/email] → [conversation.py] → [core.py] → ollama / claude
                                      ↕
                                [tools.py] → todoist, weather, memory, search
                                      ↕
@@ -37,6 +38,8 @@ Tars is a personal AI assistant with CLI, web, and (future) WhatsApp channels. R
 - Wrap untrusted user data in tagged blocks with a preface when injecting into prompts — never concatenate raw content into system prompts.
 - Use specific patterns for placeholder comments (e.g. `<!-- tars:memory -->`) — broad regex like `<!--.*?-->` will eat legitimate comments.
 - Always use `encoding="utf-8", errors="replace"` on file I/O for user-managed files — memory files live in an obsidian vault and can be edited externally.
+- When adding a new tool, audit all code paths that call `chat()` — internal paths (summarization, review, tidy) should use `use_tools=False` to prevent tool leakage.
+- When adding a CLI command, check web UI parity — unhandled slash commands in the web UI fall through to chat and get misinterpreted by the model.
 
 ## Configuration
 
@@ -47,6 +50,10 @@ Tars is a personal AI assistant with CLI, web, and (future) WhatsApp channels. R
 | `TARS_NOTES_DIR` | — | Path to personal obsidian vault (daily notes) |
 | `TARS_MAX_TOKENS` | `1024` | Max tokens for Anthropic responses |
 | `ANTHROPIC_API_KEY` | — | Required for Claude provider |
+| `TARS_EMAIL_ADDRESS` | — | Gmail address for tars email channel |
+| `TARS_EMAIL_PASSWORD` | — | Gmail app password |
+| `TARS_EMAIL_ALLOW` | — | Comma-separated allowed sender addresses |
+| `TARS_EMAIL_POLL_INTERVAL` | `60` | Seconds between inbox checks |
 | `DEFAULT_LAT` / `DEFAULT_LON` | — | Weather location |
 
 ## Git commits
