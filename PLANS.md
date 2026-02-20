@@ -257,3 +257,133 @@ curl http://localhost:8000/conversations
 curl -X DELETE http://localhost:8000/conversations/test
 uv run tars   # REPL still works as before
 ```
+
+---
+
+## Plan: `/review` corrections feedback loop
+
+### Context
+
+Tars captures wrong (`/w`) and good (`/r`) responses to `corrections.md` and `rewards.md` in the memory dir. Currently this data is write-only — nobody reads it. A `/review` command distills patterns from the corrections into actionable procedural memory rules, closing the feedback loop.
+
+The goal: turn "tars keeps doing X wrong" into a procedural memory entry like "when the user says X, use the Y tool" — without manual effort.
+
+### Design
+
+**`/review`** reads `corrections.md` and `rewards.md`, sends them to the model with a prompt asking it to:
+1. Identify patterns in the corrections (common misroutes, bad responses)
+2. Note what worked well from the rewards
+3. Propose concise procedural rules (one-liners in the style of `Procedural.md`)
+4. Present the rules for user approval before writing
+
+**Flow:**
+```
+you> /review
+reviewing 3 corrections, 2 rewards...
+
+suggested rules:
+  1. when user says "add X to Y", route to todoist, not memory
+  2. weather requests should use weather_now, not chat
+  3. (reward) natural language todoist routing works well for "remind me" phrases
+
+apply? (y/n/edit)
+you> y
+  2 rules added to Procedural.md
+  corrections.md archived
+```
+
+**Key decisions:**
+- Uses the model (via `chat()`) to analyze — this is a model-assisted review, not pure automation
+- Shows proposed rules before writing — user stays in control
+- Archives corrections after review (rename to `corrections-{timestamp}.md`) so they don't accumulate and get re-reviewed
+- Rewards get archived too since the patterns have been extracted
+- Works in REPL only (not web) — this is an admin/maintenance command, interactive approval is important
+
+### Files to modify
+
+#### 1. `tars/memory.py` — add `load_feedback()` and `archive_feedback()`
+
+```python
+def load_feedback() -> tuple[str, str]:
+    """Load corrections.md and rewards.md content."""
+    md = _memory_dir()
+    if not md:
+        return "", ""
+    corrections = ""
+    rewards = ""
+    cp = md / "corrections.md"
+    rp = md / "rewards.md"
+    if cp.exists():
+        corrections = cp.read_text(encoding="utf-8", errors="replace")
+    if rp.exists():
+        rewards = rp.read_text(encoding="utf-8", errors="replace")
+    return corrections, rewards
+
+def archive_feedback() -> None:
+    """Rename corrections.md and rewards.md with timestamp suffix."""
+    md = _memory_dir()
+    if not md:
+        return
+    ts = datetime.now().strftime("%Y%m%d-%H%M%S")
+    for name in ("corrections.md", "rewards.md"):
+        p = md / name
+        if p.exists():
+            p.rename(md / f"{p.stem}-{ts}.md")
+```
+
+#### 2. `tars/cli.py` — add `/review` command
+
+In the REPL loop, handle `/review`:
+- Call `load_feedback()` to get corrections + rewards text
+- If both empty, print "nothing to review" and return
+- Build a review prompt asking the model to propose procedural rules
+- Call `chat()` with the review prompt (using the conversation's provider/model)
+- Print the model's suggestions
+- Prompt `apply? (y/n)` via `input()`
+- On `y`: parse out the rules, append each to `Procedural.md` via `_append_to_file()`, then `archive_feedback()`
+- On `n`: do nothing
+
+The review prompt:
+
+```
+Review these corrections (wrong responses) and rewards (good responses) from a tars AI assistant session.
+
+<corrections>
+{corrections}
+</corrections>
+
+<rewards>
+{rewards}
+</rewards>
+
+Based on the patterns you see:
+1. Identify what went wrong and propose concise procedural rules to prevent it
+2. Note what worked well that should be reinforced
+3. Output ONLY the rules as a bulleted list, one per line, starting with "- "
+4. Each rule should be a short, actionable instruction (like "route 'add X to Y' requests to todoist, not memory")
+5. Skip rules that are too generic to be useful
+```
+
+#### 3. `/help` — add `/review` to the output
+
+Add under the feedback section:
+```
+    /review          review corrections and apply learnings
+```
+
+#### 4. Tests — `tests/test_memory.py`
+
+- `test_load_feedback_reads_files`: create corrections.md and rewards.md, verify content returned
+- `test_load_feedback_empty`: no files, returns empty strings
+- `test_load_feedback_no_memory_dir`: returns empty strings
+- `test_archive_feedback_renames_files`: verify files renamed with timestamp
+- `test_archive_feedback_no_files`: no error when files don't exist
+
+### Verification
+```
+uv run python -m unittest discover -s tests -v
+# Create some test corrections: chat with tars, /w on a bad response
+# Run /review, verify model proposes rules
+# Accept with y, check Procedural.md has new entries
+# Verify corrections.md is archived with timestamp
+```

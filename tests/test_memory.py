@@ -159,6 +159,49 @@ class MemoryToolTests(unittest.TestCase):
             text = (Path(tmpdir) / "rewards.md").read_text()
         self.assertIn("- note: nailed the todoist routing", text)
 
+    def test_load_feedback_reads_files(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            (Path(tmpdir) / "corrections.md").write_text("# Corrections\n## entry\n")
+            (Path(tmpdir) / "rewards.md").write_text("# Rewards\n## entry\n")
+            with mock.patch.dict(os.environ, {"TARS_MEMORY_DIR": tmpdir}, clear=True):
+                corrections, rewards = memory.load_feedback()
+        self.assertIn("# Corrections", corrections)
+        self.assertIn("# Rewards", rewards)
+
+    def test_load_feedback_empty(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            with mock.patch.dict(os.environ, {"TARS_MEMORY_DIR": tmpdir}, clear=True):
+                corrections, rewards = memory.load_feedback()
+        self.assertEqual(corrections, "")
+        self.assertEqual(rewards, "")
+
+    def test_load_feedback_no_memory_dir(self) -> None:
+        with mock.patch.dict(os.environ, {}, clear=True):
+            corrections, rewards = memory.load_feedback()
+        self.assertEqual(corrections, "")
+        self.assertEqual(rewards, "")
+
+    def test_archive_feedback_renames_files(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            (Path(tmpdir) / "corrections.md").write_text("data")
+            (Path(tmpdir) / "rewards.md").write_text("data")
+            with mock.patch.dict(os.environ, {"TARS_MEMORY_DIR": tmpdir}, clear=True):
+                memory.archive_feedback()
+            # Originals should be gone
+            self.assertFalse((Path(tmpdir) / "corrections.md").exists())
+            self.assertFalse((Path(tmpdir) / "rewards.md").exists())
+            # Archived files should exist with timestamp pattern
+            archived = list(Path(tmpdir).glob("corrections-*.md"))
+            self.assertEqual(len(archived), 1)
+            archived = list(Path(tmpdir).glob("rewards-*.md"))
+            self.assertEqual(len(archived), 1)
+
+    def test_archive_feedback_no_files(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            with mock.patch.dict(os.environ, {"TARS_MEMORY_DIR": tmpdir}, clear=True):
+                # Should not raise
+                memory.archive_feedback()
+
     def test_ollama_tools_include_memory(self) -> None:
         tool_names = {
             tool["function"]["name"]

@@ -7,10 +7,17 @@ from pathlib import Path
 from dotenv import load_dotenv
 
 from tars.conversation import Conversation, process_message, save_session
-from tars.core import DEFAULT_MODEL, parse_model
+from tars.core import DEFAULT_MODEL, chat, parse_model
 from tars.format import format_tool_result
 from tars.indexer import build_index
-from tars.memory import save_correction, save_reward
+from tars.memory import (
+    _append_to_file,
+    _memory_file,
+    archive_feedback,
+    load_feedback,
+    save_correction,
+    save_reward,
+)
 from tars.search import search
 from tars.sessions import _session_path
 from tars.tools import run_tool
@@ -63,6 +70,73 @@ def _handle_slash_search(user_input: str) -> bool:
     except Exception as e:
         print(f"  [error] search failed: {e}", file=sys.stderr)
     return True
+
+
+_REVIEW_PROMPT = """\
+Review these corrections (wrong responses) and rewards (good responses) from a tars AI assistant session.
+
+<corrections>
+{corrections}
+</corrections>
+
+<rewards>
+{rewards}
+</rewards>
+
+Based on the patterns you see:
+1. Identify what went wrong and propose concise procedural rules to prevent it
+2. Note what worked well that should be reinforced
+3. Output ONLY the rules as a bulleted list, one per line, starting with "- "
+4. Each rule should be a short, actionable instruction (like "route 'add X to Y' requests to todoist, not memory")
+5. Skip rules that are too generic to be useful
+"""
+
+
+def _handle_review(provider: str, model: str) -> None:
+    """Review corrections/rewards and propose procedural rules."""
+    corrections, rewards = load_feedback()
+    if not corrections.strip() and not rewards.strip():
+        print("  nothing to review")
+        return
+
+    n_corrections = corrections.count("## 20") if corrections else 0
+    n_rewards = rewards.count("## 20") if rewards else 0
+    print(f"  reviewing {n_corrections} corrections, {n_rewards} rewards...")
+
+    prompt = _REVIEW_PROMPT.format(corrections=corrections, rewards=rewards)
+    messages = [{"role": "user", "content": prompt}]
+    reply = chat(messages, provider, model)
+
+    print()
+    print("  suggested rules:")
+    for line in reply.strip().splitlines():
+        print(f"    {line}")
+    print()
+
+    # Parse rules from the reply (lines starting with "- ")
+    rules = [line[2:].strip() for line in reply.strip().splitlines() if line.startswith("- ")]
+    if not rules:
+        print("  no actionable rules found")
+        return
+
+    try:
+        answer = input("  apply? (y/n) ").strip().lower()
+    except (EOFError, KeyboardInterrupt):
+        print()
+        return
+
+    if answer != "y":
+        print("  skipped")
+        return
+
+    p = _memory_file("procedural")
+    if p is None:
+        print("  no memory dir configured")
+        return
+    for rule in rules:
+        _append_to_file(p, rule)
+    archive_feedback()
+    print(f"  {len(rules)} rules added to Procedural.md")
 
 
 _FLAGS = {"--due", "--project", "--priority"}
@@ -159,7 +233,7 @@ def _handle_slash_tool(user_input: str) -> bool:
 _SLASH_COMMANDS = [
     "/todoist ", "/weather", "/forecast", "/memory", "/remember ",
     "/search ", "/sgrep ", "/svec ",
-    "/w ", "/r ",
+    "/w ", "/r ", "/review",
     "/help", "/clear",
 ]
 
@@ -221,6 +295,7 @@ def repl(provider: str, model: str):
                 print("  feedback:")
                 print("    /w [note]        flag last response as wrong")
                 print("    /r [note]        flag last response as good")
+                print("    /review          review corrections and apply learnings")
                 print("  /help              show this help")
                 continue
             if user_input.strip().startswith(("/w", "/r")):
@@ -239,6 +314,9 @@ def repl(provider: str, model: str):
                         )
                         print(f"  {result}")
                     continue
+            if user_input.strip() == "/review":
+                _handle_review(provider, model)
+                continue
             if _handle_slash_tool(user_input):
                 continue
             if _handle_slash_search(user_input):

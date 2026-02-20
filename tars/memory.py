@@ -76,6 +76,34 @@ def _save_feedback(filename: str, header: str, user_msg: str, assistant_msg: str
     return "feedback saved"
 
 
+def load_feedback() -> tuple[str, str]:
+    """Load corrections.md and rewards.md content."""
+    md = _memory_dir()
+    if not md:
+        return "", ""
+    corrections = ""
+    rewards = ""
+    cp = md / "corrections.md"
+    rp = md / "rewards.md"
+    if cp.exists():
+        corrections = cp.read_text(encoding="utf-8", errors="replace")
+    if rp.exists():
+        rewards = rp.read_text(encoding="utf-8", errors="replace")
+    return corrections, rewards
+
+
+def archive_feedback() -> None:
+    """Rename corrections.md and rewards.md with timestamp suffix."""
+    md = _memory_dir()
+    if not md:
+        return
+    ts = datetime.now().strftime("%Y%m%d-%H%M%S")
+    for name in ("corrections.md", "rewards.md"):
+        p = md / name
+        if p.exists():
+            p.rename(md / f"{p.stem}-{ts}.md")
+
+
 def save_correction(user_msg: str, assistant_msg: str, note: str = "") -> str:
     """Flag a wrong response."""
     return _save_feedback("corrections.md", "Corrections", user_msg, assistant_msg, note)
