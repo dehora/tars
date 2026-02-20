@@ -215,6 +215,14 @@ send.addEventListener("click", sendMessage);
 input.addEventListener("keydown", (e) => {
   if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendMessage(); }
 });
+// Save session on tab close / navigation. sendBeacon is fire-and-forget,
+// reliable even during unload when fetch() would be cancelled.
+window.addEventListener("beforeunload", () => {
+  navigator.sendBeacon(
+    "/conversations/" + convId + "/save",
+    new Blob([JSON.stringify({})], {type: "application/json"}),
+  );
+});
 input.focus();
 </script>
 </body>

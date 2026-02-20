@@ -28,6 +28,13 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         print(f"  [warning] index update failed ({type(e).__name__}): {e}", file=sys.stderr)
     yield
+    # Save all active conversations on shutdown.
+    for conv_id, conv in _conversations.items():
+        session_file = _session_files.get(conv_id)
+        try:
+            save_session(conv, session_file)
+        except Exception as e:
+            print(f"  [warning] session save failed for {conv_id}: {e}", file=sys.stderr)
 
 
 app = FastAPI(title="tars", lifespan=lifespan)
@@ -85,6 +92,16 @@ def delete_conversation(conversation_id: str) -> dict:
     if conv is None:
         raise HTTPException(status_code=404, detail="Conversation not found")
     session_file = _session_files.pop(conversation_id, None)
+    save_session(conv, session_file)
+    return {"ok": True}
+
+
+@app.post("/conversations/{conversation_id}/save")
+def save_conversation(conversation_id: str) -> dict:
+    conv = _conversations.get(conversation_id)
+    if conv is None:
+        raise HTTPException(status_code=404, detail="Conversation not found")
+    session_file = _session_files.get(conversation_id)
     save_session(conv, session_file)
     return {"ok": True}
 

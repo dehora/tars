@@ -73,6 +73,23 @@ class ChatEndpointTests(unittest.TestCase):
         resp = self.client.delete("/conversations/nope")
         self.assertEqual(resp.status_code, 404)
 
+    def test_save_conversation(self) -> None:
+        with mock.patch.object(conversation, "chat", return_value="ok"):
+            self.client.post("/chat", json={
+                "conversation_id": "save1",
+                "message": "hi",
+            })
+        with mock.patch.object(api, "save_session") as save:
+            resp = self.client.post("/conversations/save1/save")
+        self.assertEqual(resp.status_code, 200)
+        save.assert_called_once()
+        # Conversation should still exist (not deleted).
+        self.assertIn("save1", api._conversations)
+
+    def test_save_nonexistent_conversation(self) -> None:
+        resp = self.client.post("/conversations/nope/save")
+        self.assertEqual(resp.status_code, 404)
+
     def test_chat_stream_returns_sse(self) -> None:
         with mock.patch.object(conversation, "chat_stream", return_value=iter(["hel", "lo"])):
             resp = self.client.post("/chat/stream", json={
