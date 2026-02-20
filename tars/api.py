@@ -1,3 +1,4 @@
+import json
 import sys
 import os
 from contextlib import asynccontextmanager
@@ -5,10 +6,11 @@ from pathlib import Path
 
 from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException
+from fastapi.responses import StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
-from tars.conversation import Conversation, process_message, save_session
+from tars.conversation import Conversation, process_message, process_message_stream, save_session
 from tars.core import DEFAULT_MODEL, parse_model
 from tars.indexer import build_index
 from tars.sessions import _session_path
@@ -76,6 +78,34 @@ def delete_conversation(conversation_id: str) -> dict:
     session_file = _session_files.pop(conversation_id, None)
     save_session(conv, session_file)
     return {"ok": True}
+
+
+@app.post("/chat/stream")
+def chat_stream_endpoint(req: ChatRequest):
+    """Streaming chat via Server-Sent Events.
+
+    Returns a text/event-stream response. Each event is a JSON object:
+      data: {"delta": "token"}   — a piece of the response text
+      data: {"done": true}       — signals the stream is complete
+
+    The browser reads these with fetch() + ReadableStream, appending each
+    delta to the message div so tokens appear as they arrive.
+    """
+    conv_id = req.conversation_id
+    if conv_id not in _conversations:
+        _conversations[conv_id] = Conversation(
+            id=conv_id, provider=_provider, model=_model,
+        )
+        _session_files[conv_id] = _session_path()
+    conv = _conversations[conv_id]
+    session_file = _session_files.get(conv_id)
+
+    def event_stream():
+        for delta in process_message_stream(conv, req.message, session_file):
+            yield f"data: {json.dumps({'delta': delta})}\n\n"
+        yield f"data: {json.dumps({'done': True})}\n\n"
+
+    return StreamingResponse(event_stream(), media_type="text/event-stream")
 
 
 @app.post("/index")

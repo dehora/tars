@@ -1,3 +1,4 @@
+import json
 import sys
 import unittest
 from unittest import mock
@@ -71,6 +72,27 @@ class ChatEndpointTests(unittest.TestCase):
     def test_delete_nonexistent_conversation(self) -> None:
         resp = self.client.delete("/conversations/nope")
         self.assertEqual(resp.status_code, 404)
+
+    def test_chat_stream_returns_sse(self) -> None:
+        with mock.patch.object(conversation, "chat_stream", return_value=iter(["hel", "lo"])):
+            resp = self.client.post("/chat/stream", json={
+                "conversation_id": "stream1",
+                "message": "hi",
+            })
+        self.assertEqual(resp.status_code, 200)
+        self.assertIn("text/event-stream", resp.headers["content-type"])
+        # Parse SSE events from the response body
+        events = []
+        for line in resp.text.strip().split("\n"):
+            if line.startswith("data: "):
+                events.append(json.loads(line[6:]))
+        # Should have two delta events and one done event
+        self.assertEqual(events[0], {"delta": "hel"})
+        self.assertEqual(events[1], {"delta": "lo"})
+        self.assertEqual(events[-1], {"done": True})
+        # Conversation state should be updated
+        self.assertIn("stream1", api._conversations)
+        self.assertEqual(api._conversations["stream1"].msg_count, 1)
 
 
 if __name__ == "__main__":

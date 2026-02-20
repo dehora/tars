@@ -12,6 +12,9 @@
   .msg.user { align-self: flex-end; background: #2563eb; color: #fff; }
   .msg.assistant { align-self: flex-start; background: #2a2a2a; }
   .msg.error { align-self: flex-start; background: #7f1d1d; }
+  .msg.thinking { align-self: flex-start; background: #2a2a2a; color: #888; }
+  @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.4; } }
+  .msg.thinking { animation: pulse 1.5s ease-in-out infinite; }
   #input-row { display: flex; gap: 0.5rem; padding: 0.75rem 1rem; background: #222; border-top: 1px solid #333; }
   #input { flex: 1; padding: 0.5rem 0.75rem; border: 1px solid #444; border-radius: 0.375rem; background: #2a2a2a; color: #e0e0e0; font-size: 1rem; font-family: inherit; outline: none; }
   #input:focus { border-color: #2563eb; }
@@ -47,19 +50,69 @@ async function sendMessage() {
   addMsg("user", text);
   send.disabled = true;
   input.disabled = true;
+
   try {
-    const resp = await fetch("/chat", {
+    // POST to the streaming endpoint. The server returns Server-Sent Events
+    // (SSE) — a text stream where each line is "data: {json}\n\n".
+    const resp = await fetch("/chat/stream", {
       method: "POST",
       headers: {"Content-Type": "application/json"},
       body: JSON.stringify({conversation_id: convId, message: text}),
     });
-    const data = await resp.json();
-    if (resp.ok) {
-      addMsg("assistant", data.reply);
-    } else {
-      addMsg("error", data.detail || "request failed");
+
+    if (!resp.ok) {
+      const err = await resp.json();
+      addMsg("error", err.detail || "request failed");
+      return;
+    }
+
+    // Show a thinking indicator while waiting for the first token.
+    // This covers the delay from tool execution and model warmup.
+    const thinking = addMsg("thinking", "thinking...");
+
+    // Create an empty assistant message div that we'll append tokens to.
+    const div = addMsg("assistant", "");
+    div.style.display = "none";
+    let firstToken = true;
+
+    // Read the response body as a stream. The browser gives us chunks of
+    // bytes — we decode them to text and parse the SSE "data:" lines.
+    const reader = resp.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = "";
+
+    while (true) {
+      const {done, value} = await reader.read();
+      if (done) break;
+
+      // Decode the chunk and add it to our buffer. {stream: true} tells
+      // the decoder not to flush — important for multi-byte characters
+      // that might be split across chunks.
+      buffer += decoder.decode(value, {stream: true});
+
+      // SSE events are separated by double newlines. Split on \n and
+      // process complete lines, keeping the last (potentially incomplete)
+      // line in the buffer.
+      const lines = buffer.split("\n");
+      buffer = lines.pop();
+
+      for (const line of lines) {
+        if (!line.startsWith("data: ")) continue;
+        const data = JSON.parse(line.slice(6));
+        // Each event is either a text delta or a done signal.
+        if (data.delta) {
+          if (firstToken) {
+            thinking.remove();
+            div.style.display = "";
+            firstToken = false;
+          }
+          div.textContent += data.delta;
+          messages.scrollTop = messages.scrollHeight;
+        }
+      }
     }
   } catch (e) {
+    if (document.contains(thinking)) thinking.remove();
     addMsg("error", "connection failed: " + e.message);
   } finally {
     send.disabled = false;

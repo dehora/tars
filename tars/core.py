@@ -1,3 +1,5 @@
+from collections.abc import Generator
+
 import anthropic
 import ollama
 
@@ -144,3 +146,114 @@ def chat(messages: list[dict], provider: str, model: str, *, search_context: str
     if provider == "ollama":
         return chat_ollama(messages, model, search_context=search_context)
     raise ValueError(f"Unknown provider: {provider}")
+
+
+# --- Streaming variants ---
+#
+# These mirror chat_anthropic/chat_ollama but return a Generator that yields
+# text deltas (small string chunks) instead of returning a complete string.
+#
+# The tricky part is tool calls. When the model decides to call a tool, we
+# can't stream anything — there's no text to show the user yet. So the
+# strategy is:
+#
+#   1. Run the tool-calling loop NON-STREAMED (identical to the regular path).
+#      Each iteration: send messages, get response, if it's a tool call then
+#      execute the tool, append results, and loop back.
+#
+#   2. Once the model produces a text response (no more tool calls), we know
+#      this is the final answer. We make ONE MORE request, this time using the
+#      provider's streaming API, and yield text chunks as they arrive.
+#
+# This costs an extra API call for tool-using responses (the non-streamed
+# response we got in step 1 is discarded, and we re-request with streaming).
+# The alternative — streaming every request and parsing tool calls from the
+# stream — is much more complex (partial JSON buffering, etc.) and the user
+# wouldn't see any benefit since tool execution time dominates.
+
+
+def chat_anthropic_stream(
+    messages: list[dict], model: str, *, search_context: str = "",
+) -> Generator[str, None, None]:
+    """Streaming version of chat_anthropic. Yields text deltas."""
+    resolved = CLAUDE_MODELS.get(model, model)
+    client = anthropic.Anthropic()
+    local_messages = [m.copy() for m in messages]
+    system = _build_system_prompt(search_context=search_context)
+
+    # Step 1: tool-calling loop (non-streamed).
+    # Keep going until the model stops requesting tools.
+    while True:
+        response = client.messages.create(
+            model=resolved, max_tokens=1024,
+            system=system, messages=local_messages, tools=ANTHROPIC_TOOLS,
+        )
+
+        if response.stop_reason != "tool_use":
+            # Model is done with tools — break out to stream the final answer.
+            break
+
+        # Execute each tool the model requested and feed results back.
+        assistant_content = list(response.content)
+        local_messages.append({"role": "assistant", "content": assistant_content})
+        tool_results = []
+        for block in response.content:
+            if block.type == "tool_use":
+                result = run_tool(block.name, block.input)
+                tool_results.append({
+                    "type": "tool_result",
+                    "tool_use_id": block.id,
+                    "content": result,
+                })
+        local_messages.append({"role": "user", "content": tool_results})
+
+    # Step 2: stream the final response.
+    # client.messages.stream() returns a context manager that yields text
+    # chunks via .text_stream. Each chunk is a small string (often a few
+    # tokens). The caller (web UI) sends each chunk to the browser as an
+    # SSE event, so the user sees tokens appear incrementally.
+    with client.messages.stream(
+        model=resolved, max_tokens=1024,
+        system=system, messages=local_messages, tools=ANTHROPIC_TOOLS,
+    ) as stream:
+        for text in stream.text_stream:
+            yield text
+
+
+def chat_ollama_stream(
+    messages: list[dict], model: str, *, search_context: str = "",
+) -> Generator[str, None, None]:
+    """Streaming version of chat_ollama. Yields text deltas."""
+    local_messages = [{"role": "system", "content": _build_system_prompt(search_context=search_context)}]
+    local_messages.extend(m.copy() for m in messages)
+
+    # Step 1: tool-calling loop (non-streamed), same as chat_ollama.
+    while True:
+        response = ollama.chat(model=model, messages=local_messages, tools=OLLAMA_TOOLS)
+
+        if not response.message.tool_calls:
+            break
+
+        local_messages.append(response.message)
+        for tool_call in response.message.tool_calls:
+            result = run_tool(tool_call.function.name, tool_call.function.arguments)
+            local_messages.append({"role": "tool", "content": result})
+
+    # Step 2: stream the final response.
+    # ollama.chat() with stream=True returns an iterator of response chunks.
+    # Each chunk has .message.content with a small piece of the response text.
+    for chunk in ollama.chat(model=model, messages=local_messages, stream=True):
+        if chunk.message.content:
+            yield chunk.message.content
+
+
+def chat_stream(
+    messages: list[dict], provider: str, model: str, *, search_context: str = "",
+) -> Generator[str, None, None]:
+    """Route to the appropriate streaming chat function."""
+    if provider == "claude":
+        yield from chat_anthropic_stream(messages, model, search_context=search_context)
+    elif provider == "ollama":
+        yield from chat_ollama_stream(messages, model, search_context=search_context)
+    else:
+        raise ValueError(f"Unknown provider: {provider}")

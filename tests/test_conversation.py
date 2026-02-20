@@ -9,7 +9,7 @@ sys.modules.setdefault("ollama", mock.Mock())
 sys.modules.setdefault("dotenv", mock.Mock(load_dotenv=lambda: None))
 
 from tars import conversation
-from tars.conversation import Conversation, process_message, save_session
+from tars.conversation import Conversation, process_message, process_message_stream, save_session
 
 
 class ProcessMessageTests(unittest.TestCase):
@@ -60,6 +60,31 @@ class ProcessMessageTests(unittest.TestCase):
                 self.assertEqual(summarize.call_count, 1)
             save.assert_called_once()
             self.assertTrue(save.call_args.kwargs.get("is_compaction"))
+
+
+class ProcessMessageStreamTests(unittest.TestCase):
+    def test_yields_deltas(self) -> None:
+        conv = Conversation(id="test", provider="ollama", model="fake")
+        with mock.patch.object(conversation, "chat_stream", return_value=iter(["hel", "lo ", "world"])):
+            deltas = list(process_message_stream(conv, "hi"))
+        self.assertEqual(deltas, ["hel", "lo ", "world"])
+
+    def test_builds_full_reply_in_messages(self) -> None:
+        conv = Conversation(id="test", provider="ollama", model="fake")
+        with mock.patch.object(conversation, "chat_stream", return_value=iter(["one", "two"])):
+            list(process_message_stream(conv, "hi"))
+        self.assertEqual(conv.messages[-1], {"role": "assistant", "content": "onetwo"})
+        self.assertEqual(conv.msg_count, 1)
+
+    def test_first_message_triggers_search(self) -> None:
+        conv = Conversation(id="test", provider="ollama", model="fake")
+        with (
+            mock.patch.object(conversation, "chat_stream", return_value=iter(["ok"])),
+            mock.patch.object(conversation, "_search_relevant_context", return_value="ctx") as search,
+        ):
+            list(process_message_stream(conv, "hello"))
+        search.assert_called_once_with("hello")
+        self.assertEqual(conv.search_context, "ctx")
 
 
 class SaveSessionTests(unittest.TestCase):

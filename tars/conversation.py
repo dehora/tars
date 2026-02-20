@@ -1,8 +1,9 @@
 import sys
+from collections.abc import Generator
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from tars.core import _search_relevant_context, chat
+from tars.core import _search_relevant_context, chat, chat_stream
 from tars.sessions import (
     SESSION_COMPACTION_INTERVAL,
     _save_session,
@@ -51,6 +52,39 @@ def process_message(
 
     _maybe_compact(conv, session_file)
     return reply
+
+
+def process_message_stream(
+    conv: Conversation, user_input: str, session_file: Path | None = None,
+) -> Generator[str, None, None]:
+    """Streaming version of process_message. Yields text deltas.
+
+    Collects all deltas into the full reply so the conversation history
+    gets the complete message, same as the non-streaming path. The caller
+    (API endpoint) forwards each delta to the client as an SSE event.
+    """
+    if not conv.messages and not conv.search_context:
+        try:
+            conv.search_context = _search_relevant_context(user_input)
+        except Exception as e:
+            print(f"  [warning] startup search failed: {e}", file=sys.stderr)
+
+    conv.messages.append({"role": "user", "content": user_input})
+
+    # Yield deltas to the caller while accumulating the full reply.
+    full_reply: list[str] = []
+    for delta in chat_stream(
+        conv.messages, conv.provider, conv.model, search_context=conv.search_context,
+    ):
+        full_reply.append(delta)
+        yield delta
+
+    # Store the complete reply in conversation history.
+    reply = "".join(full_reply)
+    conv.messages.append({"role": "assistant", "content": reply})
+    conv.msg_count += 1
+
+    _maybe_compact(conv, session_file)
 
 
 def _maybe_compact(conv: Conversation, session_file: Path | None) -> None:
