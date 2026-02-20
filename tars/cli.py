@@ -1,4 +1,5 @@
 import argparse
+import os
 import readline
 import sys
 from pathlib import Path
@@ -241,7 +242,7 @@ def main():
     parser = argparse.ArgumentParser(prog="tars", description="tars AI assistant")
     parser.add_argument(
         "-m", "--model",
-        default=DEFAULT_MODEL,
+        default=os.environ.get("TARS_MODEL", DEFAULT_MODEL),
         help="provider:model (e.g. ollama:gemma3:12b, claude:sonnet)",
     )
     sub = parser.add_subparsers(dest="command")
