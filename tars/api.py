@@ -1,4 +1,5 @@
 import json
+import logging
 import sys
 import os
 from contextlib import asynccontextmanager
@@ -20,6 +21,7 @@ load_dotenv()
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    logging.getLogger("uvicorn").info(f"tars [{_provider}:{_model}]")
     try:
         build_index()
     except Exception as e:
