@@ -629,8 +629,26 @@ def main():
     srv.add_argument("--host", default="127.0.0.1", help="bind address")
     srv.add_argument("--port", type=int, default=8180, help="port number")
     sub.add_parser("email", help="start email polling channel")
-    parser.add_argument("message", nargs="*", help="message for single-shot mode")
-    args = parser.parse_args()
+
+    # Detect one-shot messages before argparse sees them — argparse subparsers
+    # greedily match the first positional arg as a subcommand, so
+    # `tars "hello"` fails with "invalid choice".  If argv[1] isn't a known
+    # subcommand or flag, treat everything after flags as a message.
+    _subcommands = {"index", "search", "sgrep", "svec", "serve", "email"}
+    raw_args = sys.argv[1:]
+    message_args: list[str] = []
+    # Skip leading flags (-m, --model and their values)
+    i = 0
+    while i < len(raw_args) and raw_args[i].startswith("-"):
+        i += 1  # flag
+        if raw_args[i - 1] in ("-m", "--model") and i < len(raw_args):
+            i += 1  # flag value
+    if i < len(raw_args) and raw_args[i] not in _subcommands:
+        message_args = raw_args[i:]
+        raw_args = raw_args[:i]
+
+    args = parser.parse_args(raw_args)
+    args.message = message_args
 
     if args.command == "index":
         _run_index(args.embedding_model)
