@@ -1,4 +1,5 @@
 import json
+import socket
 import sys
 import unittest
 from unittest import mock
@@ -7,7 +8,7 @@ sys.modules.setdefault("anthropic", mock.Mock())
 sys.modules.setdefault("ollama", mock.Mock())
 sys.modules.setdefault("dotenv", mock.Mock(load_dotenv=lambda: None))
 
-from tars.web import _extract_text, _run_web_tool, _MAX_CONTENT_LENGTH
+from tars.web import _extract_text, _is_private_host, _run_web_tool, _MAX_CONTENT_LENGTH
 
 
 class ExtractTextTests(unittest.TestCase):
@@ -41,6 +42,42 @@ class ExtractTextTests(unittest.TestCase):
         self.assertEqual(_extract_text(""), "")
 
 
+class SSRFTests(unittest.TestCase):
+    @mock.patch("tars.web.socket.getaddrinfo", return_value=[
+        (2, 1, 6, "", ("127.0.0.1", 0)),
+    ])
+    def test_rejects_loopback(self, _) -> None:
+        self.assertTrue(_is_private_host("localhost"))
+
+    @mock.patch("tars.web.socket.getaddrinfo", return_value=[
+        (2, 1, 6, "", ("10.0.0.1", 0)),
+    ])
+    def test_rejects_private_ip(self, _) -> None:
+        self.assertTrue(_is_private_host("internal.corp"))
+
+    @mock.patch("tars.web.socket.getaddrinfo", return_value=[
+        (2, 1, 6, "", ("169.254.169.254", 0)),
+    ])
+    def test_rejects_link_local(self, _) -> None:
+        self.assertTrue(_is_private_host("metadata.internal"))
+
+    @mock.patch("tars.web.socket.getaddrinfo", return_value=[
+        (2, 1, 6, "", ("93.184.216.34", 0)),
+    ])
+    def test_allows_public_ip(self, _) -> None:
+        self.assertFalse(_is_private_host("example.com"))
+
+    @mock.patch("tars.web.socket.getaddrinfo", side_effect=socket.gaierror("no DNS"))
+    def test_rejects_unresolvable(self, _) -> None:
+        self.assertTrue(_is_private_host("nxdomain.invalid"))
+
+    @mock.patch("tars.web._is_private_host", return_value=True)
+    def test_run_web_tool_blocks_private(self, _) -> None:
+        result = json.loads(_run_web_tool("web_read", {"url": "http://localhost:8080/admin"}))
+        self.assertIn("error", result)
+        self.assertIn("private", result["error"].lower())
+
+
 class RunWebToolTests(unittest.TestCase):
     def test_empty_url_returns_error(self) -> None:
         result = json.loads(_run_web_tool("web_read", {"url": ""}))
@@ -55,8 +92,9 @@ class RunWebToolTests(unittest.TestCase):
         self.assertIn("error", result)
         self.assertIn("scheme", result["error"].lower())
 
+    @mock.patch("tars.web._is_private_host", return_value=False)
     @mock.patch("tars.web.urllib.request.urlopen")
-    def test_valid_url_returns_content(self, mock_urlopen) -> None:
+    def test_valid_url_returns_content(self, mock_urlopen, _) -> None:
         mock_resp = mock.Mock()
         mock_resp.read.return_value = b"<html><body><p>Hello world</p></body></html>"
         mock_resp.__enter__ = mock.Mock(return_value=mock_resp)
@@ -68,8 +106,9 @@ class RunWebToolTests(unittest.TestCase):
         self.assertIn("Hello world", result["content"])
         self.assertFalse(result["truncated"])
 
+    @mock.patch("tars.web._is_private_host", return_value=False)
     @mock.patch("tars.web.urllib.request.urlopen")
-    def test_truncation(self, mock_urlopen) -> None:
+    def test_truncation(self, mock_urlopen, _) -> None:
         long_text = "x" * (_MAX_CONTENT_LENGTH + 1000)
         mock_resp = mock.Mock()
         mock_resp.read.return_value = f"<p>{long_text}</p>".encode()
@@ -81,15 +120,17 @@ class RunWebToolTests(unittest.TestCase):
         self.assertTrue(result["truncated"])
         self.assertLessEqual(len(result["content"]), _MAX_CONTENT_LENGTH)
 
+    @mock.patch("tars.web._is_private_host", return_value=False)
     @mock.patch("tars.web.urllib.request.urlopen")
-    def test_fetch_timeout(self, mock_urlopen) -> None:
+    def test_fetch_timeout(self, mock_urlopen, _) -> None:
         from urllib.error import URLError
         mock_urlopen.side_effect = URLError("timed out")
 
         result = json.loads(_run_web_tool("web_read", {"url": "https://example.com"}))
         self.assertIn("error", result)
 
-    def test_http_url_accepted(self) -> None:
+    @mock.patch("tars.web._is_private_host", return_value=False)
+    def test_http_url_accepted(self, _) -> None:
         with mock.patch("tars.web.urllib.request.urlopen") as mock_urlopen:
             mock_resp = mock.Mock()
             mock_resp.read.return_value = b"<p>ok</p>"

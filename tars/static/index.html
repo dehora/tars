@@ -143,6 +143,7 @@ function parseToolCommand(text) {
   if (cmd === "/memory") return {name: "memory_recall", args: {}};
   if (cmd === "/remember" && parts.length >= 3) return {name: "memory_remember", args: {section: parts[1], content: parts.slice(2).join(" ")}};
   if (cmd === "/note" && parts.length >= 2) return {name: "note_daily", args: {content: parts.slice(1).join(" ")}};
+  if (cmd === "/note") return "usage";
   return null;
 }
 
@@ -253,6 +254,13 @@ async function sendMessage() {
     return;
   }
 
+  // /session (bare) — show usage hint.
+  if (text === "/session") {
+    input.value = "";
+    addMsg("assistant", "usage: `/session <query>`");
+    return;
+  }
+
   // /session <query> — search session logs.
   if (text.startsWith("/session ")) {
     const query = text.slice(9).trim();
@@ -304,6 +312,11 @@ async function sendMessage() {
 
   // Direct tool commands — bypass the model entirely.
   const toolCmd = parseToolCommand(text);
+  if (toolCmd === "usage") {
+    input.value = "";
+    addMsg("assistant", "usage: `/note <text>`");
+    return;
+  }
   if (toolCmd) {
     input.value = "";
     addMsg("user", text);

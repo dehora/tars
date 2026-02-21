@@ -55,6 +55,7 @@ Tars is a personal AI assistant with CLI, web, and email channels. Routes messag
 | `TARS_EMAIL_PASSWORD` | — | Gmail app password |
 | `TARS_EMAIL_ALLOW` | — | Comma-separated allowed sender addresses |
 | `TARS_EMAIL_POLL_INTERVAL` | `60` | Seconds between inbox checks |
+| `TARS_API_TOKEN` | — | Optional bearer token for API auth |
 | `DEFAULT_LAT` / `DEFAULT_LON` | — | Weather location |
 
 ## Git commits

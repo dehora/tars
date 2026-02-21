@@ -6,10 +6,11 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 
 from dotenv import load_dotenv
-from fastapi import FastAPI, HTTPException
-from fastapi.responses import StreamingResponse
+from fastapi import FastAPI, HTTPException, Request
+from fastapi.responses import JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
+from starlette.middleware.base import BaseHTTPMiddleware
 
 from tars.conversation import Conversation, process_message, process_message_stream, save_session
 from tars.core import DEFAULT_MODEL, parse_model
@@ -21,6 +22,26 @@ from tars.sessions import _session_path, list_sessions
 from tars.tools import run_tool
 
 load_dotenv()
+
+_API_TOKEN = os.environ.get("TARS_API_TOKEN", "")
+
+# Paths that don't require auth (static files served via mount).
+_PUBLIC_PATHS = {"/", "/index.html", "/marked.min.js"}
+
+
+class _AuthMiddleware(BaseHTTPMiddleware):
+    """Optional bearer token auth. Skipped when TARS_API_TOKEN is empty."""
+
+    async def dispatch(self, request: Request, call_next):
+        if not _API_TOKEN:
+            return await call_next(request)
+        # Allow static assets through.
+        if request.url.path in _PUBLIC_PATHS:
+            return await call_next(request)
+        auth = request.headers.get("authorization", "")
+        if auth != f"Bearer {_API_TOKEN}":
+            return JSONResponse({"detail": "unauthorized"}, status_code=401)
+        return await call_next(request)
 
 
 @asynccontextmanager
@@ -41,6 +62,7 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(title="tars", lifespan=lifespan)
+app.add_middleware(_AuthMiddleware)
 
 _conversations: dict[str, Conversation] = {}
 _session_files: dict[str, Path | None] = {}

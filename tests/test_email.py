@@ -44,6 +44,16 @@ class TestExtractBody(unittest.TestCase):
         result = _extract_body(msg)
         self.assertEqual(result, "My new message\nAnother line")
 
+    def test_skips_attachment_parts(self):
+        msg = MIMEMultipart("mixed")
+        # Attachment text/plain part
+        attachment = MIMEText("attachment content", "plain", "utf-8")
+        attachment.add_header("Content-Disposition", "attachment", filename="data.txt")
+        msg.attach(attachment)
+        # Actual body
+        msg.attach(MIMEText("real body", "plain", "utf-8"))
+        self.assertEqual(_extract_body(msg), "real body")
+
     def test_empty_body(self):
         msg = MIMEText("", "plain", "utf-8")
         self.assertEqual(_extract_body(msg), "")

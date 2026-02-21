@@ -139,3 +139,13 @@ Why: fixes the class of todoist/tool issues seen with smaller ollama models. One
 When `/review` produces new rules, automatically re-index the procedural file so the rules are immediately searchable. Currently requires a manual `tars index` after review.
 
 Why: closes a gap in the feedback loop. Rules should be live the moment they're accepted.
+
+## Fixes
+
+- tars/cli.py: The user's message content is mutated by prepending an instruction. Suggested fix: Pass the hint as system/metadata (e.g., an extra system prompt) rather than modifying content.
+
+- bin/tars uv run tars depends on the current working directory to locate pyproject.toml. If bin/tars is invoked from outside the repo uv may fail to find the project. Suggested fix: Use `uv --directory /path/to/repo run tars "$@"`
+
+- tars/conversation.py (process_message_stream fallback block). If the escalated stream errors after emitting some deltas, those partial tokens have already been yielded to the client. The fallback stream then yields a second response, resulting in mixed/duplicated output in the UI. Suggested fix: buffer escalation deltas until the stream completes or avoid streaming for escalation and only stream after a successful first chunk.
+
+- tars/email.py (function _is_allowed_sender). Sender whitelist checks only the From header which is spoofable. Suggested fix: Validate Authentication-Results / X-Original-Authentication-Results for spf=pass or dkim=pass on the From domain, or restrict to known domains and require Return-Path/From alignment.

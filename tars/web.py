@@ -1,8 +1,11 @@
 """Fetch and extract text content from web pages."""
 
+import ipaddress
 import json
+import socket
 import urllib.request
 from html.parser import HTMLParser
+from urllib.parse import urlparse
 
 _MAX_CONTENT_LENGTH = 12_000
 _TIMEOUT = 15
@@ -44,6 +47,19 @@ def _extract_text(html: str) -> str:
     return "\n".join(line for line in lines if line)
 
 
+def _is_private_host(hostname: str) -> bool:
+    """Check if a hostname resolves to a private/loopback/link-local IP."""
+    try:
+        infos = socket.getaddrinfo(hostname, None, socket.AF_UNSPEC, socket.SOCK_STREAM)
+    except socket.gaierror:
+        return True  # can't resolve — reject
+    for info in infos:
+        addr = ipaddress.ip_address(info[4][0])
+        if addr.is_private or addr.is_loopback or addr.is_link_local or addr.is_reserved:
+            return True
+    return False
+
+
 def _run_web_tool(name: str, args: dict) -> str:
     """Fetch a URL and return its text content."""
     url = args.get("url", "").strip()
@@ -52,6 +68,10 @@ def _run_web_tool(name: str, args: dict) -> str:
 
     if not url.startswith(("http://", "https://")):
         return json.dumps({"error": f"Invalid URL scheme: {url!r} — must start with http:// or https://"})
+
+    hostname = urlparse(url).hostname or ""
+    if not hostname or _is_private_host(hostname):
+        return json.dumps({"error": "URL points to a private/internal address"})
 
     try:
         req = urllib.request.Request(url, headers={"User-Agent": _USER_AGENT})

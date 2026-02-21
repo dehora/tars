@@ -84,6 +84,9 @@ def _extract_body(msg: email.message.Message) -> str:
     body = ""
     if msg.is_multipart():
         for part in msg.walk():
+            # Skip attachment parts — only consider inline/body text.
+            if part.get_content_disposition() == "attachment":
+                continue
             ct = part.get_content_type()
             if ct == "text/plain":
                 payload = part.get_payload(decode=True)
@@ -94,6 +97,8 @@ def _extract_body(msg: email.message.Message) -> str:
         # Fallback: try text/html if no text/plain found
         if not body:
             for part in msg.walk():
+                if part.get_content_disposition() == "attachment":
+                    continue
                 ct = part.get_content_type()
                 if ct == "text/html":
                     payload = part.get_payload(decode=True)
@@ -151,11 +156,13 @@ def _connect_imap(address: str, password: str) -> imaplib.IMAP4_SSL:
     return imap
 
 
-def _fetch_unseen(imap: imaplib.IMAP4_SSL, allowed: list[str]) -> list[email.message.Message]:
+def _fetch_unseen(
+    imap: imaplib.IMAP4_SSL, allowed: list[str],
+) -> list[tuple[bytes, email.message.Message]]:
     """Fetch unread emails, filtered to allowed senders.
 
-    Marks all fetched emails as SEEN regardless of sender.
-    Only returns messages from allowed senders.
+    Uses BODY.PEEK[] so messages stay UNSEEN until explicitly marked
+    after successful processing. Returns (msg_num, Message) tuples.
     """
     imap.select("INBOX")
     _, data = imap.search(None, "UNSEEN")
@@ -164,7 +171,7 @@ def _fetch_unseen(imap: imaplib.IMAP4_SSL, allowed: list[str]) -> list[email.mes
 
     messages = []
     for num in data[0].split():
-        _, msg_data = imap.fetch(num, "(RFC822)")
+        _, msg_data = imap.fetch(num, "(BODY.PEEK[])")
         if not msg_data or not msg_data[0]:
             continue
         raw = msg_data[0]
@@ -172,11 +179,8 @@ def _fetch_unseen(imap: imaplib.IMAP4_SSL, allowed: list[str]) -> list[email.mes
             msg = email.message_from_bytes(raw[1])
         else:
             continue
-        # Mark as seen (implicit via fetch with RFC822 in most configs,
-        # but explicitly mark to be safe)
-        imap.store(num, "+FLAGS", "\\Seen")
         if _is_allowed_sender(msg, allowed):
-            messages.append(msg)
+            messages.append((num, msg))
 
     return messages
 
@@ -323,7 +327,7 @@ def run_email(provider: str, model: str) -> None:
                 imap = None
                 continue
 
-            for msg in emails:
+            for msg_num, msg in emails:
                 tid = _thread_id(msg)
                 body = _extract_body(msg)
                 _, from_addr = email.utils.parseaddr(msg.get("From", ""))
@@ -338,6 +342,8 @@ def run_email(provider: str, model: str) -> None:
                     reply_text = slash_reply
                     print(f"email: [slash] {slash_reply[:60]}")
                 elif not body:
+                    # Mark seen even if we skip (no body, not a command).
+                    imap.store(msg_num, "+FLAGS", "\\Seen")
                     continue
                 else:
                     # Get or create conversation
@@ -356,9 +362,11 @@ def run_email(provider: str, model: str) -> None:
 
                 try:
                     _send_reply(config, msg, reply_text)
+                    # Mark as Seen only after successful reply.
+                    imap.store(msg_num, "+FLAGS", "\\Seen")
                     print(f"email: replied to {from_addr}")
                 except Exception as e:
-                    print(f"email: send failed: {e}", file=sys.stderr)
+                    print(f"email: send failed (will retry): {e}", file=sys.stderr)
 
             time.sleep(config["poll_interval"])
 
