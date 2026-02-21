@@ -138,6 +138,34 @@ def format_memory_recall(raw: str) -> str:
     return "\n".join(lines).rstrip()
 
 
+def format_web_read(raw: str) -> str:
+    """Format web_read JSON into readable text."""
+    try:
+        data = json.loads(raw)
+    except (json.JSONDecodeError, TypeError):
+        return raw
+    if "error" in data:
+        return data["error"]
+    url = data.get("url", "")
+    content = data.get("content", "")
+    truncated = data.get("truncated", False)
+    lines = [f"[{url}]", "", content]
+    if truncated:
+        lines.append("\n(content truncated)")
+    return "\n".join(lines)
+
+
+def format_capture(raw: str) -> str:
+    """Format capture result."""
+    try:
+        data = json.loads(raw)
+    except (json.JSONDecodeError, TypeError):
+        return raw
+    if "error" in data:
+        return data["error"]
+    return f"captured: {data['title']} \u2192 {data['path']}"
+
+
 _FORMATTERS = {
     "todoist_today": format_todoist_list,
     "todoist_upcoming": format_todoist_list,
@@ -147,6 +175,8 @@ _FORMATTERS = {
     "weather_forecast": format_weather_forecast,
     "memory_recall": format_memory_recall,
     "note_daily": format_todoist_action,
+    "web_read": format_web_read,
+    "capture": format_capture,
 }
 
 

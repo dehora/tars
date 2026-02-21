@@ -188,8 +188,8 @@ async function sendMessage() {
     return;
   }
 
-  // /review and /tidy — CLI-only interactive commands.
-  if (text === "/review" || text === "/tidy") {
+  // CLI-only interactive commands.
+  if (text === "/review" || text === "/tidy" || text.startsWith("/capture")) {
     input.value = "";
     addMsg("assistant", `\`${text}\` is only available in the CLI`);
     return;

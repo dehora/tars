@@ -395,6 +395,7 @@ _SLASH_COMMANDS = [
     "/search ", "/sgrep ", "/svec ",
     "/sessions", "/session ",
     "/w ", "/r ", "/review", "/tidy", "/brief",
+    "/capture ",
     "/help", "/clear",
 ]
 
@@ -486,6 +487,7 @@ def repl(provider: str, model: str):
                 print("    /memory          show persistent memory")
                 print("    /remember <semantic|procedural> <text>")
                 print("    /note <text>         append to today's daily note")
+                print("    /capture <url> [--raw]  capture web page to vault")
                 print("  search:")
                 print("    /search <query>  hybrid keyword + semantic")
                 print("    /sgrep <query>   keyword (FTS5/BM25)")
@@ -526,6 +528,25 @@ def repl(provider: str, model: str):
                 continue
             if user_input.strip() == "/brief":
                 _handle_brief()
+                continue
+            if user_input.strip().startswith("/capture"):
+                parts = user_input.strip().split()
+                url = ""
+                raw = "--raw" in parts
+                for p in parts[1:]:
+                    if p != "--raw":
+                        url = p
+                        break
+                if not url:
+                    print("  usage: /capture <url> [--raw]")
+                else:
+                    spinner = _Spinner()
+                    spinner.start()
+                    from tars.capture import capture as _capture
+                    result = _capture(url, provider, model, raw=raw)
+                    spinner.stop()
+                    from tars.format import format_tool_result
+                    print(f"  {format_tool_result('capture', result)}")
                 continue
             if _handle_sessions(user_input):
                 continue
@@ -649,6 +670,26 @@ def main():
         print(reply)
     else:
         repl(provider, model)
+
+
+def main_serve():
+    """Convenience entrypoint for `tars-serve`."""
+    import uvicorn
+
+    sys.argv = ["tars", "serve"] + sys.argv[1:]
+    main()
+
+
+def main_email():
+    """Convenience entrypoint for `tars-email`."""
+    sys.argv = ["tars", "email"] + sys.argv[1:]
+    main()
+
+
+def main_index():
+    """Convenience entrypoint for `tars-index`."""
+    sys.argv = ["tars", "index"] + sys.argv[1:]
+    main()
 
 
 if __name__ == "__main__":

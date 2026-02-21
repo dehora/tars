@@ -6,6 +6,7 @@ from tars.format import (
     format_todoist_action,
     format_todoist_list,
     format_tool_result,
+    format_web_read,
     format_weather_forecast,
     format_weather_now,
 )
@@ -106,6 +107,24 @@ class MemoryRecallTests(unittest.TestCase):
         self.assertIn("- dog: Perry", out)
         self.assertIn("[procedural]", out)
         self.assertIn("- be kind", out)
+
+
+class WebReadTests(unittest.TestCase):
+    def test_formats_content(self) -> None:
+        raw = json.dumps({"url": "https://example.com", "content": "Hello world", "truncated": False})
+        result = format_web_read(raw)
+        self.assertIn("[https://example.com]", result)
+        self.assertIn("Hello world", result)
+        self.assertNotIn("truncated", result)
+
+    def test_truncated(self) -> None:
+        raw = json.dumps({"url": "https://example.com", "content": "text", "truncated": True})
+        result = format_web_read(raw)
+        self.assertIn("(content truncated)", result)
+
+    def test_error(self) -> None:
+        raw = json.dumps({"error": "fetch failed"})
+        self.assertEqual(format_web_read(raw), "fetch failed")
 
 
 class FormatToolResultTests(unittest.TestCase):

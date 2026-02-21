@@ -14,6 +14,9 @@ dependencies = [
 
 [project.scripts]
 tars = "tars.cli:main"
+tars-serve = "tars.cli:main_serve"
+tars-email = "tars.cli:main_email"
+tars-index = "tars.cli:main_index"
 
 [build-system]
 requires = ["hatchling"]

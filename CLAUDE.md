@@ -20,7 +20,7 @@ Tars is a personal AI assistant with CLI, web, and email channels. Routes messag
 ```
 [cli/web/email] → [conversation.py] → [core.py] → ollama / claude
                                      ↕
-                               [tools.py] → todoist, weather, memory, search
+                               [tools.py] → todoist, weather, memory, search, web
                                      ↕
                           [memory.py] ← obsidian vault (TARS_MEMORY_DIR)
                           [search.py] ← sqlite-vec + FTS5 (tars.db)
@@ -46,6 +46,7 @@ Tars is a personal AI assistant with CLI, web, and email channels. Routes messag
 | Env var | Default | Purpose |
 |---------|---------|---------|
 | `TARS_MODEL` | `claude:sonnet` | Provider and model (`provider:model`) |
+| `TARS_ESCALATION_MODEL` | — | Escalation model for tool calls (`provider:model`) |
 | `TARS_MEMORY_DIR` | — | Path to tars obsidian vault |
 | `TARS_NOTES_DIR` | — | Path to personal obsidian vault (daily notes) |
 | `TARS_MAX_TOKENS` | `1024` | Max tokens for Anthropic responses |

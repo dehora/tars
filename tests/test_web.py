@@ -1,0 +1,125 @@
+import json
+import sys
+import unittest
+from unittest import mock
+
+sys.modules.setdefault("anthropic", mock.Mock())
+sys.modules.setdefault("ollama", mock.Mock())
+sys.modules.setdefault("dotenv", mock.Mock(load_dotenv=lambda: None))
+
+from tars.web import _extract_text, _run_web_tool, _MAX_CONTENT_LENGTH
+
+
+class ExtractTextTests(unittest.TestCase):
+    def test_strips_tags(self) -> None:
+        self.assertEqual(_extract_text("<p>hello</p>"), "hello")
+
+    def test_preserves_text_across_tags(self) -> None:
+        result = _extract_text("<h1>Title</h1><p>Body text</p>")
+        self.assertIn("Title", result)
+        self.assertIn("Body text", result)
+
+    def test_removes_script_content(self) -> None:
+        html = "<p>visible</p><script>alert('xss')</script><p>also visible</p>"
+        result = _extract_text(html)
+        self.assertIn("visible", result)
+        self.assertIn("also visible", result)
+        self.assertNotIn("alert", result)
+
+    def test_removes_style_content(self) -> None:
+        html = "<style>.foo { color: red; }</style><p>content</p>"
+        result = _extract_text(html)
+        self.assertIn("content", result)
+        self.assertNotIn("color", result)
+
+    def test_collapses_whitespace(self) -> None:
+        html = "<p>  lots   of   spaces  </p>"
+        result = _extract_text(html)
+        self.assertEqual(result, "lots of spaces")
+
+    def test_empty_html(self) -> None:
+        self.assertEqual(_extract_text(""), "")
+
+
+class RunWebToolTests(unittest.TestCase):
+    def test_empty_url_returns_error(self) -> None:
+        result = json.loads(_run_web_tool("web_read", {"url": ""}))
+        self.assertIn("error", result)
+
+    def test_missing_url_returns_error(self) -> None:
+        result = json.loads(_run_web_tool("web_read", {}))
+        self.assertIn("error", result)
+
+    def test_invalid_scheme_returns_error(self) -> None:
+        result = json.loads(_run_web_tool("web_read", {"url": "ftp://example.com"}))
+        self.assertIn("error", result)
+        self.assertIn("scheme", result["error"].lower())
+
+    @mock.patch("tars.web.urllib.request.urlopen")
+    def test_valid_url_returns_content(self, mock_urlopen) -> None:
+        mock_resp = mock.Mock()
+        mock_resp.read.return_value = b"<html><body><p>Hello world</p></body></html>"
+        mock_resp.__enter__ = mock.Mock(return_value=mock_resp)
+        mock_resp.__exit__ = mock.Mock(return_value=False)
+        mock_urlopen.return_value = mock_resp
+
+        result = json.loads(_run_web_tool("web_read", {"url": "https://example.com"}))
+        self.assertEqual(result["url"], "https://example.com")
+        self.assertIn("Hello world", result["content"])
+        self.assertFalse(result["truncated"])
+
+    @mock.patch("tars.web.urllib.request.urlopen")
+    def test_truncation(self, mock_urlopen) -> None:
+        long_text = "x" * (_MAX_CONTENT_LENGTH + 1000)
+        mock_resp = mock.Mock()
+        mock_resp.read.return_value = f"<p>{long_text}</p>".encode()
+        mock_resp.__enter__ = mock.Mock(return_value=mock_resp)
+        mock_resp.__exit__ = mock.Mock(return_value=False)
+        mock_urlopen.return_value = mock_resp
+
+        result = json.loads(_run_web_tool("web_read", {"url": "https://example.com"}))
+        self.assertTrue(result["truncated"])
+        self.assertLessEqual(len(result["content"]), _MAX_CONTENT_LENGTH)
+
+    @mock.patch("tars.web.urllib.request.urlopen")
+    def test_fetch_timeout(self, mock_urlopen) -> None:
+        from urllib.error import URLError
+        mock_urlopen.side_effect = URLError("timed out")
+
+        result = json.loads(_run_web_tool("web_read", {"url": "https://example.com"}))
+        self.assertIn("error", result)
+
+    def test_http_url_accepted(self) -> None:
+        with mock.patch("tars.web.urllib.request.urlopen") as mock_urlopen:
+            mock_resp = mock.Mock()
+            mock_resp.read.return_value = b"<p>ok</p>"
+            mock_resp.__enter__ = mock.Mock(return_value=mock_resp)
+            mock_resp.__exit__ = mock.Mock(return_value=False)
+            mock_urlopen.return_value = mock_resp
+
+            result = json.loads(_run_web_tool("web_read", {"url": "http://example.com"}))
+            self.assertNotIn("error", result)
+
+
+class RouterEscalationTests(unittest.TestCase):
+    @mock.patch("tars.router.escalation_config", return_value=("claude", "sonnet"))
+    def test_url_triggers_escalation(self, _mock_esc) -> None:
+        from tars.router import route_message
+        provider, model = route_message(
+            "read this: https://example.com/blog", "ollama", "llama3.1:8b",
+        )
+        self.assertEqual(provider, "claude")
+        self.assertEqual(model, "sonnet")
+
+    @mock.patch("tars.router.escalation_config", return_value=("claude", "sonnet"))
+    def test_read_this_triggers_escalation(self, _mock_esc) -> None:
+        from tars.router import route_message
+        provider, model = route_message(
+            "read this article about AI", "ollama", "llama3.1:8b",
+        )
+        self.assertEqual(provider, "claude")
+        self.assertEqual(model, "sonnet")
+
+
+if __name__ == "__main__":
+    unittest.main()

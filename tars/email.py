@@ -18,6 +18,42 @@ from tars.format import format_tool_result
 from tars.sessions import _session_path
 from tars.tools import run_tool
 
+def _parse_todoist_natural(text: str, provider: str, model: str) -> dict:
+    """Use the model to extract task fields from natural language."""
+    import json as _json
+
+    from tars.core import chat
+
+    messages = [{"role": "user", "content": f"{_TODOIST_PARSE_PROMPT}{text}"}]
+    try:
+        raw = chat(messages, provider, model, use_tools=False)
+        # Extract JSON from response (model might wrap in ```json blocks)
+        raw = raw.strip()
+        if raw.startswith("```"):
+            raw = raw.split("\n", 1)[1].rsplit("```", 1)[0].strip()
+        result = _json.loads(raw)
+        if isinstance(result, dict) and result.get("content"):
+            return result
+    except Exception as e:
+        print(f"  [email] todoist parse failed, using raw text: {e}", file=sys.stderr)
+    return {"content": text}
+
+
+_TODOIST_PARSE_PROMPT = """\
+Extract task details from this text. Return ONLY valid JSON with these fields:
+- "content": the task description (required)
+- "project": project name if mentioned, otherwise omit
+- "due": due date if mentioned (e.g. "today", "tomorrow", "friday"), otherwise omit
+- "priority": 1-4 if mentioned (4=urgent), otherwise omit
+
+Examples:
+"eggs to Groceries" → {"content": "eggs", "project": "Groceries"}
+"buy milk --due tomorrow" → {"content": "buy milk", "due": "tomorrow"}
+"call dentist p3" → {"content": "call dentist", "priority": 3}
+"fix the bike" → {"content": "fix the bike"}
+
+Text: """
+
 
 def _email_config() -> dict | None:
     """Load email config from env vars. Returns None if not configured."""
@@ -176,7 +212,9 @@ def _send_reply(config: dict, original: email.message.Message, body: str) -> Non
         smtp.send_message(reply)
 
 
-def _handle_slash_command(body: str) -> str | None:
+def _handle_slash_command(
+    body: str, provider: str = "", model: str = "",
+) -> str | None:
     """Handle slash commands in email body. Returns reply text, or None if not a command."""
     stripped = body.strip()
     if not stripped.startswith("/"):
@@ -188,7 +226,12 @@ def _handle_slash_command(body: str) -> str | None:
         if cmd == "/todoist":
             sub = parts[1] if len(parts) > 1 else ""
             if sub == "add" and len(parts) > 2:
-                args = _parse_todoist_add(parts[2:])
+                raw_text = " ".join(parts[2:])
+                has_flags = any(p.startswith("--") for p in parts[2:])
+                if has_flags or not provider:
+                    args = _parse_todoist_add(parts[2:])
+                else:
+                    args = _parse_todoist_natural(raw_text, provider, model)
                 if not args.get("content"):
                     return "Usage: /todoist add <text> [--due D] [--project P] [--priority N]"
                 name = "todoist_add_task"
@@ -219,6 +262,15 @@ def _handle_slash_command(body: str) -> str | None:
         elif cmd == "/note" and len(parts) >= 2:
             name = "note_daily"
             args = {"content": " ".join(parts[1:])}
+        elif cmd == "/read" and len(parts) >= 2:
+            name = "web_read"
+            args = {"url": parts[1]}
+        elif cmd == "/capture" and len(parts) >= 2:
+            from tars.capture import capture as _capture
+            raw_flag = "--raw" in parts
+            url = next((p for p in parts[1:] if p != "--raw"), "")
+            result = _capture(url, provider, model, raw=raw_flag)
+            return format_tool_result("capture", result)
         else:
             return None  # Not a recognized command — let the model handle it
 
@@ -274,18 +326,19 @@ def run_email(provider: str, model: str) -> None:
             for msg in emails:
                 tid = _thread_id(msg)
                 body = _extract_body(msg)
-                if not body:
-                    continue
-
                 _, from_addr = email.utils.parseaddr(msg.get("From", ""))
                 subject = msg.get("Subject", "(no subject)")
                 print(f"email: [{from_addr}] {subject}")
 
-                # Try slash command first, fall back to model
-                slash_reply = _handle_slash_command(body)
+                # Try slash command: check subject first, then body
+                slash_reply = _handle_slash_command(subject, provider, model)
+                if slash_reply is None and body:
+                    slash_reply = _handle_slash_command(body, provider, model)
                 if slash_reply is not None:
                     reply_text = slash_reply
-                    print(f"email: [slash] {body.strip().split()[0]}")
+                    print(f"email: [slash] {slash_reply[:60]}")
+                elif not body:
+                    continue
                 else:
                     # Get or create conversation
                     if tid not in _conversations:

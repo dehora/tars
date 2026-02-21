@@ -241,6 +241,36 @@ class TestSlashCommand(unittest.TestCase):
             "note_daily", {"content": "check out that new KEF"}, quiet=True
         )
 
+    @mock.patch("tars.email.run_tool", return_value='{"url": "https://example.com", "content": "hello", "truncated": false}')
+    def test_read_command(self, mock_run):
+        result = _handle_slash_command("/read https://example.com")
+        self.assertIsNotNone(result)
+        mock_run.assert_called_once_with(
+            "web_read", {"url": "https://example.com"}, quiet=True,
+        )
+
+    def test_read_no_url(self):
+        self.assertIsNone(_handle_slash_command("/read"))
+
+    @mock.patch("tars.email.run_tool", return_value='{"ok": true}')
+    @mock.patch("tars.email._parse_todoist_natural", return_value={"content": "eggs", "project": "Groceries"})
+    def test_todoist_add_natural_language(self, mock_parse, mock_run):
+        result = _handle_slash_command("/todoist add eggs to Groceries", "ollama", "llama3.1:8b")
+        self.assertIsNotNone(result)
+        mock_parse.assert_called_once_with("eggs to Groceries", "ollama", "llama3.1:8b")
+        call_args = mock_run.call_args
+        self.assertEqual(call_args[0][1]["content"], "eggs")
+        self.assertEqual(call_args[0][1]["project"], "Groceries")
+
+    @mock.patch("tars.email.run_tool", return_value='{"ok": true}')
+    def test_todoist_add_flags_bypass_model(self, mock_run):
+        """Flags in the text should use the flag parser, not the model."""
+        result = _handle_slash_command("/todoist add buy eggs --project Groceries", "ollama", "llama3.1:8b")
+        self.assertIsNotNone(result)
+        call_args = mock_run.call_args
+        self.assertEqual(call_args[0][1]["content"], "buy eggs")
+        self.assertEqual(call_args[0][1]["project"], "Groceries")
+
     def test_todoist_add_no_content(self):
         result = _handle_slash_command("/todoist add")
         self.assertIsNotNone(result)

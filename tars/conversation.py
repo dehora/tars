@@ -3,7 +3,10 @@ from collections.abc import Generator
 from dataclasses import dataclass, field
 from pathlib import Path
 
+import anthropic
+
 from tars.core import _search_relevant_context, chat, chat_stream
+from tars.router import route_message
 from tars.sessions import (
     SESSION_COMPACTION_INTERVAL,
     _save_session,
@@ -44,9 +47,19 @@ def process_message(
             print(f"  [warning] startup search failed: {e}", file=sys.stderr)
 
     conv.messages.append({"role": "user", "content": user_input})
-    reply = chat(
-        conv.messages, conv.provider, conv.model, search_context=conv.search_context,
-    )
+    provider, model = route_message(user_input, conv.provider, conv.model)
+    escalated = (provider, model) != (conv.provider, conv.model)
+    try:
+        reply = chat(
+            conv.messages, provider, model, search_context=conv.search_context,
+        )
+    except anthropic.APIStatusError as exc:
+        if not escalated:
+            raise
+        print(f"  [router] escalation failed ({exc.status_code}), falling back to {conv.provider}:{conv.model}", file=sys.stderr)
+        reply = chat(
+            conv.messages, conv.provider, conv.model, search_context=conv.search_context,
+        )
     conv.messages.append({"role": "assistant", "content": reply})
     conv.msg_count += 1
 
@@ -72,12 +85,25 @@ def process_message_stream(
     conv.messages.append({"role": "user", "content": user_input})
 
     # Yield deltas to the caller while accumulating the full reply.
+    provider, model = route_message(user_input, conv.provider, conv.model)
+    escalated = (provider, model) != (conv.provider, conv.model)
     full_reply: list[str] = []
-    for delta in chat_stream(
-        conv.messages, conv.provider, conv.model, search_context=conv.search_context,
-    ):
-        full_reply.append(delta)
-        yield delta
+    try:
+        for delta in chat_stream(
+            conv.messages, provider, model, search_context=conv.search_context,
+        ):
+            full_reply.append(delta)
+            yield delta
+    except anthropic.APIStatusError as exc:
+        if not escalated:
+            raise
+        print(f"  [router] escalation failed ({exc.status_code}), falling back to {conv.provider}:{conv.model}", file=sys.stderr)
+        full_reply.clear()
+        for delta in chat_stream(
+            conv.messages, conv.provider, conv.model, search_context=conv.search_context,
+        ):
+            full_reply.append(delta)
+            yield delta
 
     # Store the complete reply in conversation history.
     reply = "".join(full_reply)

@@ -8,6 +8,13 @@ sys.modules.setdefault("anthropic", mock.Mock())
 sys.modules.setdefault("ollama", mock.Mock())
 sys.modules.setdefault("dotenv", mock.Mock(load_dotenv=lambda: None))
 
+# Ensure the anthropic mock has real exception classes for fallback tests.
+# (the mock may have been created by another test file loaded first)
+_APIStatusError = type("APIStatusError", (Exception,), {"status_code": 0})
+sys.modules["anthropic"].APIStatusError = _APIStatusError
+sys.modules["anthropic"].RateLimitError = type("RateLimitError", (_APIStatusError,), {"status_code": 429})
+sys.modules["anthropic"].BadRequestError = type("BadRequestError", (_APIStatusError,), {"status_code": 400})
+
 from tars import conversation
 from tars.conversation import Conversation, process_message, process_message_stream, save_session
 
@@ -85,6 +92,93 @@ class ProcessMessageStreamTests(unittest.TestCase):
             list(process_message_stream(conv, "hello"))
         search.assert_called_once_with("hello")
         self.assertEqual(conv.search_context, "ctx")
+
+
+class EscalationFallbackTests(unittest.TestCase):
+    def _api_error(self, cls_name: str = "RateLimitError"):
+        _anthropic = sys.modules["anthropic"]
+        return getattr(_anthropic, cls_name)("error")
+
+    def test_rate_limit_falls_back_to_default(self) -> None:
+        conv = Conversation(id="test", provider="ollama", model="llama3.1:8b")
+        with (
+            mock.patch.object(conversation, "route_message", return_value=("claude", "sonnet")),
+            mock.patch.object(
+                conversation, "chat",
+                side_effect=[self._api_error("RateLimitError"), "fallback reply"],
+            ) as chat_mock,
+        ):
+            reply = process_message(conv, "add task buy milk")
+        self.assertEqual(reply, "fallback reply")
+        self.assertEqual(chat_mock.call_count, 2)
+        args = chat_mock.call_args_list[1][0]
+        self.assertEqual(args[1], "ollama")
+        self.assertEqual(args[2], "llama3.1:8b")
+
+    def test_bad_request_falls_back_to_default(self) -> None:
+        conv = Conversation(id="test", provider="ollama", model="llama3.1:8b")
+        with (
+            mock.patch.object(conversation, "route_message", return_value=("claude", "sonnet")),
+            mock.patch.object(
+                conversation, "chat",
+                side_effect=[self._api_error("BadRequestError"), "fallback reply"],
+            ) as chat_mock,
+        ):
+            reply = process_message(conv, "what's the weather")
+        self.assertEqual(reply, "fallback reply")
+        self.assertEqual(chat_mock.call_count, 2)
+
+    def test_api_error_reraises_when_not_escalated(self) -> None:
+        _anthropic = sys.modules["anthropic"]
+        conv = Conversation(id="test", provider="claude", model="sonnet")
+        with (
+            mock.patch.object(conversation, "route_message", return_value=("claude", "sonnet")),
+            mock.patch.object(
+                conversation, "chat",
+                side_effect=self._api_error("BadRequestError"),
+            ),
+        ):
+            with self.assertRaises(_anthropic.APIStatusError):
+                process_message(conv, "hello")
+
+    def test_stream_rate_limit_falls_back(self) -> None:
+        conv = Conversation(id="test", provider="ollama", model="llama3.1:8b")
+        err = self._api_error("RateLimitError")
+
+        call_count = 0
+        def stream_side_effect(*args, **kwargs):
+            nonlocal call_count
+            call_count += 1
+            if call_count == 1:
+                raise err
+            return iter(["fall", "back"])
+
+        with (
+            mock.patch.object(conversation, "route_message", return_value=("claude", "sonnet")),
+            mock.patch.object(conversation, "chat_stream", side_effect=stream_side_effect),
+        ):
+            deltas = list(process_message_stream(conv, "what's the weather"))
+        self.assertEqual(deltas, ["fall", "back"])
+        self.assertEqual(conv.messages[-1], {"role": "assistant", "content": "fallback"})
+
+    def test_stream_bad_request_falls_back(self) -> None:
+        conv = Conversation(id="test", provider="ollama", model="llama3.1:8b")
+        err = self._api_error("BadRequestError")
+
+        call_count = 0
+        def stream_side_effect(*args, **kwargs):
+            nonlocal call_count
+            call_count += 1
+            if call_count == 1:
+                raise err
+            return iter(["ok"])
+
+        with (
+            mock.patch.object(conversation, "route_message", return_value=("claude", "sonnet")),
+            mock.patch.object(conversation, "chat_stream", side_effect=stream_side_effect),
+        ):
+            deltas = list(process_message_stream(conv, "what's the weather"))
+        self.assertEqual(deltas, ["ok"])
 
 
 class SaveSessionTests(unittest.TestCase):
