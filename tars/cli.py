@@ -682,6 +682,8 @@ def main():
 
     if args.message:
         message = " ".join(args.message)
+        # Hint that this is a one-shot — no follow-up conversation possible.
+        message = f"[one-shot message, no follow-up possible — act immediately on any tool requests]\n{message}"
         conv = Conversation(id="oneshot", provider=provider, model=model)
         session_file = _session_path()
         reply = process_message(conv, message, session_file)
