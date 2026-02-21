@@ -145,3 +145,12 @@ Why: closes a gap in the feedback loop. Rules should be live the moment they're 
 - tars/conversation.py (process_message_stream fallback block). If the escalated stream errors after emitting some deltas, those partial tokens have already been yielded to the client. The fallback stream then yields a second response, resulting in mixed/duplicated output in the UI. Suggested fix: buffer escalation deltas until the stream completes or avoid streaming for escalation and only stream after a successful first chunk.
 
 - tars/cli.py (repl) and tars/email.py (_handle_slash_command). Slash command handling is accumulating if/elif chains. As more commands are added this will become unwieldy. Suggested fix: refactor to a dispatch table mapping command names to handler functions.
+
+- tars/web.py (in _run_web_tool / _is_private_host). The SSRF check only validates the hostname before the request. urllib.request.urlopen follows redirects by default, so a public URL can redirect to a private/loopback address and bypass
+the check. Suggested fix: Disable redirects or re-validate the final URL and resolved IP after redirects.
+
+- tars/email.py (in _fetch_unseen / run_email). Disallowed senders are no longer marked as seen, so each poll will re-fetch the same disallowed emails indefinitely. Suggested fix: Mark disallowed messages as seen and move them to a folder/label for examination.
+
+- tars/capture.py. The conversation context is concatenated directly into the prompt without an "untrusted" wrapper. Suggested fix: Wrap the context in a tagged block with an explicit preface (like the web‑content guard). consider refactoring across user inputs to provide a common approach.
+
+- tars/tools.py _clean_args strips all empty strings. Suggested fix: Consider tool‑specific sanitization or only stripping empty strings for parameters.
