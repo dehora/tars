@@ -133,6 +133,31 @@ def _get_vec_dim_from_schema(conn: sqlite3.Connection) -> int | None:
     return int(match.group(1))
 
 
+def db_stats() -> dict:
+    """Return database health metrics."""
+    db = _db_path()
+    if db is None or not db.exists():
+        return {"error": "no database"}
+    conn = _connect(db)
+    try:
+        file_count = conn.execute("SELECT COUNT(*) FROM files").fetchone()[0]
+        chunk_count = 0
+        if _vec_table_exists(conn):
+            chunk_count = conn.execute("SELECT COUNT(*) FROM vec_chunks").fetchone()[0]
+        model = _get_metadata(conn, "embedding_model") or "unknown"
+        dim = _get_metadata(conn, "vec_dim") or "unknown"
+        db_size = db.stat().st_size
+        return {
+            "db_size_mb": round(db_size / 1_048_576, 1),
+            "files": file_count,
+            "chunks": chunk_count,
+            "embedding_model": model,
+            "embedding_dim": dim,
+        }
+    finally:
+        conn.close()
+
+
 def _prepare_db(model: str) -> tuple[int | None, bool]:
     """Pre-init check: handle model changes, return (cached_dim, model_changed).
 

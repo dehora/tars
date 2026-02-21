@@ -262,6 +262,22 @@ class ListSessionsTests(unittest.TestCase):
         self.assertEqual(title, "Dog info lookup")
 
 
+class SessionCountTests(unittest.TestCase):
+    def test_counts_sessions(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            sessions_dir = Path(tmpdir) / "sessions"
+            sessions_dir.mkdir()
+            (sessions_dir / "a.md").write_text("one")
+            (sessions_dir / "b.md").write_text("two")
+            (sessions_dir / "c.txt").write_text("not a session")
+            with mock.patch.dict("os.environ", {"TARS_MEMORY_DIR": tmpdir}):
+                self.assertEqual(sessions.session_count(), 2)
+
+    def test_no_memory_dir(self) -> None:
+        with mock.patch.dict("os.environ", {}, clear=True):
+            self.assertEqual(sessions.session_count(), 0)
+
+
 class RecentSessionsTests(unittest.TestCase):
     def test_load_recent_sessions_orders_and_limits(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:

@@ -102,6 +102,17 @@ def _extract_title(path: Path) -> str:
     return path.stem
 
 
+def session_count() -> int:
+    """Count total session files."""
+    d = _memory_dir()
+    if d is None:
+        return 0
+    sessions_dir = d / "sessions"
+    if not sessions_dir.is_dir():
+        return 0
+    return len(list(sessions_dir.glob("*.md")))
+
+
 def list_sessions(*, limit: int = 10) -> list[SessionInfo]:
     """List recent sessions with date and topic, newest first."""
     d = _memory_dir()

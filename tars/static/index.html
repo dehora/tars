@@ -183,6 +183,8 @@ async function sendMessage() {
       "`/r [note]` — flag last response as good",
       "**daily:**",
       "`/brief` — todoist + weather digest",
+      "**system:**",
+      "`/stats` — memory and index health",
       "`/clear` — reset conversation",
       "`/help` — this help",
     ].join("\n"));
@@ -231,6 +233,29 @@ async function sendMessage() {
       addMsg("assistant", lines.join("\n\n"));
     } catch (e) {
       addMsg("error", "brief failed: " + e.message);
+    }
+    return;
+  }
+
+  // /stats — system health.
+  if (text === "/stats") {
+    input.value = "";
+    addMsg("user", text);
+    try {
+      const resp = await fetch("/stats");
+      const data = await resp.json();
+      if (data.error) {
+        addMsg("assistant", data.error);
+      } else {
+        const lines = [
+          `**db:** ${data.db_size_mb} MB, ${data.files} files, ${data.chunks} chunks`,
+          `**embedding:** ${data.embedding_model} (${data.embedding_dim}d)`,
+          `**sessions:** ${data.sessions}`,
+        ];
+        addMsg("assistant", lines.join("\n"));
+      }
+    } catch (e) {
+      addMsg("error", "stats failed: " + e.message);
     }
     return;
   }

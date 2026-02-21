@@ -46,6 +46,26 @@ Fetch and extract text content from web pages. Model calls `web_read` when a use
 
 Fetch a web page, optionally summarize with the model (stripping boilerplate), save to `TARS_NOTES_DIR/17 tars captures/` with YAML frontmatter. Available in CLI and email.
 
+### 15. Memory stats and health (`/stats`)
+
+`/stats` command showing DB size, file count, chunk count, embedding model/dimensions, and session count. Available in CLI, web UI, and API (`GET /stats`).
+
+### 24. Conversation-aware captures
+
+When `/capture` is called mid-conversation, recent conversation context is passed to the summarization prompt so the summary emphasizes aspects relevant to what's being discussed. Email captures remain contextless (standalone by nature).
+
+### 25. Tool parameter sanitization
+
+`_clean_args()` strips empty strings and None values from tool args at the `run_tool()` boundary. Fixes the class of issues where ollama models fill in every optional parameter with empty strings.
+
+## Next
+
+### 9. Scheduled / recurring commands
+
+Cron-like `/schedule` that runs `/brief` at 8am or `/todoist today` at a set time, pushing results to a notification channel. This is where the RPi deployment target starts to make sense — always-on, running scheduled tasks. Items 12 (email digest) and 13 (email search) are subsets of this — wiring existing slash commands to a scheduler.
+
+Why: turns tars from reactive (you ask) to proactive (it tells you). Unlocks several dependent features (proactive nudges, email digest). Significant architecture change (daemon mode, notifications).
+
 ## Active
 
 ### 12. Email digest (`tars email-brief`)
@@ -68,23 +88,11 @@ A lightweight intent pre-filter (few-shot prompt or regex patterns) before the m
 
 Why: better routing = fewer `/w` corrections = better Procedural.md rules = better routing. Virtuous cycle.
 
-### 9. Scheduled / recurring commands
-
-Cron-like `/schedule` that runs `/brief` at 8am or `/todoist today` at a set time, pushing results to a notification channel. This is where the RPi deployment target starts to make sense — always-on, running scheduled tasks.
-
-Why: turns tars from reactive (you ask) to proactive (it tells you). Significant architecture change (daemon mode, notifications).
-
 ### 14. Inbound webhooks
 
 A `/webhook` endpoint that accepts POST from IFTTT/Zapier/GitHub and routes through conversation. "GitHub issue assigned to you" → tars creates a todoist task. Turns tars into a personal automation hub.
 
 Why: connects tars to external event sources. Medium effort — needs auth, payload parsing, and action mapping.
-
-### 15. Memory stats and health
-
-Dashboard showing memory count, chunk count, embedding dimensions, last index time, session count, DB size. Useful for knowing if the system is healthy, especially on RPi.
-
-Why: operational visibility. You can't fix what you can't see.
 
 ### 16. Conversation export
 
@@ -122,18 +130,6 @@ Enhance `/capture` with metadata extraction: author, publish date, tags, reading
 
 Why: makes captured notes first-class PKM citizens instead of raw dumps.
 
-### 24. Conversation-aware captures
-
-When you `/capture` a URL mid-conversation, tars summarizes it in the context of what you're discussing. "We were talking about AI routing and you captured this article about industrial automation" — the summary focuses on the relevant angle rather than being generic.
-
-Why: context-aware summaries are dramatically more useful than generic ones. The conversation history is already there.
-
-### 25. Tool parameter sanitization
-
-Strip empty strings from optional tool parameters before dispatch. Ollama models fill in every parameter (`'due': '', 'project': ''`) even when they should be omitted. Clean this at the `run_tool()` boundary so tools see clean input regardless of which model generated it.
-
-Why: fixes the class of todoist/tool issues seen with smaller ollama models. One fix point, benefits all tools.
-
 ### 26. Procedural rule auto-ingest
 
 When `/review` produces new rules, automatically re-index the procedural file so the rules are immediately searchable. Currently requires a manual `tars index` after review.
@@ -147,3 +143,5 @@ Why: closes a gap in the feedback loop. Rules should be live the moment they're 
 - bin/tars uv run tars depends on the current working directory to locate pyproject.toml. If bin/tars is invoked from outside the repo uv may fail to find the project. Suggested fix: Use `uv --directory /path/to/repo run tars "$@"`
 
 - tars/conversation.py (process_message_stream fallback block). If the escalated stream errors after emitting some deltas, those partial tokens have already been yielded to the client. The fallback stream then yields a second response, resulting in mixed/duplicated output in the UI. Suggested fix: buffer escalation deltas until the stream completes or avoid streaming for escalation and only stream after a successful first chunk.
+
+- tars/cli.py (repl) and tars/email.py (_handle_slash_command). Slash command handling is accumulating if/elif chains. As more commands are added this will become unwieldy. Suggested fix: refactor to a dispatch table mapping command names to handler functions.

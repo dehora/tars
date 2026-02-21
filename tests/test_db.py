@@ -293,6 +293,32 @@ class ChunkTests(unittest.TestCase):
 
 
 @unittest.skipUnless(_HAS_SQLITE_VEC, "sqlite-vec not installed")
+class DbStatsTests(unittest.TestCase):
+    def test_returns_metrics(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            with mock.patch.dict(os.environ, {"TARS_MEMORY_DIR": tmpdir}, clear=True):
+                conn = db.init_db(dim=4)
+                db._set_metadata(conn, "embedding_model", "test-model")
+                cid = db.ensure_collection(conn)
+                db.upsert_file(
+                    conn, collection_id=cid, path="/test.md",
+                    content_hash="abc", mtime=1.0, size=100,
+                )
+                conn.close()
+                stats = db.db_stats()
+                self.assertEqual(stats["files"], 1)
+                self.assertEqual(stats["embedding_model"], "test-model")
+                self.assertEqual(stats["embedding_dim"], "4")
+                self.assertIn("db_size_mb", stats)
+                self.assertIn("chunks", stats)
+
+    def test_no_database(self) -> None:
+        with mock.patch.dict(os.environ, {}, clear=True):
+            stats = db.db_stats()
+            self.assertIn("error", stats)
+
+
+@unittest.skipUnless(_HAS_SQLITE_VEC, "sqlite-vec not installed")
 class SerializeTests(unittest.TestCase):
     def test_serialize_f32(self) -> None:
         vec = [1.0, 2.0, 3.0]

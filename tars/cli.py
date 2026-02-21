@@ -394,7 +394,7 @@ _SLASH_COMMANDS = [
     "/todoist ", "/weather", "/forecast", "/memory", "/remember ", "/note ",
     "/search ", "/sgrep ", "/svec ",
     "/sessions", "/session ",
-    "/w ", "/r ", "/review", "/tidy", "/brief",
+    "/w ", "/r ", "/review", "/tidy", "/brief", "/stats",
     "/capture ",
     "/help", "/clear",
 ]
@@ -502,6 +502,8 @@ def repl(provider: str, model: str):
                 print("    /tidy            clean up memory (duplicates, junk)")
                 print("  daily:")
                 print("    /brief           todoist + weather digest")
+                print("  system:")
+                print("    /stats           memory and index health")
                 print("  /help              show this help")
                 continue
             if user_input.strip().startswith(("/w", "/r")):
@@ -529,6 +531,15 @@ def repl(provider: str, model: str):
             if user_input.strip() == "/brief":
                 _handle_brief()
                 continue
+            if user_input.strip() == "/stats":
+                from tars.db import db_stats
+                from tars.sessions import session_count
+                stats = db_stats()
+                stats["sessions"] = session_count()
+                import json as _json
+                from tars.format import format_stats
+                print(f"  {format_stats(_json.dumps(stats))}")
+                continue
             if user_input.strip().startswith("/capture"):
                 parts = user_input.strip().split()
                 url = ""
@@ -542,8 +553,9 @@ def repl(provider: str, model: str):
                 else:
                     spinner = _Spinner()
                     spinner.start()
-                    from tars.capture import capture as _capture
-                    result = _capture(url, provider, model, raw=raw)
+                    from tars.capture import capture as _capture, _conversation_context
+                    ctx = _conversation_context(conv)
+                    result = _capture(url, provider, model, raw=raw, context=ctx)
                     spinner.stop()
                     from tars.format import format_tool_result
                     print(f"  {format_tool_result('capture', result)}")

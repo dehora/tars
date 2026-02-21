@@ -181,6 +181,7 @@ _ALLOWED_TOOLS = {
     "weather_now", "weather_forecast",
     "memory_recall", "memory_remember", "memory_update", "memory_forget", "memory_search",
     "note_daily",
+    "web_read",
 }
 
 
@@ -224,6 +225,15 @@ def brief_endpoint() -> dict:
         except Exception as e:
             sections[name] = f"unavailable: {e}"
     return {"sections": sections}
+
+
+@app.get("/stats")
+def stats_endpoint() -> dict:
+    from tars.db import db_stats
+    from tars.sessions import session_count
+    stats = db_stats()
+    stats["sessions"] = session_count()
+    return stats
 
 
 @app.get("/sessions")

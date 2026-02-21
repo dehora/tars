@@ -18,7 +18,7 @@ tars is a conversational assistant that remembers things across sessions, manage
 - **Daily notes** — append thoughts to today's Obsidian journal entry
 - **Search** — hybrid keyword + semantic search across all memory types
 - **Web read** — fetch and extract text content from web pages for discussion
-- **Capture** — save web pages to your Obsidian vault with optional AI summarization
+- **Capture** — save web pages to your Obsidian vault with AI summarization (context-aware when mid-conversation)
 
 **Memory types:**
 - **Semantic** (`Memory.md`) — facts, preferences, things you've told tars to remember
@@ -97,6 +97,7 @@ tars index
 | `/sessions` | List recent sessions |
 | `/session <query>` | Search session logs |
 | `/brief` | Daily digest (tasks + weather) |
+| `/stats` | Memory and index health |
 | `/w [note]` | Flag last response as wrong |
 | `/r [note]` | Flag last response as good |
 | `/review` | Review corrections and apply learnings |
@@ -132,6 +133,7 @@ Slash commands work in the email subject line or body:
 | `TARS_EMAIL_PASSWORD` | — | Gmail app password |
 | `TARS_EMAIL_ALLOW` | — | Comma-separated allowed sender addresses |
 | `TARS_EMAIL_POLL_INTERVAL` | `60` | Seconds between inbox checks |
+| `TARS_API_TOKEN` | — | Optional bearer token for API auth |
 | `DEFAULT_LAT` / `DEFAULT_LON` | — | Weather location coordinates |
 
 ## Setup

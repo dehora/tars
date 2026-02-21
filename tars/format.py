@@ -166,6 +166,22 @@ def format_capture(raw: str) -> str:
     return f"captured: {data['title']} \u2192 {data['path']}"
 
 
+def format_stats(raw: str) -> str:
+    """Format system stats into readable lines."""
+    try:
+        data = json.loads(raw)
+    except (json.JSONDecodeError, TypeError):
+        return raw
+    if "error" in data:
+        return data["error"]
+    lines = [
+        f"db: {data.get('db_size_mb', '?')} MB, {data.get('files', '?')} files, {data.get('chunks', '?')} chunks",
+        f"embedding: {data.get('embedding_model', '?')} ({data.get('embedding_dim', '?')}d)",
+        f"sessions: {data.get('sessions', '?')}",
+    ]
+    return "\n".join(lines)
+
+
 _FORMATTERS = {
     "todoist_today": format_todoist_list,
     "todoist_upcoming": format_todoist_list,

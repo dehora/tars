@@ -180,7 +180,13 @@ OLLAMA_TOOLS = [
 ]
 
 
+def _clean_args(args: dict) -> dict:
+    """Strip empty-string and None optional params that models fill in needlessly."""
+    return {k: v for k, v in args.items() if v is not None and v != ""}
+
+
 def run_tool(name: str, args: dict, *, quiet: bool = False) -> str:
+    args = _clean_args(args)
     if not quiet:
         print(f"  [tool] {name}({args})", file=sys.stderr)
     try:

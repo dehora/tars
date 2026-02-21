@@ -10,21 +10,21 @@ sys.modules.setdefault("anthropic", mock.Mock())
 sys.modules.setdefault("ollama", mock.Mock())
 sys.modules.setdefault("dotenv", mock.Mock(load_dotenv=lambda: None))
 
-from tars.capture import _extract_title, _sanitize_filename, capture
+from tars.capture import _conversation_context, _extract_title, _sanitize_filename, capture
 
 
 class ExtractTitleTests(unittest.TestCase):
     def test_from_heading(self) -> None:
-        self.assertEqual(_extract_title("# My Post\n\nBody text", "https://x.com"), "My Post")
+        self.assertEqual(_extract_title("# My Post\n\nBody text", "https://dehora.net/tars-test"), "My Post")
 
     def test_skips_subheadings(self) -> None:
-        self.assertEqual(_extract_title("## Not this\n\nBody", "https://x.com/my-post"), "My Post")
+        self.assertEqual(_extract_title("## Not this\n\nBody", "https://dehora.net/tars-test/my-post"), "My Post")
 
     def test_from_url_slug(self) -> None:
-        self.assertEqual(_extract_title("no headings here", "https://x.com/cool-article"), "Cool Article")
+        self.assertEqual(_extract_title("no headings here", "https://dehora.net/tars-test/cool-article"), "Cool Article")
 
     def test_url_no_path(self) -> None:
-        self.assertEqual(_extract_title("text", "https://x.com/"), "Untitled")
+        self.assertEqual(_extract_title("text", "https://dehora.net/"), "Untitled")
 
 
 class SanitizeFilenameTests(unittest.TestCase):
@@ -42,7 +42,7 @@ class SanitizeFilenameTests(unittest.TestCase):
 class CaptureTests(unittest.TestCase):
     def test_no_notes_dir(self) -> None:
         with mock.patch.dict(os.environ, {}, clear=True):
-            result = json.loads(capture("https://x.com", "ollama", "fake"))
+            result = json.loads(capture("https://dehora.net/tars-test", "ollama", "fake"))
         self.assertIn("error", result)
         self.assertIn("TARS_NOTES_DIR", result["error"])
 
@@ -58,38 +58,38 @@ class CaptureTests(unittest.TestCase):
                 mock.patch.dict(os.environ, {"TARS_NOTES_DIR": tmpdir}),
                 mock.patch("tars.capture._run_web_tool", return_value=json.dumps({"error": "fetch failed"})),
             ):
-                result = json.loads(capture("https://x.com", "ollama", "fake"))
+                result = json.loads(capture("https://dehora.net/tars-test", "ollama", "fake"))
         self.assertIn("error", result)
 
     def test_capture_saves_file(self) -> None:
-        web_result = json.dumps({"url": "https://x.com/post", "content": "Some article text", "truncated": False})
+        web_result = json.dumps({"url": "https://dehora.net/tars-test/post", "content": "Some article text", "truncated": False})
         with tempfile.TemporaryDirectory() as tmpdir:
             with (
                 mock.patch.dict(os.environ, {"TARS_NOTES_DIR": tmpdir}),
                 mock.patch("tars.capture._run_web_tool", return_value=web_result),
                 mock.patch("tars.capture.chat", return_value="# Great Post\n\nSummarized content."),
             ):
-                result = json.loads(capture("https://x.com/post", "ollama", "fake"))
+                result = json.loads(capture("https://dehora.net/tars-test/post", "ollama", "fake"))
             self.assertTrue(result["ok"])
             self.assertEqual(result["title"], "Great Post")
             path = Path(result["path"])
             self.assertTrue(path.exists())
             content = path.read_text(encoding="utf-8")
-            self.assertIn("source: https://x.com/post", content)
+            self.assertIn("source: https://dehora.net/tars-test/post", content)
             self.assertIn("captured:", content)
             self.assertIn("Summarized content.", content)
             # Check it's in the right directory
             self.assertIn("17 tars captures", str(path))
 
     def test_capture_raw_skips_summary(self) -> None:
-        web_result = json.dumps({"url": "https://x.com/post", "content": "# Raw Title\n\nRaw content here.", "truncated": False})
+        web_result = json.dumps({"url": "https://dehora.net/tars-test/post", "content": "# Raw Title\n\nRaw content here.", "truncated": False})
         with tempfile.TemporaryDirectory() as tmpdir:
             with (
                 mock.patch.dict(os.environ, {"TARS_NOTES_DIR": tmpdir}),
                 mock.patch("tars.capture._run_web_tool", return_value=web_result),
                 mock.patch("tars.capture.chat") as mock_chat,
             ):
-                result = json.loads(capture("https://x.com/post", "ollama", "fake", raw=True))
+                result = json.loads(capture("https://dehora.net/tars-test/post", "ollama", "fake", raw=True))
             mock_chat.assert_not_called()
             self.assertTrue(result["ok"])
             path = Path(result["path"])
@@ -97,7 +97,7 @@ class CaptureTests(unittest.TestCase):
             self.assertIn("Raw content here.", content)
 
     def test_capture_creates_directory(self) -> None:
-        web_result = json.dumps({"url": "https://x.com", "content": "text", "truncated": False})
+        web_result = json.dumps({"url": "https://dehora.net/tars-test", "content": "text", "truncated": False})
         with tempfile.TemporaryDirectory() as tmpdir:
             captures_dir = Path(tmpdir) / "17 tars captures"
             self.assertFalse(captures_dir.exists())
@@ -106,21 +106,82 @@ class CaptureTests(unittest.TestCase):
                 mock.patch("tars.capture._run_web_tool", return_value=web_result),
                 mock.patch("tars.capture.chat", return_value="# Title\n\nBody"),
             ):
-                capture("https://x.com", "ollama", "fake")
+                capture("https://dehora.net/tars-test", "ollama", "fake")
             self.assertTrue(captures_dir.exists())
 
     def test_chat_called_with_use_tools_false(self) -> None:
-        web_result = json.dumps({"url": "https://x.com", "content": "text", "truncated": False})
+        web_result = json.dumps({"url": "https://dehora.net/tars-test", "content": "text", "truncated": False})
         with tempfile.TemporaryDirectory() as tmpdir:
             with (
                 mock.patch.dict(os.environ, {"TARS_NOTES_DIR": tmpdir}),
                 mock.patch("tars.capture._run_web_tool", return_value=web_result),
                 mock.patch("tars.capture.chat", return_value="# T\n\nBody") as mock_chat,
             ):
-                capture("https://x.com", "ollama", "fake")
+                capture("https://dehora.net/tars-test", "ollama", "fake")
             mock_chat.assert_called_once()
             _, kwargs = mock_chat.call_args
             self.assertFalse(kwargs["use_tools"])
+
+
+class ConversationContextTests(unittest.TestCase):
+    def test_extracts_recent_messages(self) -> None:
+        conv = mock.Mock()
+        conv.messages = [
+            {"role": "user", "content": "what is AI routing?"},
+            {"role": "assistant", "content": "AI routing is..."},
+        ]
+        ctx = _conversation_context(conv)
+        self.assertIn("user: what is AI routing?", ctx)
+        self.assertIn("assistant: AI routing is...", ctx)
+
+    def test_truncates_long_messages(self) -> None:
+        conv = mock.Mock()
+        conv.messages = [{"role": "user", "content": "x" * 300}]
+        ctx = _conversation_context(conv)
+        self.assertLessEqual(len(ctx.splitlines()[0]), 210)  # "user: " + 200 chars
+
+    def test_empty_conversation(self) -> None:
+        conv = mock.Mock()
+        conv.messages = []
+        self.assertEqual(_conversation_context(conv), "")
+
+    def test_none_conversation(self) -> None:
+        self.assertEqual(_conversation_context(None), "")
+
+    def test_limits_to_last_six(self) -> None:
+        conv = mock.Mock()
+        conv.messages = [{"role": "user", "content": f"msg {i}"} for i in range(10)]
+        ctx = _conversation_context(conv)
+        lines = ctx.strip().splitlines()
+        self.assertEqual(len(lines), 6)
+        self.assertIn("msg 4", lines[0])
+
+
+class CaptureWithContextTests(unittest.TestCase):
+    def test_context_included_in_prompt(self) -> None:
+        web_result = json.dumps({"url": "https://dehora.net/tars-test", "content": "article text", "truncated": False})
+        with tempfile.TemporaryDirectory() as tmpdir:
+            with (
+                mock.patch.dict(os.environ, {"TARS_NOTES_DIR": tmpdir}),
+                mock.patch("tars.capture._run_web_tool", return_value=web_result),
+                mock.patch("tars.capture.chat", return_value="# T\n\nBody") as mock_chat,
+            ):
+                capture("https://dehora.net/tars-test", "ollama", "fake", context="user: what about routing?")
+            prompt = mock_chat.call_args[0][0][0]["content"]
+            self.assertIn("what about routing?", prompt)
+            self.assertIn("relevant to this context", prompt)
+
+    def test_no_context_omits_block(self) -> None:
+        web_result = json.dumps({"url": "https://dehora.net/tars-test", "content": "article text", "truncated": False})
+        with tempfile.TemporaryDirectory() as tmpdir:
+            with (
+                mock.patch.dict(os.environ, {"TARS_NOTES_DIR": tmpdir}),
+                mock.patch("tars.capture._run_web_tool", return_value=web_result),
+                mock.patch("tars.capture.chat", return_value="# T\n\nBody") as mock_chat,
+            ):
+                capture("https://dehora.net/tars-test", "ollama", "fake")
+            prompt = mock_chat.call_args[0][0][0]["content"]
+            self.assertNotIn("relevant to this context", prompt)
 
 
 if __name__ == "__main__":
