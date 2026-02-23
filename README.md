@@ -27,7 +27,7 @@ tars is a conversational assistant that remembers things across sessions, manage
 
 **Multi-model routing:**
 
-When `TARS_ESCALATION_MODEL` is set, tars uses the primary model (e.g. a local ollama model) for chat and automatically escalates to the stronger model (e.g. Claude) when tool use is detected. If the escalation model is unavailable (rate limit, billing, outage), it falls back gracefully to the primary model.
+When `TARS_REMOTE_MODEL` (or legacy `TARS_ESCALATION_MODEL`) is set, tars uses the primary model (from `TARS_DEFAULT_MODEL` or legacy `TARS_MODEL`) for chat and automatically escalates to the remote model when tool use is detected. If the remote model is unavailable (rate limit, outage, transient errors), it falls back to the primary model.
 
 **Feedback loop:**
 - `/w` flags a bad response, `/r` flags a good one
@@ -48,8 +48,8 @@ When `TARS_ESCALATION_MODEL` is set, tars uses the primary model (e.g. a local o
                               [router.py] → multi-model routing + fallback
 ```
 
-- **Providers**: Claude (Anthropic API) or ollama (local models). Set via `TARS_MODEL`.
-- **Routing**: keyword-based pre-routing detects tool intent and escalates to a stronger model when needed. Falls back on API errors.
+- **Providers**: Claude (Anthropic API) or ollama (local models). Set via `TARS_DEFAULT_MODEL` (or legacy `TARS_MODEL`).
+- **Routing**: keyword-based pre-routing detects tool intent and escalates to a remote model when configured. Falls back on transient API errors.
 - **Search**: markdown-aware chunking → ollama embeddings → sqlite-vec for KNN, FTS5 for keyword, fused with Reciprocal Rank Fusion.
 - **Indexing**: incremental via content hash — only re-indexes changed files.
 - **Streaming**: CLI and web UI stream responses token-by-token.
@@ -98,6 +98,7 @@ tars index
 | `/session <query>` | Search session logs |
 | `/brief` | Daily digest (tasks + weather) |
 | `/stats` | Memory and index health |
+| `/model` | Show active model configuration |
 | `/w [note]` | Flag last response as wrong |
 | `/r [note]` | Flag last response as good |
 | `/review` | Review corrections and apply learnings |
@@ -123,8 +124,11 @@ Slash commands work in the email subject line or body:
 
 | Env var | Default | Purpose |
 |---------|---------|---------|
-| `TARS_MODEL` | `claude:sonnet` | Provider and model (`provider:model`) |
-| `TARS_ESCALATION_MODEL` | — | Escalation model for tool calls (`provider:model`) |
+| `TARS_MODEL` | `claude:sonnet` | Legacy primary model (`provider:model`) |
+| `TARS_DEFAULT_MODEL` | `claude:sonnet` | Primary model (`provider:model`) |
+| `TARS_ESCALATION_MODEL` | — | Legacy remote model for tool calls (`provider:model`) |
+| `TARS_REMOTE_MODEL` | — | Remote model for tool calls (`provider:model`, explicit versions recommended; set to `none` to disable) |
+| `TARS_ROUTING_POLICY` | `tool` | Routing policy (only `tool` supported) |
 | `TARS_MEMORY_DIR` | — | Path to tars Obsidian vault |
 | `TARS_NOTES_DIR` | — | Path to personal Obsidian vault (daily notes, captures) |
 | `TARS_MAX_TOKENS` | `1024` | Max tokens for Anthropic responses |

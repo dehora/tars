@@ -45,8 +45,11 @@ Tars is a personal AI assistant with CLI, web, and email channels. Routes messag
 
 | Env var | Default | Purpose |
 |---------|---------|---------|
-| `TARS_MODEL` | `claude:sonnet` | Provider and model (`provider:model`) |
-| `TARS_ESCALATION_MODEL` | — | Escalation model for tool calls (`provider:model`) |
+| `TARS_MODEL` | `claude:sonnet` | Legacy primary model (`provider:model`) |
+| `TARS_DEFAULT_MODEL` | `claude:sonnet` | Primary model (`provider:model`) |
+| `TARS_ESCALATION_MODEL` | — | Legacy remote model for tool calls (`provider:model`) |
+| `TARS_REMOTE_MODEL` | — | Remote model for tool calls (`provider:model`, explicit versions recommended) |
+| `TARS_ROUTING_POLICY` | `tool` | Routing policy (only `tool` supported) |
 | `TARS_MEMORY_DIR` | — | Path to tars obsidian vault |
 | `TARS_NOTES_DIR` | — | Path to personal obsidian vault (daily notes) |
 | `TARS_MAX_TOKENS` | `1024` | Max tokens for Anthropic responses |

@@ -1,71 +1,116 @@
-import os
 import unittest
-from unittest import mock
 
+from tars.config import ModelConfig
 from tars.router import route_message
 
 
 class TestRouter(unittest.TestCase):
-
-    @mock.patch.dict(os.environ, {}, clear=False)
-    @mock.patch("tars.router.escalation_config", return_value=None)
-    def test_no_escalation_configured(self, _mock_esc):
-        provider, model = route_message("hello", "ollama", "llama3.1:8b")
+    def test_no_escalation_configured(self):
+        config = ModelConfig(
+            primary_provider="ollama",
+            primary_model="llama3.1:8b",
+            remote_provider=None,
+            remote_model=None,
+            routing_policy="tool",
+        )
+        provider, model = route_message("hello", config)
         self.assertEqual(provider, "ollama")
         self.assertEqual(model, "llama3.1:8b")
 
-    @mock.patch("tars.router.escalation_config", return_value=("claude", "sonnet"))
-    def test_already_claude(self, _mock_esc):
-        provider, model = route_message("add task buy milk", "claude", "sonnet")
+    def test_already_claude(self):
+        config = ModelConfig(
+            primary_provider="claude",
+            primary_model="sonnet",
+            remote_provider="claude",
+            remote_model="sonnet",
+            routing_policy="tool",
+        )
+        provider, model = route_message("add task buy milk", config)
         self.assertEqual(provider, "claude")
         self.assertEqual(model, "sonnet")
 
-    @mock.patch("tars.router.escalation_config", return_value=("claude", "sonnet"))
-    def test_todoist_keywords(self, _mock_esc):
+    def test_todoist_keywords(self):
+        config = ModelConfig(
+            primary_provider="ollama",
+            primary_model="llama3.1:8b",
+            remote_provider="claude",
+            remote_model="sonnet",
+            routing_policy="tool",
+        )
         for msg in ["add buy milk to todoist", "remind me to call mom", "buy eggs"]:
-            provider, model = route_message(msg, "ollama", "llama3.1:8b")
+            provider, model = route_message(msg, config)
             self.assertEqual(provider, "claude", f"failed for: {msg}")
             self.assertEqual(model, "sonnet", f"failed for: {msg}")
 
-    @mock.patch("tars.router.escalation_config", return_value=("claude", "sonnet"))
-    def test_weather_keywords(self, _mock_esc):
-        provider, model = route_message("what's the weather", "ollama", "llama3.1:8b")
+    def test_weather_keywords(self):
+        config = ModelConfig(
+            primary_provider="ollama",
+            primary_model="llama3.1:8b",
+            remote_provider="claude",
+            remote_model="sonnet",
+            routing_policy="tool",
+        )
+        provider, model = route_message("what's the weather", config)
         self.assertEqual(provider, "claude")
         self.assertEqual(model, "sonnet")
 
-    @mock.patch("tars.router.escalation_config", return_value=("claude", "sonnet"))
-    def test_plain_chat(self, _mock_esc):
-        provider, model = route_message("hello how are you", "ollama", "llama3.1:8b")
+    def test_plain_chat(self):
+        config = ModelConfig(
+            primary_provider="ollama",
+            primary_model="llama3.1:8b",
+            remote_provider="claude",
+            remote_model="sonnet",
+            routing_policy="tool",
+        )
+        provider, model = route_message("hello how are you", config)
         self.assertEqual(provider, "ollama")
         self.assertEqual(model, "llama3.1:8b")
 
-    @mock.patch("tars.router.escalation_config", return_value=("claude", "sonnet"))
-    def test_case_insensitive(self, _mock_esc):
-        provider, model = route_message("BUY EGGS", "ollama", "llama3.1:8b")
+    def test_case_insensitive(self):
+        config = ModelConfig(
+            primary_provider="ollama",
+            primary_model="llama3.1:8b",
+            remote_provider="claude",
+            remote_model="sonnet",
+            routing_policy="tool",
+        )
+        provider, model = route_message("BUY EGGS", config)
         self.assertEqual(provider, "claude")
         self.assertEqual(model, "sonnet")
 
-    @mock.patch("tars.router.escalation_config", return_value=("claude", "sonnet"))
-    def test_memory_keywords(self, _mock_esc):
-        provider, model = route_message(
-            "remember that I like coffee", "ollama", "llama3.1:8b",
+    def test_memory_keywords(self):
+        config = ModelConfig(
+            primary_provider="ollama",
+            primary_model="llama3.1:8b",
+            remote_provider="claude",
+            remote_model="sonnet",
+            routing_policy="tool",
         )
+        provider, model = route_message("remember that I like coffee", config)
         self.assertEqual(provider, "claude")
         self.assertEqual(model, "sonnet")
 
-    @mock.patch("tars.router.escalation_config", return_value=("claude", "sonnet"))
-    def test_note_keywords(self, _mock_esc):
-        provider, model = route_message(
-            "note: interesting idea", "ollama", "llama3.1:8b",
+    def test_note_keywords(self):
+        config = ModelConfig(
+            primary_provider="ollama",
+            primary_model="llama3.1:8b",
+            remote_provider="claude",
+            remote_model="sonnet",
+            routing_policy="tool",
         )
+        provider, model = route_message("note: interesting idea", config)
         self.assertEqual(provider, "claude")
         self.assertEqual(model, "sonnet")
 
-    @mock.patch("tars.router.escalation_config", return_value=("claude", "sonnet"))
-    def test_direct_tool_name(self, _mock_esc):
-        provider, model = route_message(
-            "use weather_now for london", "ollama", "llama3.1:8b",
+    def test_direct_tool_name(self):
+        config = ModelConfig(
+            primary_provider="ollama",
+            primary_model="llama3.1:8b",
+            remote_provider="claude",
+            remote_model="sonnet",
+            routing_policy="tool",
         )
+        provider, model = route_message("use weather_now for london", config)
         self.assertEqual(provider, "claude")
         self.assertEqual(model, "sonnet")
 

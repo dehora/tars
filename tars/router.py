@@ -3,7 +3,7 @@
 import re
 import sys
 
-from tars.core import escalation_config
+from tars.config import ModelConfig
 
 # Tool names from tars/tools.py — direct mentions always escalate.
 _TOOL_NAMES = {
@@ -52,26 +52,39 @@ def _has_tool_intent(text: str) -> str | None:
     return None
 
 
-def route_message(
-    user_input: str, default_provider: str, default_model: str,
-) -> tuple[str, str]:
+def route_message(user_input: str, config: ModelConfig) -> tuple[str, str]:
     """Decide which provider/model to use for a message.
 
     Returns (provider, model) — either the default or the escalation target.
     """
-    esc = escalation_config()
-    if esc is None:
-        print(f"  [router] {default_provider}:{default_model} (no escalation configured)", file=sys.stderr)
+    default_provider = config.primary_provider
+    default_model = config.primary_model
+    esc_provider = config.remote_provider
+    esc_model = config.remote_model
+
+    if config.routing_policy != "tool":
+        print(
+            f"  [router] {default_provider}:{default_model} (routing={config.routing_policy})",
+            file=sys.stderr,
+        )
         return default_provider, default_model
 
-    # No point escalating if default is already claude
-    if default_provider == "claude":
-        print(f"  [router] {default_provider}:{default_model} (default is already claude)", file=sys.stderr)
+    if esc_provider is None or esc_model is None:
+        print(
+            f"  [router] {default_provider}:{default_model} (no escalation configured)",
+            file=sys.stderr,
+        )
+        return default_provider, default_model
+
+    if default_provider == esc_provider and default_model == esc_model:
+        print(
+            f"  [router] {default_provider}:{default_model} (default matches remote)",
+            file=sys.stderr,
+        )
         return default_provider, default_model
 
     trigger = _has_tool_intent(user_input)
     if trigger:
-        esc_provider, esc_model = esc
         print(f"  [router] escalating to {esc_provider}:{esc_model} (matched: {trigger!r})", file=sys.stderr)
         return esc_provider, esc_model
 

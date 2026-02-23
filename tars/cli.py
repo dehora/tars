@@ -1,5 +1,4 @@
 import argparse
-import os
 import readline
 import sys
 import threading
@@ -8,8 +7,9 @@ from pathlib import Path
 
 from dotenv import load_dotenv
 
+from tars.config import apply_cli_overrides, load_model_config, model_summary
 from tars.conversation import Conversation, process_message, process_message_stream, save_session
-from tars.core import DEFAULT_MODEL, chat, parse_model
+from tars.core import chat
 from tars.embeddings import DEFAULT_EMBEDDING_MODEL
 from tars.format import format_tool_result
 from tars.indexer import build_index
@@ -396,6 +396,7 @@ _SLASH_COMMANDS = [
     "/sessions", "/session ",
     "/w ", "/r ", "/review", "/tidy", "/brief", "/stats",
     "/capture ",
+    "/model",
     "/help", "/clear",
 ]
 
@@ -456,8 +457,15 @@ class _Spinner:
         sys.stdout.flush()
 
 
-def repl(provider: str, model: str):
-    conv = Conversation(id="repl", provider=provider, model=model)
+def repl(config):
+    conv = Conversation(
+        id="repl",
+        provider=config.primary_provider,
+        model=config.primary_model,
+        remote_provider=config.remote_provider,
+        remote_model=config.remote_model,
+        routing_policy=config.routing_policy,
+    )
     session_file = _session_path()
     history_file = Path.home() / ".tars_history"
     try:
@@ -468,7 +476,7 @@ def repl(provider: str, model: str):
     readline.set_completer(_completer)
     readline.set_completer_delims("")
     readline.parse_and_bind("tab: complete")
-    print(f"tars [{provider}:{model}] (ctrl-d to quit)")
+    print(f"tars [{config.primary_provider}:{config.primary_model}] (ctrl-d to quit)")
     try:
         while True:
             try:
@@ -488,6 +496,7 @@ def repl(provider: str, model: str):
                 print("    /remember <semantic|procedural> <text>")
                 print("    /note <text>         append to today's daily note")
                 print("    /capture <url> [--raw]  capture web page to vault")
+                print("    /model           show active model configuration")
                 print("  search:")
                 print("    /search <query>  hybrid keyword + semantic")
                 print("    /sgrep <query>   keyword (FTS5/BM25)")
@@ -504,6 +513,7 @@ def repl(provider: str, model: str):
                 print("    /brief           todoist + weather digest")
                 print("  system:")
                 print("    /stats           memory and index health")
+                print("    /model           show active model configuration")
                 print("  /help              show this help")
                 continue
             if user_input.strip().startswith(("/w", "/r")):
@@ -523,10 +533,10 @@ def repl(provider: str, model: str):
                         print(f"  {result}")
                     continue
             if user_input.strip() == "/review":
-                _handle_review(provider, model)
+                _handle_review(config.primary_provider, config.primary_model)
                 continue
             if user_input.strip() == "/tidy":
-                _handle_tidy(provider, model)
+                _handle_tidy(config.primary_provider, config.primary_model)
                 continue
             if user_input.strip() == "/brief":
                 _handle_brief()
@@ -555,10 +565,22 @@ def repl(provider: str, model: str):
                     spinner.start()
                     from tars.capture import capture as _capture, _conversation_context
                     ctx = _conversation_context(conv)
-                    result = _capture(url, provider, model, raw=raw, context=ctx)
+                    result = _capture(
+                        url,
+                        config.primary_provider,
+                        config.primary_model,
+                        raw=raw,
+                        context=ctx,
+                    )
                     spinner.stop()
                     from tars.format import format_tool_result
                     print(f"  {format_tool_result('capture', result)}")
+                continue
+            if user_input.strip() == "/model":
+                summary = model_summary(config)
+                print(f"  primary: {summary['primary']}")
+                print(f"  remote: {summary['remote']}")
+                print(f"  routing: {summary['routing_policy']}")
                 continue
             if _handle_sessions(user_input):
                 continue
@@ -623,8 +645,13 @@ def main():
     parser = argparse.ArgumentParser(prog="tars", description="tars AI assistant")
     parser.add_argument(
         "-m", "--model",
-        default=os.environ.get("TARS_MODEL", DEFAULT_MODEL),
+        default=None,
         help="provider:model (e.g. ollama:gemma3:12b, claude:sonnet)",
+    )
+    parser.add_argument(
+        "--remote-model",
+        default=None,
+        help="provider:model for escalation (e.g. claude:claude-sonnet-4-5-20250929)",
     )
     sub = parser.add_subparsers(dest="command")
     idx = sub.add_parser("index", help="rebuild memory search index")
@@ -649,11 +676,11 @@ def main():
     _subcommands = {"index", "search", "sgrep", "svec", "serve", "email"}
     raw_args = sys.argv[1:]
     message_args: list[str] = []
-    # Skip leading flags (-m, --model and their values)
+    # Skip leading flags (-m, --model, --remote-model and their values)
     i = 0
     while i < len(raw_args) and raw_args[i].startswith("-"):
         i += 1  # flag
-        if raw_args[i - 1] in ("-m", "--model") and i < len(raw_args):
+        if raw_args[i - 1] in ("-m", "--model", "--remote-model") and i < len(raw_args):
             i += 1  # flag value
     if i < len(raw_args) and raw_args[i] not in _subcommands:
         message_args = raw_args[i:]
@@ -682,12 +709,14 @@ def main():
         uvicorn.run("tars.api:app", host=args.host, port=args.port)
         return
 
-    provider, model = parse_model(args.model)
+    config = apply_cli_overrides(load_model_config(), args.model, args.remote_model)
+    provider = config.primary_provider
+    model = config.primary_model
 
     if args.command == "email":
         from tars.email import run_email
 
-        run_email(provider, model)
+        run_email(config)
         return
 
     _startup_index()
@@ -696,12 +725,19 @@ def main():
         message = " ".join(args.message)
         # Hint that this is a one-shot — no follow-up conversation possible.
         message = f"[one-shot message, no follow-up possible — act immediately on any tool requests]\n{message}"
-        conv = Conversation(id="oneshot", provider=provider, model=model)
+        conv = Conversation(
+            id="oneshot",
+            provider=provider,
+            model=model,
+            remote_provider=config.remote_provider,
+            remote_model=config.remote_model,
+            routing_policy=config.routing_policy,
+        )
         session_file = _session_path()
         reply = process_message(conv, message, session_file)
         print(reply)
     else:
-        repl(provider, model)
+        repl(config)
 
 
 def main_serve():

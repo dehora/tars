@@ -13,6 +13,7 @@ with mock.patch.dict(
     },
 ):
     from tars import cli, conversation, core, memory, sessions
+    from tars.config import ModelConfig
 
 
 class SessionLoggingTests(unittest.TestCase):
@@ -84,7 +85,13 @@ class SessionLoggingTests(unittest.TestCase):
                 mock.patch.object(conversation, "chat_stream", side_effect=lambda *a, **kw: iter(["ok"])),
                 mock.patch("builtins.input", side_effect=["hello", EOFError()]),
             ):
-                cli.repl("ollama", "fake-model")
+                cli.repl(ModelConfig(
+                    primary_provider="ollama",
+                    primary_model="fake-model",
+                    remote_provider=None,
+                    remote_model=None,
+                    routing_policy="tool",
+                ))
 
         summarize.assert_called_once()
         save.assert_called_once()
@@ -102,7 +109,13 @@ class SessionLoggingTests(unittest.TestCase):
                 mock.patch.object(conversation, "chat_stream", side_effect=lambda *a, **kw: iter(["ok"])),
                 mock.patch("builtins.input", side_effect=inputs),
             ):
-                cli.repl("ollama", "fake-model")
+                cli.repl(ModelConfig(
+                    primary_provider="ollama",
+                    primary_model="fake-model",
+                    remote_provider=None,
+                    remote_model=None,
+                    routing_policy="tool",
+                ))
 
         compaction_calls = [
             call
@@ -130,7 +143,13 @@ class SessionLoggingTests(unittest.TestCase):
                 mock.patch.object(conversation, "chat_stream", side_effect=lambda *a, **kw: iter(["ok"])),
                 mock.patch("builtins.input", side_effect=inputs),
             ):
-                cli.repl("ollama", "fake-model")
+                cli.repl(ModelConfig(
+                    primary_provider="ollama",
+                    primary_model="fake-model",
+                    remote_provider=None,
+                    remote_model=None,
+                    routing_policy="tool",
+                ))
 
         self.assertEqual(summarize.call_args_list[2].kwargs.get("previous_summary"), "s1\ns2")
 
@@ -152,7 +171,13 @@ class SessionLoggingTests(unittest.TestCase):
                 mock.patch.object(conversation, "chat_stream", side_effect=lambda *a, **kw: iter(["ok"])),
                 mock.patch("builtins.input", side_effect=inputs),
             ):
-                cli.repl("ollama", "fake-model")
+                cli.repl(ModelConfig(
+                    primary_provider="ollama",
+                    primary_model="fake-model",
+                    remote_provider=None,
+                    remote_model=None,
+                    routing_policy="tool",
+                ))
 
         self.assertEqual(lengths[:2], [4, 4])
         self.assertEqual(lengths[-1], 2)
@@ -169,7 +194,13 @@ class SessionLoggingTests(unittest.TestCase):
                 mock.patch.object(conversation, "chat_stream", side_effect=lambda *a, **kw: iter(["ok"])),
                 mock.patch("builtins.input", side_effect=inputs),
             ):
-                cli.repl("ollama", "fake-model")
+                cli.repl(ModelConfig(
+                    primary_provider="ollama",
+                    primary_model="fake-model",
+                    remote_provider=None,
+                    remote_model=None,
+                    routing_policy="tool",
+                ))
 
         final_calls = [
             call
@@ -191,7 +222,13 @@ class SessionLoggingTests(unittest.TestCase):
                 mock.patch.object(conversation, "chat_stream", side_effect=lambda *a, **kw: iter(["ok"])),
                 mock.patch("builtins.input", side_effect=inputs),
             ):
-                cli.repl("ollama", "fake-model")
+                cli.repl(ModelConfig(
+                    primary_provider="ollama",
+                    primary_model="fake-model",
+                    remote_provider=None,
+                    remote_model=None,
+                    routing_policy="tool",
+                ))
 
         compaction_calls = [
             call

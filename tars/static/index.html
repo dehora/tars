@@ -61,6 +61,17 @@ if (!convId) {
   localStorage.setItem("tars_convId", convId);
 }
 
+// --- auth token (optional) ---
+const tokenParam = new URLSearchParams(window.location.search).get("token");
+if (tokenParam) {
+  localStorage.setItem("tarsToken", tokenParam);
+}
+const authToken = localStorage.getItem("tarsToken") || "";
+const authHeaders = (extra = {}) => {
+  if (!authToken) return extra;
+  return {...extra, "Authorization": "Bearer " + authToken};
+};
+
 // --- localStorage history ---
 // Store as a JSON array of {role, text} objects. Capped to avoid
 // localStorage bloat (5MB limit shared with the whole origin).
@@ -154,7 +165,7 @@ async function sendMessage() {
   // /clear command — reset conversation locally and on server.
   if (text === "/clear") {
     input.value = "";
-    try { fetch("/conversations/" + convId, {method: "DELETE"}); } catch {}
+    try { fetch("/conversations/" + convId, {method: "DELETE", headers: authHeaders()}); } catch {}
     clearConversation();
     return;
   }
@@ -185,6 +196,7 @@ async function sendMessage() {
       "`/brief` — todoist + weather digest",
       "**system:**",
       "`/stats` — memory and index health",
+      "`/model` — show active model configuration",
       "`/clear` — reset conversation",
       "`/help` — this help",
     ].join("\n"));
@@ -207,7 +219,7 @@ async function sendMessage() {
     try {
       const resp = await fetch("/feedback", {
         method: "POST",
-        headers: {"Content-Type": "application/json"},
+        headers: authHeaders({"Content-Type": "application/json"}),
         body: JSON.stringify({conversation_id: convId, note, kind}),
       });
       const data = await resp.json();
@@ -223,7 +235,7 @@ async function sendMessage() {
     input.value = "";
     addMsg("user", text);
     try {
-      const resp = await fetch("/brief");
+      const resp = await fetch("/brief", {headers: authHeaders()});
       const data = await resp.json();
       const lines = [];
       for (const [name, content] of Object.entries(data.sections)) {
@@ -242,7 +254,7 @@ async function sendMessage() {
     input.value = "";
     addMsg("user", text);
     try {
-      const resp = await fetch("/stats");
+      const resp = await fetch("/stats", {headers: authHeaders()});
       const data = await resp.json();
       if (data.error) {
         addMsg("assistant", data.error);
@@ -260,12 +272,35 @@ async function sendMessage() {
     return;
   }
 
+  // /model — model configuration.
+  if (text === "/model") {
+    input.value = "";
+    addMsg("user", text);
+    try {
+      const resp = await fetch("/model", {headers: authHeaders()});
+      const data = await resp.json();
+      if (!resp.ok) {
+        addMsg("error", data.detail || "model lookup failed");
+        return;
+      }
+      const lines = [
+        `**primary:** ${data.primary}`,
+        `**remote:** ${data.remote}`,
+        `**routing:** ${data.routing_policy}`,
+      ];
+      addMsg("assistant", lines.join("\n"));
+    } catch (e) {
+      addMsg("error", "model lookup failed: " + e.message);
+    }
+    return;
+  }
+
   // /sessions — list recent sessions.
   if (text === "/sessions") {
     input.value = "";
     addMsg("user", text);
     try {
-      const resp = await fetch("/sessions");
+      const resp = await fetch("/sessions", {headers: authHeaders()});
       const data = await resp.json();
       if (!data.sessions.length) {
         addMsg("assistant", "no sessions found");
@@ -293,7 +328,10 @@ async function sendMessage() {
     input.value = "";
     addMsg("user", text);
     try {
-      const resp = await fetch("/sessions/search?q=" + encodeURIComponent(query));
+      const resp = await fetch(
+        "/sessions/search?q=" + encodeURIComponent(query),
+        {headers: authHeaders()},
+      );
       const data = await resp.json();
       if (!data.results.length) {
         addMsg("assistant", "no session results");
@@ -318,7 +356,10 @@ async function sendMessage() {
     input.value = "";
     addMsg("user", text);
     try {
-      const resp = await fetch(`/search?q=${encodeURIComponent(query)}&mode=${mode}`);
+      const resp = await fetch(
+        `/search?q=${encodeURIComponent(query)}&mode=${mode}`,
+        {headers: authHeaders()},
+      );
       const data = await resp.json();
       if (!resp.ok) { addMsg("error", data.detail || "search failed"); return; }
       if (!data.results.length) {
@@ -348,7 +389,7 @@ async function sendMessage() {
     try {
       const resp = await fetch("/tool", {
         method: "POST",
-        headers: {"Content-Type": "application/json"},
+        headers: authHeaders({"Content-Type": "application/json"}),
         body: JSON.stringify(toolCmd),
       });
       const data = await resp.json();
@@ -369,7 +410,7 @@ async function sendMessage() {
   try {
     const resp = await fetch("/chat/stream", {
       method: "POST",
-      headers: {"Content-Type": "application/json"},
+      headers: authHeaders({"Content-Type": "application/json"}),
       body: JSON.stringify({conversation_id: convId, message: text}),
     });
 
@@ -434,10 +475,10 @@ input.addEventListener("keydown", (e) => {
 // Save session on tab close / navigation. sendBeacon is fire-and-forget,
 // reliable even during unload when fetch() would be cancelled.
 window.addEventListener("beforeunload", () => {
-  navigator.sendBeacon(
-    "/conversations/" + convId + "/save",
-    new Blob([JSON.stringify({})], {type: "application/json"}),
-  );
+    navigator.sendBeacon(
+      "/conversations/" + convId + "/save",
+      new Blob([JSON.stringify({})], {type: "application/json"}),
+    );
 });
 input.focus();
 </script>

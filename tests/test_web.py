@@ -143,21 +143,31 @@ class RunWebToolTests(unittest.TestCase):
 
 
 class RouterEscalationTests(unittest.TestCase):
-    @mock.patch("tars.router.escalation_config", return_value=("claude", "sonnet"))
-    def test_url_triggers_escalation(self, _mock_esc) -> None:
+    def test_url_triggers_escalation(self) -> None:
+        from tars.config import ModelConfig
         from tars.router import route_message
-        provider, model = route_message(
-            "read this: https://example.com/blog", "ollama", "llama3.1:8b",
+        config = ModelConfig(
+            primary_provider="ollama",
+            primary_model="llama3.1:8b",
+            remote_provider="claude",
+            remote_model="sonnet",
+            routing_policy="tool",
         )
+        provider, model = route_message("read this: https://example.com/blog", config)
         self.assertEqual(provider, "claude")
         self.assertEqual(model, "sonnet")
 
-    @mock.patch("tars.router.escalation_config", return_value=("claude", "sonnet"))
-    def test_read_this_triggers_escalation(self, _mock_esc) -> None:
+    def test_read_this_triggers_escalation(self) -> None:
+        from tars.config import ModelConfig
         from tars.router import route_message
-        provider, model = route_message(
-            "read this article about AI", "ollama", "llama3.1:8b",
+        config = ModelConfig(
+            primary_provider="ollama",
+            primary_model="llama3.1:8b",
+            remote_provider="claude",
+            remote_model="sonnet",
+            routing_policy="tool",
         )
+        provider, model = route_message("read this article about AI", config)
         self.assertEqual(provider, "claude")
         self.assertEqual(model, "sonnet")
 

@@ -14,6 +14,8 @@ _APIStatusError = type("APIStatusError", (Exception,), {"status_code": 0})
 sys.modules["anthropic"].APIStatusError = _APIStatusError
 sys.modules["anthropic"].RateLimitError = type("RateLimitError", (_APIStatusError,), {"status_code": 429})
 sys.modules["anthropic"].BadRequestError = type("BadRequestError", (_APIStatusError,), {"status_code": 400})
+sys.modules["anthropic"].APIConnectionError = type("APIConnectionError", (Exception,), {})
+sys.modules["anthropic"].APITimeoutError = type("APITimeoutError", (Exception,), {})
 
 from tars import conversation
 from tars.conversation import Conversation, process_message, process_message_stream, save_session
@@ -115,18 +117,18 @@ class EscalationFallbackTests(unittest.TestCase):
         self.assertEqual(args[1], "ollama")
         self.assertEqual(args[2], "llama3.1:8b")
 
-    def test_bad_request_falls_back_to_default(self) -> None:
+    def test_bad_request_does_not_fall_back(self) -> None:
         conv = Conversation(id="test", provider="ollama", model="llama3.1:8b")
         with (
             mock.patch.object(conversation, "route_message", return_value=("claude", "sonnet")),
             mock.patch.object(
                 conversation, "chat",
-                side_effect=[self._api_error("BadRequestError"), "fallback reply"],
-            ) as chat_mock,
+                side_effect=self._api_error("BadRequestError"),
+            ),
         ):
-            reply = process_message(conv, "what's the weather")
-        self.assertEqual(reply, "fallback reply")
-        self.assertEqual(chat_mock.call_count, 2)
+            _anthropic = sys.modules["anthropic"]
+            with self.assertRaises(_anthropic.APIStatusError):
+                process_message(conv, "what's the weather")
 
     def test_api_error_reraises_when_not_escalated(self) -> None:
         _anthropic = sys.modules["anthropic"]
@@ -161,7 +163,7 @@ class EscalationFallbackTests(unittest.TestCase):
         self.assertEqual(deltas, ["fall", "back"])
         self.assertEqual(conv.messages[-1], {"role": "assistant", "content": "fallback"})
 
-    def test_stream_bad_request_falls_back(self) -> None:
+    def test_stream_bad_request_does_not_fall_back(self) -> None:
         conv = Conversation(id="test", provider="ollama", model="llama3.1:8b")
         err = self._api_error("BadRequestError")
 
@@ -177,8 +179,9 @@ class EscalationFallbackTests(unittest.TestCase):
             mock.patch.object(conversation, "route_message", return_value=("claude", "sonnet")),
             mock.patch.object(conversation, "chat_stream", side_effect=stream_side_effect),
         ):
-            deltas = list(process_message_stream(conv, "what's the weather"))
-        self.assertEqual(deltas, ["ok"])
+            _anthropic = sys.modules["anthropic"]
+            with self.assertRaises(_anthropic.APIStatusError):
+                list(process_message_stream(conv, "what's the weather"))
 
 
 class SaveSessionTests(unittest.TestCase):

@@ -12,8 +12,8 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 from starlette.middleware.base import BaseHTTPMiddleware
 
+from tars.config import load_model_config, model_summary
 from tars.conversation import Conversation, process_message, process_message_stream, save_session
-from tars.core import DEFAULT_MODEL, parse_model
 from tars.format import format_tool_result
 from tars.indexer import build_index
 from tars.memory import save_correction, save_reward
@@ -46,7 +46,9 @@ class _AuthMiddleware(BaseHTTPMiddleware):
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    logging.getLogger("uvicorn").info(f"tars [{_provider}:{_model}]")
+    logging.getLogger("uvicorn").info(
+        f"tars [{_provider}:{_model}] remote={model_summary(_model_config)['remote']}"
+    )
     try:
         build_index()
     except Exception as e:
@@ -67,8 +69,9 @@ app.add_middleware(_AuthMiddleware)
 _conversations: dict[str, Conversation] = {}
 _session_files: dict[str, Path | None] = {}
 
-_model_str = os.environ.get("TARS_MODEL", DEFAULT_MODEL)
-_provider, _model = parse_model(_model_str)
+_model_config = load_model_config()
+_provider = _model_config.primary_provider
+_model = _model_config.primary_model
 
 
 class ChatRequest(BaseModel):
@@ -97,7 +100,12 @@ def chat_endpoint(req: ChatRequest) -> ChatResponse:
     conv_id = req.conversation_id
     if conv_id not in _conversations:
         _conversations[conv_id] = Conversation(
-            id=conv_id, provider=_provider, model=_model,
+            id=conv_id,
+            provider=_provider,
+            model=_model,
+            remote_provider=_model_config.remote_provider,
+            remote_model=_model_config.remote_model,
+            routing_policy=_model_config.routing_policy,
         )
         _session_files[conv_id] = _session_path()
     conv = _conversations[conv_id]
@@ -150,7 +158,12 @@ def chat_stream_endpoint(req: ChatRequest):
     conv_id = req.conversation_id
     if conv_id not in _conversations:
         _conversations[conv_id] = Conversation(
-            id=conv_id, provider=_provider, model=_model,
+            id=conv_id,
+            provider=_provider,
+            model=_model,
+            remote_provider=_model_config.remote_provider,
+            remote_model=_model_config.remote_model,
+            routing_policy=_model_config.routing_policy,
         )
         _session_files[conv_id] = _session_path()
     conv = _conversations[conv_id]
@@ -234,6 +247,11 @@ def stats_endpoint() -> dict:
     stats = db_stats()
     stats["sessions"] = session_count()
     return stats
+
+
+@app.get("/model")
+def model_endpoint() -> dict:
+    return model_summary(_model_config)
 
 
 @app.get("/sessions")

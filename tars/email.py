@@ -13,6 +13,7 @@ from email.mime.text import MIMEText
 from pathlib import Path
 
 from tars.cli import _parse_todoist_add
+from tars.config import ModelConfig, model_summary
 from tars.conversation import Conversation, process_message, save_session
 from tars.format import format_tool_result
 from tars.sessions import _session_path
@@ -289,10 +290,10 @@ _conversations: dict[str, Conversation] = {}
 _session_files: dict[str, Path | None] = {}
 
 
-def run_email(provider: str, model: str) -> None:
+def run_email(model_config: ModelConfig) -> None:
     """Poll inbox and process messages. Runs until interrupted."""
-    config = _email_config()
-    if config is None:
+    email_config = _email_config()
+    if email_config is None:
         print(
             "email: missing config — set TARS_EMAIL_ADDRESS, "
             "TARS_EMAIL_PASSWORD, TARS_EMAIL_ALLOW",
@@ -300,11 +301,12 @@ def run_email(provider: str, model: str) -> None:
         )
         return
 
+    summary = model_summary(model_config)
     print(
-        f"email: polling {config['address']} every {config['poll_interval']}s "
-        f"[{provider}:{model}]"
+        f"email: polling {email_config['address']} every {email_config['poll_interval']}s "
+        f"[{summary['primary']}]"
     )
-    print(f"email: allowed senders: {', '.join(config['allow'])}")
+    print(f"email: allowed senders: {', '.join(email_config['allow'])}")
 
     imap: imaplib.IMAP4_SSL | None = None
 
@@ -313,15 +315,15 @@ def run_email(provider: str, model: str) -> None:
             # Connect / reconnect
             if imap is None:
                 try:
-                    imap = _connect_imap(config["address"], config["password"])
+                    imap = _connect_imap(email_config["address"], email_config["password"])
                     print("email: connected to IMAP")
                 except Exception as e:
                     print(f"email: IMAP connect failed: {e}", file=sys.stderr)
-                    time.sleep(config["poll_interval"])
+                    time.sleep(email_config["poll_interval"])
                     continue
 
             try:
-                emails = _fetch_unseen(imap, config["allow"])
+                emails = _fetch_unseen(imap, email_config["allow"])
             except (imaplib.IMAP4.error, OSError) as e:
                 print(f"email: fetch failed, reconnecting: {e}", file=sys.stderr)
                 imap = None
@@ -335,9 +337,17 @@ def run_email(provider: str, model: str) -> None:
                 print(f"email: [{from_addr}] {subject}")
 
                 # Try slash command: check subject first, then body
-                slash_reply = _handle_slash_command(subject, provider, model)
+                slash_reply = _handle_slash_command(
+                    subject,
+                    model_config.primary_provider,
+                    model_config.primary_model,
+                )
                 if slash_reply is None and body:
-                    slash_reply = _handle_slash_command(body, provider, model)
+                    slash_reply = _handle_slash_command(
+                        body,
+                        model_config.primary_provider,
+                        model_config.primary_model,
+                    )
                 if slash_reply is not None:
                     reply_text = slash_reply
                     print(f"email: [slash] {slash_reply[:60]}")
@@ -349,7 +359,12 @@ def run_email(provider: str, model: str) -> None:
                     # Get or create conversation
                     if tid not in _conversations:
                         _conversations[tid] = Conversation(
-                            id=f"email-{tid}", provider=provider, model=model,
+                            id=f"email-{tid}",
+                            provider=model_config.primary_provider,
+                            model=model_config.primary_model,
+                            remote_provider=model_config.remote_provider,
+                            remote_model=model_config.remote_model,
+                            routing_policy=model_config.routing_policy,
                         )
                         _session_files[tid] = _session_path()
                     conv = _conversations[tid]
@@ -361,14 +376,14 @@ def run_email(provider: str, model: str) -> None:
                         reply_text = "Sorry, I encountered an error processing your message."
 
                 try:
-                    _send_reply(config, msg, reply_text)
+                    _send_reply(email_config, msg, reply_text)
                     # Mark as Seen only after successful reply.
                     imap.store(msg_num, "+FLAGS", "\\Seen")
                     print(f"email: replied to {from_addr}")
                 except Exception as e:
                     print(f"email: send failed (will retry): {e}", file=sys.stderr)
 
-            time.sleep(config["poll_interval"])
+            time.sleep(email_config["poll_interval"])
 
     except KeyboardInterrupt:
         print("\nemail: shutting down...")

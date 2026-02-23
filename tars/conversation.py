@@ -5,6 +5,7 @@ from pathlib import Path
 
 import anthropic
 
+from tars.config import ModelConfig
 from tars.core import _search_relevant_context, chat, chat_stream
 from tars.router import route_message
 from tars.sessions import (
@@ -19,6 +20,9 @@ class Conversation:
     id: str
     provider: str
     model: str
+    remote_provider: str | None = None
+    remote_model: str | None = None
+    routing_policy: str = "tool"
     messages: list[dict] = field(default_factory=list)
     search_context: str = ""
     msg_count: int = 0
@@ -35,6 +39,36 @@ def _merge_summary(existing: str, new: str) -> str:
     return f"{existing.rstrip()}\n{new.lstrip()}"
 
 
+def _model_config_for(conv: Conversation) -> ModelConfig:
+    return ModelConfig(
+        primary_provider=conv.provider,
+        primary_model=conv.model,
+        remote_provider=conv.remote_provider,
+        remote_model=conv.remote_model,
+        routing_policy=conv.routing_policy,
+    )
+
+
+_FALLBACK_STATUS_CODES = {408, 409, 429, 529}
+
+
+def _should_fallback(exc: Exception) -> bool:
+    if isinstance(exc, anthropic.APIStatusError):
+        status = getattr(exc, "status_code", None)
+        if status is None:
+            return False
+        if status in _FALLBACK_STATUS_CODES:
+            return True
+        if 500 <= status <= 599:
+            return True
+        return False
+    if isinstance(exc, anthropic.APIConnectionError):
+        return True
+    if isinstance(exc, anthropic.APITimeoutError):
+        return True
+    return False
+
+
 def process_message(
     conv: Conversation, user_input: str, session_file: Path | None = None,
 ) -> str:
@@ -47,16 +81,17 @@ def process_message(
             print(f"  [warning] startup search failed: {e}", file=sys.stderr)
 
     conv.messages.append({"role": "user", "content": user_input})
-    provider, model = route_message(user_input, conv.provider, conv.model)
+    provider, model = route_message(user_input, _model_config_for(conv))
     escalated = (provider, model) != (conv.provider, conv.model)
     try:
         reply = chat(
             conv.messages, provider, model, search_context=conv.search_context,
         )
-    except anthropic.APIStatusError as exc:
-        if not escalated:
+    except (anthropic.APIStatusError, anthropic.APIConnectionError, anthropic.APITimeoutError) as exc:
+        if not escalated or not _should_fallback(exc):
             raise
-        print(f"  [router] escalation failed ({exc.status_code}), falling back to {conv.provider}:{conv.model}", file=sys.stderr)
+        status = getattr(exc, "status_code", "connection")
+        print(f"  [router] escalation failed ({status}), falling back to {conv.provider}:{conv.model}", file=sys.stderr)
         reply = chat(
             conv.messages, conv.provider, conv.model, search_context=conv.search_context,
         )
@@ -85,7 +120,7 @@ def process_message_stream(
     conv.messages.append({"role": "user", "content": user_input})
 
     # Yield deltas to the caller while accumulating the full reply.
-    provider, model = route_message(user_input, conv.provider, conv.model)
+    provider, model = route_message(user_input, _model_config_for(conv))
     escalated = (provider, model) != (conv.provider, conv.model)
     full_reply: list[str] = []
     try:
@@ -94,10 +129,11 @@ def process_message_stream(
         ):
             full_reply.append(delta)
             yield delta
-    except anthropic.APIStatusError as exc:
-        if not escalated:
+    except (anthropic.APIStatusError, anthropic.APIConnectionError, anthropic.APITimeoutError) as exc:
+        if not escalated or not _should_fallback(exc):
             raise
-        print(f"  [router] escalation failed ({exc.status_code}), falling back to {conv.provider}:{conv.model}", file=sys.stderr)
+        status = getattr(exc, "status_code", "connection")
+        print(f"  [router] escalation failed ({status}), falling back to {conv.provider}:{conv.model}", file=sys.stderr)
         full_reply.clear()
         for delta in chat_stream(
             conv.messages, conv.provider, conv.model, search_context=conv.search_context,

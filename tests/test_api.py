@@ -191,6 +191,14 @@ class ChatEndpointTests(unittest.TestCase):
         self.assertEqual(resp.status_code, 400)
         self.assertIn("Unknown tool", resp.json()["detail"])
 
+    def test_model_endpoint(self) -> None:
+        resp = self.client.get("/model")
+        self.assertEqual(resp.status_code, 200)
+        data = resp.json()
+        self.assertIn("primary", data)
+        self.assertIn("remote", data)
+        self.assertIn("routing_policy", data)
+
 
     def test_search_endpoint_returns_results(self) -> None:
         result = SearchResult(
