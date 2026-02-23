@@ -63,7 +63,7 @@ Tars is a personal AI assistant with CLI, web, and email channels. Routes messag
 
 ## Git commits
 
-Use present tense verbs in commit messages (e.g., "Adds feature", "Fixes bug", "Removes unused code").
+Use third-person singular and present tense verbs in commit messages (e.g., "Adds emacs", "Ignores license", "Renames gitconfig template").
 
 ## Notes
 

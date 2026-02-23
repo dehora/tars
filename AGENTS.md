@@ -24,7 +24,7 @@ This file provides guidance to coding agents.
 
 ## Git Commits
 
-Use present tense verbs in commit messages (e.g., "Adds emacs", "Ignores license", "Renames gitconfig template").
+Use third-person singular and present tense verbs in commit messages (e.g., "Adds emacs", "Ignores license", "Renames gitconfig template").
 
 Add this by default to commits that include Codex contributions:
 `Co-Authored-By: OpenAI Codex <codex@openai.com>`
