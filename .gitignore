@@ -15,3 +15,7 @@ wheels/
 # Secrets
 .envrc
 .env
+
+# Local artifacts
+*.png
+*.log
