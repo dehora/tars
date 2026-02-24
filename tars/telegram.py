@@ -26,6 +26,9 @@ _KEYBOARD_ALIASES: dict[str, str] = {
     "Forecast": "/forecast",
     "Tasks": "/todoist today",
     "Memory": "/memory",
+    "Note": "/note",
+    "Todoist": "/todoist",
+    "Capture": "/capture",
 }
 
 # In-memory conversation state, keyed by chat_id
@@ -110,13 +113,17 @@ def _handle_slash_command(
         elif cmd == "/remember" and len(parts) >= 3:
             name = "memory_remember"
             args = {"section": parts[1], "content": " ".join(parts[2:])}
-        elif cmd == "/note" and len(parts) >= 2:
+        elif cmd == "/note":
+            if len(parts) < 2:
+                return "Usage: /note <text>"
             name = "note_daily"
             args = {"content": " ".join(parts[1:])}
         elif cmd == "/read" and len(parts) >= 2:
             name = "web_read"
             args = {"url": parts[1]}
-        elif cmd == "/capture" and len(parts) >= 2:
+        elif cmd == "/capture":
+            if len(parts) < 2:
+                return "Usage: /capture <url> [--raw]"
             from tars.capture import capture as _capture
 
             raw_flag = "--raw" in parts
@@ -147,7 +154,7 @@ def _get_keyboard():
     from telegram import ReplyKeyboardMarkup
 
     return ReplyKeyboardMarkup(
-        [["Brief", "Weather", "Forecast"], ["Tasks", "Memory"]],
+        [["Brief", "Weather", "Forecast"], ["Tasks", "Todoist", "Memory"], ["Note", "Capture"]],
         resize_keyboard=True,
     )
 
