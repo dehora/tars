@@ -25,6 +25,23 @@ if [[ -z "${TARS_HOME:-}" ]]; then
   exit 1
 fi
 REPO_DIR="$TARS_HOME"
+
+UV_BIN="${TARS_UV:-}"
+if [[ -z "$UV_BIN" ]]; then
+  UV_BIN="$(command -v uv || true)"
+fi
+if [[ -z "$UV_BIN" ]]; then
+  for candidate in "$HOME/.local/bin/uv" "$HOME/.cargo/bin/uv" "/opt/homebrew/bin/uv" "/usr/local/bin/uv"; do
+    if [[ -x "$candidate" ]]; then
+      UV_BIN="$candidate"
+      break
+    fi
+  done
+fi
+if [[ -z "$UV_BIN" ]]; then
+  echo "uv not found. Install uv or set TARS_UV to its path." >&2
+  exit 1
+fi
 PLIST="$HOME/Library/LaunchAgents/com.dehora.tars-email-brief.plist"
 LOG_DIR="$HOME/Library/Logs"
 STDOUT_LOG="$LOG_DIR/tars-email-brief.log"
@@ -52,8 +69,13 @@ cat <<PLIST > "$PLIST"
   <string>com.dehora.tars-email-brief</string>
   <key>ProgramArguments</key>
   <array>
-    <string>$REPO_DIR/bin/tars-email-brief</string>
+    <string>$UV_BIN</string>
+    <string>run</string>
+    <string>tars</string>
+    <string>email-brief</string>
   </array>
+  <key>WorkingDirectory</key>
+  <string>$REPO_DIR</string>
   <key>StartCalendarInterval</key>
   <dict>
     <key>Hour</key>

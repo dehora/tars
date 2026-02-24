@@ -25,6 +25,23 @@ if [[ -z "${TARS_HOME:-}" ]]; then
   exit 1
 fi
 
+UV_BIN="${TARS_UV:-}"
+if [[ -z "$UV_BIN" ]]; then
+  UV_BIN="$(command -v uv || true)"
+fi
+if [[ -z "$UV_BIN" ]]; then
+  for candidate in "$HOME/.local/bin/uv" "$HOME/.cargo/bin/uv" "/usr/local/bin/uv" "/usr/bin/uv"; do
+    if [[ -x "$candidate" ]]; then
+      UV_BIN="$candidate"
+      break
+    fi
+  done
+fi
+if [[ -z "$UV_BIN" ]]; then
+  echo "uv not found. Install uv or set TARS_UV to its path." >&2
+  exit 1
+fi
+
 UNIT_DIR="$HOME/.config/systemd/user"
 SERVICE="$UNIT_DIR/tars-email-brief.service"
 TIMER="$UNIT_DIR/tars-email-brief.timer"
@@ -46,7 +63,7 @@ Description=tars email brief
 [Service]
 Type=oneshot
 WorkingDirectory=$TARS_HOME
-ExecStart=$TARS_HOME/bin/tars-email-brief
+ExecStart=$UV_BIN run tars email-brief
 SERVICE
 
 cat <<TIMER > "$TIMER"
