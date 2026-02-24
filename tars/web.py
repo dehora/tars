@@ -2,9 +2,11 @@
 
 import ipaddress
 import json
+import re
 import socket
 import urllib.parse
 import urllib.request
+from html import unescape
 from html.parser import HTMLParser
 from urllib.parse import urlparse
 
@@ -17,6 +19,11 @@ _IMAGE_SKIP_KEYWORDS = (
     "banner", "header", "footer", "nav", "sidebar", "aside",
     "advert", "ads", "sponsor", "promo", "cookie",
 )
+_BLOCK_TAGS = {
+    "p", "div", "section", "article", "header", "footer", "nav", "aside",
+    "h1", "h2", "h3", "h4", "h5", "h6",
+    "ul", "ol", "li", "blockquote", "pre", "figure",
+}
 
 
 class _TextExtractor(HTMLParser):
@@ -68,11 +75,10 @@ class _ImageExtractor(HTMLParser):
         if tag_lower == "body":
             self._in_body = True
         self._stack.append((tag_lower, attrs_dict))
-        if tag_lower == "img" and self._in_body:
+        if tag_lower in ("img", "source") and self._in_body:
             if self._should_skip(attrs_dict):
                 return
-            src = attrs_dict.get("src", "").strip()
-            if src:
+            for src in _select_image_sources(attrs_dict):
                 self._urls.append(src)
 
     def handle_endtag(self, tag: str) -> None:
@@ -87,17 +93,10 @@ class _ImageExtractor(HTMLParser):
     def _should_skip(self, attrs: dict[str, str]) -> bool:
         if any(tag in _IMAGE_SKIP_TAGS for tag, _ in self._stack):
             return True
-        if any(self._attrs_match_skip(a) for _, a in self._stack):
+        if any(_attrs_match_skip(tag, a) for tag, a in self._stack):
             return True
-        if self._attrs_match_skip(attrs):
+        if _attrs_match_skip("", attrs):
             return True
-        return False
-
-    def _attrs_match_skip(self, attrs: dict[str, str]) -> bool:
-        for key in ("class", "id"):
-            value = attrs.get(key, "").lower()
-            if any(k in value for k in _IMAGE_SKIP_KEYWORDS):
-                return True
         return False
 
     def get_urls(self) -> list[str]:
@@ -120,6 +119,139 @@ def _extract_image_urls(html: str, base_url: str) -> list[str]:
             seen.add(full)
             urls.append(full)
     return urls
+
+
+class _MarkdownExtractor(HTMLParser):
+    """Extract markdown with inline images, preserving approximate order."""
+
+    def __init__(self, base_url: str) -> None:
+        super().__init__()
+        self._base_url = base_url
+        self._parts: list[str] = []
+        self._stack: list[tuple[str, dict[str, str]]] = []
+        self._in_body = False
+        self._skip_depth = 0
+
+    def handle_starttag(self, tag: str, attrs: list) -> None:
+        tag_lower = tag.lower()
+        attrs_dict = {k.lower(): (v or "") for k, v in attrs}
+        if tag_lower == "body":
+            self._in_body = True
+        self._stack.append((tag_lower, attrs_dict))
+        if tag_lower in _SKIP_TAGS:
+            self._skip_depth += 1
+        if not self._in_body or self._skip_depth > 0:
+            return
+        if tag_lower in _BLOCK_TAGS:
+            self._parts.append("\n")
+        if tag_lower in ("img", "source"):
+            if self._should_skip(attrs_dict):
+                return
+            for src in _select_image_sources(attrs_dict):
+                full = urllib.parse.urljoin(self._base_url, src)
+                if full.startswith("data:") or full.lower().endswith(".svg"):
+                    continue
+                self._parts.append(f"\n![]({full})\n")
+
+    def handle_endtag(self, tag: str) -> None:
+        tag_lower = tag.lower()
+        if tag_lower == "body":
+            self._in_body = False
+        if tag_lower in _SKIP_TAGS and self._skip_depth > 0:
+            self._skip_depth -= 1
+        for i in range(len(self._stack) - 1, -1, -1):
+            if self._stack[i][0] == tag_lower:
+                del self._stack[i]
+                break
+        if self._in_body and tag_lower in _BLOCK_TAGS:
+            self._parts.append("\n")
+
+    def handle_data(self, data: str) -> None:
+        if not self._in_body or self._skip_depth > 0:
+            return
+        text = " ".join(data.split())
+        if text:
+            self._parts.append(text + " ")
+
+    def _should_skip(self, attrs: dict[str, str]) -> bool:
+        if any(tag in _IMAGE_SKIP_TAGS for tag, _ in self._stack):
+            return True
+        if any(_attrs_match_skip(tag, a) for tag, a in self._stack):
+            return True
+        if _attrs_match_skip("", attrs):
+            return True
+        return False
+
+    def get_markdown(self) -> str:
+        raw = "".join(self._parts)
+        lines = [" ".join(line.split()) for line in raw.splitlines()]
+        return "\n".join(line for line in lines if line).strip()
+
+
+def _extract_markdown_with_images(html: str, base_url: str, max_len: int = _MAX_CONTENT_LENGTH) -> str:
+    """Extract markdown with inline images from HTML body."""
+    extractor = _MarkdownExtractor(base_url)
+    extractor.feed(html)
+    content = extractor.get_markdown()
+    if len(content) > max_len:
+        content = content[:max_len]
+    return content
+
+
+def _select_image_sources(attrs: dict[str, str]) -> list[str]:
+    """Select candidate image sources from common attributes."""
+    for key in ("data-src", "data-original", "data-lazy-src", "src"):
+        value = attrs.get(key, "").strip()
+        if value:
+            return [value]
+    for key in ("data-srcset", "srcset"):
+        value = attrs.get(key, "").strip()
+        if not value:
+            continue
+        candidates = _split_srcset(value)
+        if candidates:
+            return [candidates[-1]]
+    return []
+
+
+def _split_srcset(value: str) -> list[str]:
+    """Parse a srcset value and return URLs in order."""
+    urls: list[str] = []
+    for part in value.split(","):
+        part = part.strip()
+        if not part:
+            continue
+        url = part.split()[0].strip()
+        if url:
+            urls.append(url)
+    return urls
+
+
+def _attrs_match_skip(tag: str, attrs: dict[str, str]) -> bool:
+    if tag in ("body", "html"):
+        return False
+    for key in ("class", "id"):
+        value = attrs.get(key, "").lower()
+        if any(k in value for k in _IMAGE_SKIP_KEYWORDS):
+            return True
+    return False
+
+
+def _extract_html_title(html: str) -> str:
+    """Extract a best-effort title from HTML head."""
+    if not html:
+        return ""
+    og_match = re.search(
+        r'<meta[^>]+property=["\']og:title["\'][^>]+content=["\']([^"\']+)["\']',
+        html,
+        re.IGNORECASE,
+    )
+    if og_match:
+        return unescape(og_match.group(1)).strip()
+    title_match = re.search(r"<title[^>]*>(.*?)</title>", html, re.IGNORECASE | re.DOTALL)
+    if title_match:
+        return unescape(title_match.group(1)).strip()
+    return ""
 
 
 def _fetch_html(url: str) -> tuple[str | None, str | None]:

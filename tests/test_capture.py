@@ -154,8 +154,72 @@ class CaptureTests(unittest.TestCase):
             path = Path(result["path"])
             content = path.read_text(encoding="utf-8")
             self.assertIn("Raw content here.", content)
-            self.assertIn("## Images", content)
             self.assertIn("![](https://dehora.net/a.jpg)", content)
+
+    def test_inline_images_reinserted_when_missing(self) -> None:
+        web_result = json.dumps({"url": "https://dehora.net/tars-test/post", "content": "Some article text", "truncated": False})
+        html = "<html><body><p>Intro</p><img src=\"/a.jpg\"><p>End</p></body></html>"
+        with tempfile.TemporaryDirectory() as tmpdir:
+            with (
+                mock.patch.dict(os.environ, {"TARS_NOTES_DIR": tmpdir}),
+                mock.patch("tars.capture._run_web_tool", return_value=web_result),
+                mock.patch("tars.capture._fetch_html", return_value=(html, None)),
+                mock.patch(
+                    "tars.capture.chat",
+                    side_effect=[
+                        '{"title":"Great Post","author":"","created":"","description":""}',
+                        "# Great Post\n\nIntro\n\nEnd",
+                    ],
+                ),
+            ):
+                result = json.loads(capture("https://dehora.net/tars-test/post", "ollama", "fake"))
+            self.assertTrue(result["ok"])
+            content = Path(result["path"]).read_text(encoding="utf-8")
+            self.assertIn("Intro", content)
+            self.assertIn("![](https://dehora.net/a.jpg)", content)
+            self.assertIn("End", content)
+
+    def test_tokens_replaced_with_images(self) -> None:
+        web_result = json.dumps({"url": "https://dehora.net/tars-test/post", "content": "Some article text", "truncated": False})
+        html = "<html><body><p>Intro</p><img src=\"/a.jpg\"><p>End</p></body></html>"
+        with tempfile.TemporaryDirectory() as tmpdir:
+            with (
+                mock.patch.dict(os.environ, {"TARS_NOTES_DIR": tmpdir}),
+                mock.patch("tars.capture._run_web_tool", return_value=web_result),
+                mock.patch("tars.capture._fetch_html", return_value=(html, None)),
+                mock.patch(
+                    "tars.capture.chat",
+                    side_effect=[
+                        '{"title":"Great Post","author":"","created":"","description":""}',
+                        "# Great Post\n\nIntro\n\n[[tars-image-1]]\n\nEnd",
+                    ],
+                ),
+            ):
+                result = json.loads(capture("https://dehora.net/tars-test/post", "ollama", "fake"))
+            self.assertTrue(result["ok"])
+            content = Path(result["path"]).read_text(encoding="utf-8")
+            self.assertIn("![](https://dehora.net/a.jpg)", content)
+            self.assertNotIn("[[tars-image-1]]", content)
+
+    def test_html_title_used_when_metadata_missing(self) -> None:
+        web_result = json.dumps({"url": "https://dehora.net/tars-test/post", "content": "Some article text", "truncated": False})
+        html = "<html><head><title>HTML Title</title></head><body><p>Body</p></body></html>"
+        with tempfile.TemporaryDirectory() as tmpdir:
+            with (
+                mock.patch.dict(os.environ, {"TARS_NOTES_DIR": tmpdir}),
+                mock.patch("tars.capture._run_web_tool", return_value=web_result),
+                mock.patch("tars.capture._fetch_html", return_value=(html, None)),
+                mock.patch(
+                    "tars.capture.chat",
+                    side_effect=[
+                        '{"title":"","author":"","created":"","description":""}',
+                        "# Model Title\n\nBody",
+                    ],
+                ),
+            ):
+                result = json.loads(capture("https://dehora.net/tars-test/post", "ollama", "fake"))
+            self.assertTrue(result["ok"])
+            self.assertEqual(result["title"], "HTML Title")
 
     def test_capture_creates_directory(self) -> None:
         web_result = json.dumps({"url": "https://dehora.net/tars-test", "content": "text", "truncated": False})

@@ -8,7 +8,15 @@ sys.modules.setdefault("anthropic", mock.Mock())
 sys.modules.setdefault("ollama", mock.Mock())
 sys.modules.setdefault("dotenv", mock.Mock(load_dotenv=lambda: None))
 
-from tars.web import _extract_image_urls, _extract_text, _is_private_host, _run_web_tool, _MAX_CONTENT_LENGTH
+from tars.web import (
+    _extract_html_title,
+    _extract_image_urls,
+    _extract_markdown_with_images,
+    _extract_text,
+    _is_private_host,
+    _run_web_tool,
+    _MAX_CONTENT_LENGTH,
+)
 
 
 class ExtractTextTests(unittest.TestCase):
@@ -66,6 +74,71 @@ class ExtractImageUrlsTests(unittest.TestCase):
         )
         urls = _extract_image_urls(html, "https://example.com/post")
         self.assertEqual(urls, ["https://example.com/main.jpg"])
+
+    def test_handles_srcset_and_lazy_attrs(self) -> None:
+        html = (
+            "<html><body>"
+            "<img data-src=\"/lazy.jpg\">"
+            "<img srcset=\"/small.jpg 480w, /large.jpg 960w\">"
+            "<picture>"
+            "<source srcset=\"/alt.webp 1x, /alt@2x.webp 2x\">"
+            "<img src=\"/fallback.jpg\">"
+            "</picture>"
+            "</body></html>"
+        )
+        urls = _extract_image_urls(html, "https://example.com/post")
+        self.assertEqual(
+            urls,
+            [
+                "https://example.com/lazy.jpg",
+                "https://example.com/large.jpg",
+                "https://example.com/alt@2x.webp",
+                "https://example.com/fallback.jpg",
+            ],
+        )
+
+    def test_body_class_does_not_exclude_images(self) -> None:
+        html = (
+            "<html><body class=\"header-width-full\">"
+            "<article><img src=\"/main.jpg\"></article>"
+            "</body></html>"
+        )
+        urls = _extract_image_urls(html, "https://example.com/post")
+        self.assertEqual(urls, ["https://example.com/main.jpg"])
+
+
+class ExtractMarkdownWithImagesTests(unittest.TestCase):
+    def test_inlines_images_in_order(self) -> None:
+        html = (
+            "<html><body>"
+            "<p>Intro</p>"
+            "<img src=\"/a.jpg\">"
+            "<p>Middle</p>"
+            "<img src=\"/b.jpg\">"
+            "<p>End</p>"
+            "</body></html>"
+        )
+        markdown = _extract_markdown_with_images(html, "https://example.com/post")
+        self.assertIn("Intro", markdown)
+        self.assertIn("![](https://example.com/a.jpg)", markdown)
+        self.assertIn("Middle", markdown)
+        self.assertIn("![](https://example.com/b.jpg)", markdown)
+        self.assertIn("End", markdown)
+
+
+class ExtractHtmlTitleTests(unittest.TestCase):
+    def test_prefers_og_title(self) -> None:
+        html = (
+            "<html><head>"
+            "<meta property=\"og:title\" content=\"OG Title\">"
+            "<title>HTML Title</title>"
+            "</head><body></body></html>"
+        )
+        self.assertEqual(_extract_html_title(html), "OG Title")
+
+    def test_falls_back_to_title_tag(self) -> None:
+        html = "<html><head><title>HTML Title</title></head><body></body></html>"
+        self.assertEqual(_extract_html_title(html), "HTML Title")
 
 
 class SSRFTests(unittest.TestCase):
