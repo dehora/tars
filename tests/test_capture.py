@@ -113,6 +113,29 @@ class CaptureTests(unittest.TestCase):
             content = Path(result["path"]).read_text(encoding="utf-8")
             self.assertIn('description: "This is the first paragraph. Still first paragraph."', content)
 
+    def test_description_fallback_truncates(self) -> None:
+        long_para = " ".join(["word"] * 200)  # 999+ chars
+        web_result = json.dumps({"url": "https://dehora.net/tars-test/post", "content": "Some article text", "truncated": False})
+        with tempfile.TemporaryDirectory() as tmpdir:
+            with (
+                mock.patch.dict(os.environ, {"TARS_NOTES_DIR": tmpdir}),
+                mock.patch("tars.capture._run_web_tool", return_value=web_result),
+                mock.patch(
+                    "tars.capture.chat",
+                    side_effect=[
+                        '{"title":"Great Post","author":"","created":"","description":""}',
+                        f"# Great Post\n\n{long_para}\n\nSecond paragraph.",
+                    ],
+                ),
+            ):
+                result = json.loads(capture("https://dehora.net/tars-test/post", "ollama", "fake"))
+            self.assertTrue(result["ok"])
+            content = Path(result["path"]).read_text(encoding="utf-8")
+            # Extract description line for length check
+            desc_line = next(line for line in content.splitlines() if line.startswith("description: "))
+            desc_value = desc_line[len("description: \""):-1]
+            self.assertLessEqual(len(desc_value), 400)
+
     def test_capture_raw_skips_summary(self) -> None:
         web_result = json.dumps({"url": "https://dehora.net/tars-test/post", "content": "# Raw Title\n\nRaw content here.", "truncated": False})
         with tempfile.TemporaryDirectory() as tmpdir:

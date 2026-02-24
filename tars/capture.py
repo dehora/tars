@@ -60,7 +60,7 @@ def _sanitize_filename(title: str) -> str:
     return clean[:120] or "Untitled"
 
 
-def _extract_description_from_body(body: str) -> str:
+def _extract_description_from_body(body: str, max_len: int = 400) -> str:
     """Fallback description from the first non-heading paragraph."""
     lines = [line.strip() for line in body.splitlines()]
     para: list[str] = []
@@ -76,7 +76,11 @@ def _extract_description_from_body(body: str) -> str:
     if not para:
         return ""
     text = " ".join(para)
-    return " ".join(text.split())
+    collapsed = " ".join(text.split())
+    if len(collapsed) <= max_len:
+        return collapsed
+    truncated = collapsed[:max_len].rsplit(" ", 1)[0]
+    return truncated if truncated else collapsed[:max_len]
 
 
 def _strip_summarizer_preamble(body: str) -> str:
