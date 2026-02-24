@@ -58,6 +58,23 @@ def _print_search_results(results, mode: str) -> None:
             print()
 
 
+def _print_schedule_list(schedules: list[dict]) -> None:
+    """Format and print schedule list to stdout."""
+    if not schedules:
+        print("  no schedules installed")
+        return
+    # Header
+    print(f"  {'name':<20} {'trigger':<25} {'last run':<40} {'log'}")
+    for s in schedules:
+        name = s.get("name", "")
+        trigger = s.get("trigger", "")
+        last_run = s.get("last_run", "")
+        log = s.get("log", "")
+        # Shorten home dir in log path
+        log = log.replace(str(Path.home()), "~")
+        print(f"  {name:<20} {trigger:<25} {last_run:<40} {log}")
+
+
 def _handle_sessions(user_input: str) -> bool:
     """Handle /sessions and /session commands. Returns True if handled."""
     stripped = user_input.strip()
@@ -401,7 +418,7 @@ _SLASH_COMMANDS = [
     "/todoist ", "/weather", "/forecast", "/memory", "/remember ", "/note ",
     "/search ", "/sgrep ", "/svec ", "/find ",
     "/sessions", "/session ",
-    "/w ", "/r ", "/review", "/tidy", "/brief", "/stats",
+    "/w ", "/r ", "/review", "/tidy", "/brief", "/stats", "/schedule",
     "/capture ",
     "/model",
     "/help", "/clear",
@@ -520,6 +537,7 @@ def repl(config):
                 print("  daily:")
                 print("    /brief           todoist + weather digest")
                 print("  system:")
+                print("    /schedule        show installed schedules")
                 print("    /stats           memory and index health")
                 print("    /model           show active model configuration")
                 print("  /help              show this help")
@@ -548,6 +566,10 @@ def repl(config):
                 continue
             if user_input.strip() == "/brief":
                 _handle_brief()
+                continue
+            if user_input.strip() == "/schedule":
+                from tars.scheduler import schedule_list
+                _print_schedule_list(schedule_list())
                 continue
             if user_input.strip() == "/stats":
                 from tars.db import db_stats
@@ -701,11 +723,26 @@ def main():
     sub.add_parser("email", help="start email polling channel")
     sub.add_parser("email-brief", help="send the daily brief via email")
 
+    sched = sub.add_parser("schedule", help="manage scheduled commands")
+    sched_sub = sched.add_subparsers(dest="schedule_command")
+    sched_add = sched_sub.add_parser("add", help="add a scheduled command")
+    sched_add.add_argument("schedule_name", help="schedule name (e.g. email-brief)")
+    sched_add.add_argument("schedule_cmd", help="tars subcommand to run")
+    sched_add.add_argument("schedule_args", nargs="*", help="subcommand arguments")
+    sched_add.add_argument("--hour", type=int, default=8)
+    sched_add.add_argument("--minute", type=int, default=0)
+    sched_add.add_argument("--watch", help="watch a directory instead of using a timer")
+    sched_sub.add_parser("list", help="show installed schedules")
+    sched_rm = sched_sub.add_parser("remove", help="remove a scheduled command")
+    sched_rm.add_argument("schedule_name", help="schedule name to remove")
+    sched_test = sched_sub.add_parser("test", help="test-run a schedule in its OS environment")
+    sched_test.add_argument("schedule_name", help="schedule name to test")
+
     # Detect one-shot messages before argparse sees them — argparse subparsers
     # greedily match the first positional arg as a subcommand, so
     # `tars "hello"` fails with "invalid choice".  If argv[1] isn't a known
     # subcommand or flag, treat everything after flags as a message.
-    _subcommands = {"index", "notes-index", "search", "sgrep", "svec", "serve", "email", "email-brief"}
+    _subcommands = {"index", "notes-index", "search", "sgrep", "svec", "serve", "email", "email-brief", "schedule"}
     raw_args = sys.argv[1:]
     message_args: list[str] = []
     # Skip leading flags (-m, --model, --remote-model and their values)
@@ -762,6 +799,29 @@ def main():
             send_brief_email()
         except Exception as e:
             print(f"  [error] email brief failed: {e}", file=sys.stderr)
+        return
+
+    if args.command == "schedule":
+        from tars.scheduler import ScheduleEntry, schedule_add, schedule_list, schedule_remove, schedule_test
+
+        if args.schedule_command == "add":
+            entry = ScheduleEntry(
+                name=args.schedule_name,
+                command=args.schedule_cmd,
+                args=args.schedule_args or [],
+                hour=args.hour if not args.watch else None,
+                minute=args.minute if not args.watch else None,
+                watch_path=args.watch,
+            )
+            print(schedule_add(entry))
+        elif args.schedule_command == "list":
+            _print_schedule_list(schedule_list())
+        elif args.schedule_command == "remove":
+            print(schedule_remove(args.schedule_name))
+        elif args.schedule_command == "test":
+            print(schedule_test(args.schedule_name))
+        else:
+            print("usage: tars schedule {add,list,remove,test}")
         return
 
     _startup_index()

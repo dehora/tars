@@ -75,22 +75,20 @@ tars email
 # Send daily brief via email
 tars email-brief
 
-# Schedule daily email brief (macOS)
-TARS_HOME=/path/to/tars bin/tars-schedule-mac --hour 8 --minute 0
+# Schedule daily email brief
+tars schedule add email-brief email-brief --hour 8 --minute 0
 
-# Schedule daily email brief (Linux systemd user)
-TARS_HOME=/path/to/tars bin/tars-schedule-linux --hour 8 --minute 0
+# Schedule vault reindex on file change
+tars schedule add notes-reindex notes-index --watch "$TARS_NOTES_DIR"
 
-# If uv is not on PATH, set TARS_UV to its full path:
-# TARS_HOME=/path/to/tars TARS_UV=/path/to/uv bin/tars-schedule-mac --hour 8 --minute 0
-# If td (todoist-cli) is not on PATH for launchd, set TARS_TD to its full path:
-# TARS_HOME=/path/to/tars TARS_TD=/path/to/td bin/tars-schedule-mac --hour 8 --minute 0
+# List installed schedules
+tars schedule list
 
-# Remove scheduled brief (macOS)
-TARS_HOME=/path/to/tars bin/tars-schedule-mac --remove
+# Test-run a schedule (uses baked OS environment)
+tars schedule test email-brief
 
-# Remove scheduled brief (Linux systemd user)
-TARS_HOME=/path/to/tars bin/tars-schedule-linux --remove
+# Remove a schedule
+tars schedule remove email-brief
 
 # Rebuild search index
 tars index

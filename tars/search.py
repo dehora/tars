@@ -3,7 +3,7 @@
 import json
 from dataclasses import dataclass
 
-from tars.db import _connect, _db_path, _fts_table_exists, _serialize_f32, _vec_table_exists
+from tars.db import _connect, _db_path, _fts_table_exists, _get_metadata, _serialize_f32, _vec_table_exists
 from tars.embeddings import DEFAULT_EMBEDDING_MODEL, embed
 
 
@@ -95,7 +95,10 @@ def search(
         fts_rowids: list[int] = []
 
         if mode in ("hybrid", "vec"):
-            query_vec = embed(query, model=model)[0]
+            # Use the model the index was built with, not the caller's default
+            stored_model = _get_metadata(conn, "embedding_model")
+            vec_model = stored_model if stored_model else model
+            query_vec = embed(query, model=vec_model)[0]
             vec_rowids = search_vec(conn, query_vec, limit=limit * 2)
 
         if mode in ("hybrid", "fts"):
