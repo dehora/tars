@@ -67,6 +67,7 @@ class CaptureTests(unittest.TestCase):
             with (
                 mock.patch.dict(os.environ, {"TARS_NOTES_DIR": tmpdir}),
                 mock.patch("tars.capture._run_web_tool", return_value=web_result),
+                mock.patch("tars.capture._fetch_html", return_value=(None, "skip")),
                 mock.patch(
                     "tars.capture.chat",
                     side_effect=[
@@ -100,6 +101,7 @@ class CaptureTests(unittest.TestCase):
             with (
                 mock.patch.dict(os.environ, {"TARS_NOTES_DIR": tmpdir}),
                 mock.patch("tars.capture._run_web_tool", return_value=web_result),
+                mock.patch("tars.capture._fetch_html", return_value=(None, "skip")),
                 mock.patch(
                     "tars.capture.chat",
                     side_effect=[
@@ -120,6 +122,7 @@ class CaptureTests(unittest.TestCase):
             with (
                 mock.patch.dict(os.environ, {"TARS_NOTES_DIR": tmpdir}),
                 mock.patch("tars.capture._run_web_tool", return_value=web_result),
+                mock.patch("tars.capture._fetch_html", return_value=(None, "skip")),
                 mock.patch(
                     "tars.capture.chat",
                     side_effect=[
@@ -143,6 +146,7 @@ class CaptureTests(unittest.TestCase):
                 mock.patch.dict(os.environ, {"TARS_NOTES_DIR": tmpdir}),
                 mock.patch("tars.capture._run_web_tool", return_value=web_result),
                 mock.patch("tars.capture.chat", return_value='{"title":"Raw Title","author":"","created":"","description":"Raw TLDR"}') as mock_chat,
+                mock.patch("tars.capture._fetch_html", return_value=("<html><body><img src=\"/a.jpg\"></body></html>", None)),
             ):
                 result = json.loads(capture("https://dehora.net/tars-test/post", "ollama", "fake", raw=True))
             self.assertEqual(mock_chat.call_count, 1)
@@ -150,6 +154,8 @@ class CaptureTests(unittest.TestCase):
             path = Path(result["path"])
             content = path.read_text(encoding="utf-8")
             self.assertIn("Raw content here.", content)
+            self.assertIn("## Images", content)
+            self.assertIn("![](https://dehora.net/a.jpg)", content)
 
     def test_capture_creates_directory(self) -> None:
         web_result = json.dumps({"url": "https://dehora.net/tars-test", "content": "text", "truncated": False})
@@ -159,6 +165,7 @@ class CaptureTests(unittest.TestCase):
             with (
                 mock.patch.dict(os.environ, {"TARS_NOTES_DIR": tmpdir}),
                 mock.patch("tars.capture._run_web_tool", return_value=web_result),
+                mock.patch("tars.capture._fetch_html", return_value=(None, "skip")),
                 mock.patch("tars.capture.chat", return_value="# Title\n\nBody"),
             ):
                 capture("https://dehora.net/tars-test", "ollama", "fake")
@@ -170,6 +177,7 @@ class CaptureTests(unittest.TestCase):
             with (
                 mock.patch.dict(os.environ, {"TARS_NOTES_DIR": tmpdir}),
                 mock.patch("tars.capture._run_web_tool", return_value=web_result),
+                mock.patch("tars.capture._fetch_html", return_value=(None, "skip")),
                 mock.patch(
                     "tars.capture.chat",
                     side_effect=[
@@ -224,6 +232,7 @@ class CaptureWithContextTests(unittest.TestCase):
             with (
                 mock.patch.dict(os.environ, {"TARS_NOTES_DIR": tmpdir}),
                 mock.patch("tars.capture._run_web_tool", return_value=web_result),
+                mock.patch("tars.capture._fetch_html", return_value=(None, "skip")),
                 mock.patch(
                     "tars.capture.chat",
                     side_effect=[
@@ -243,6 +252,7 @@ class CaptureWithContextTests(unittest.TestCase):
             with (
                 mock.patch.dict(os.environ, {"TARS_NOTES_DIR": tmpdir}),
                 mock.patch("tars.capture._run_web_tool", return_value=web_result),
+                mock.patch("tars.capture._fetch_html", return_value=(None, "skip")),
                 mock.patch(
                     "tars.capture.chat",
                     side_effect=[

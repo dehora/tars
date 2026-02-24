@@ -8,7 +8,7 @@ sys.modules.setdefault("anthropic", mock.Mock())
 sys.modules.setdefault("ollama", mock.Mock())
 sys.modules.setdefault("dotenv", mock.Mock(load_dotenv=lambda: None))
 
-from tars.web import _extract_text, _is_private_host, _run_web_tool, _MAX_CONTENT_LENGTH
+from tars.web import _extract_image_urls, _extract_text, _is_private_host, _run_web_tool, _MAX_CONTENT_LENGTH
 
 
 class ExtractTextTests(unittest.TestCase):
@@ -40,6 +40,32 @@ class ExtractTextTests(unittest.TestCase):
 
     def test_empty_html(self) -> None:
         self.assertEqual(_extract_text(""), "")
+
+
+class ExtractImageUrlsTests(unittest.TestCase):
+    def test_extracts_body_images(self) -> None:
+        html = (
+            "<html><body>"
+            "<img src=\"/images/a.jpg\">"
+            "<img src=\"https://example.com/b.png\">"
+            "</body></html>"
+        )
+        urls = _extract_image_urls(html, "https://example.com/post")
+        self.assertEqual(
+            urls,
+            ["https://example.com/images/a.jpg", "https://example.com/b.png"],
+        )
+
+    def test_skips_header_footer(self) -> None:
+        html = (
+            "<html><body>"
+            "<header><img src=\"/hero.jpg\"></header>"
+            "<footer><img src=\"/footer.jpg\"></footer>"
+            "<article><img src=\"/main.jpg\"></article>"
+            "</body></html>"
+        )
+        urls = _extract_image_urls(html, "https://example.com/post")
+        self.assertEqual(urls, ["https://example.com/main.jpg"])
 
 
 class SSRFTests(unittest.TestCase):

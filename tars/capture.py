@@ -8,7 +8,7 @@ from urllib.parse import urlparse
 
 from tars.core import chat
 from tars.notes import _notes_dir
-from tars.web import _run_web_tool
+from tars.web import _fetch_html, _extract_image_urls, _run_web_tool
 
 _CAPTURES_DIR = "17 tars captures"
 
@@ -108,6 +108,15 @@ def _strip_summarizer_preamble(body: str) -> str:
     return "\n".join(cleaned).lstrip()
 
 
+def _append_images(body: str, images: list[str]) -> str:
+    if not images:
+        return body
+    lines = ["", "## Images", ""]
+    for url in images[:10]:
+        lines.append(f"![]({url})")
+    return body + "\n" + "\n".join(lines) + "\n"
+
+
 def _yaml_escape(value: str) -> str:
     """Escape a string for YAML single-line usage."""
     if value is None:
@@ -176,6 +185,11 @@ def capture(url: str, provider: str, model: str, *, raw: bool = False, context: 
 
     meta = _extract_metadata(content, url, provider, model)
 
+    html, _html_err = _fetch_html(url)
+    images: list[str] = []
+    if html:
+        images = _extract_image_urls(html, url)
+
     # Summarize or use raw
     if raw:
         body = content
@@ -199,6 +213,7 @@ def capture(url: str, provider: str, model: str, *, raw: bool = False, context: 
         messages = [{"role": "user", "content": prompt}]
         body = chat(messages, provider, model, use_tools=False)
     body = _strip_summarizer_preamble(body)
+    body = _append_images(body, images)
 
     # Extract title and build file
     title = meta.get("title") or _extract_title(body, url)
