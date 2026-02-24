@@ -171,5 +171,29 @@ class ChunkMarkdownTests(unittest.TestCase):
         self.assertIn("```", first.split("```python", 1)[1])
 
 
+    def test_strips_inline_base64_images(self) -> None:
+        b64 = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJ" + "A" * 200
+        text = f"# Note\n\nSome text.\n\n![screenshot](data:image/png;base64,{b64})\n\nMore text.\n"
+        chunks = chunk_markdown(text)
+        full = "".join(c.content for c in chunks)
+        self.assertNotIn("data:image", full)
+        self.assertNotIn("base64", full)
+        self.assertIn("Some text.", full)
+        self.assertIn("More text.", full)
+
+    def test_strips_multiple_inline_images(self) -> None:
+        b64 = "A" * 100
+        text = (
+            "# Note\n\n"
+            f"![img1](data:image/png;base64,{b64})\n"
+            "Middle text.\n"
+            f"![img2](data:image/jpeg;base64,{b64})\n"
+        )
+        chunks = chunk_markdown(text)
+        full = "".join(c.content for c in chunks)
+        self.assertNotIn("data:image", full)
+        self.assertIn("Middle text.", full)
+
+
 if __name__ == "__main__":
     unittest.main()

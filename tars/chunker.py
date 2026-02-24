@@ -8,6 +8,7 @@ _HEADING_RE = re.compile(r"^(#{1,6})\s")
 _HR_RE = re.compile(r"^(-{3,}|\*{3,}|_{3,})\s*$")
 _FENCE_RE = re.compile(r"^(`{3,}|~{3,})")
 _LIST_RE = re.compile(r"^(\s*[-*+]|\s*\d+\.)\s")
+_DATA_IMG_RE = re.compile(r"!\[[^\]]*\]\(data:[^)]+\)")
 
 _BOUNDARY_SCORES = {
     "h1": 100, "h2": 90, "h3": 80, "h4": 70, "h5": 60, "h6": 50,
@@ -67,6 +68,7 @@ def chunk_markdown(
     if not text or not text.strip():
         return []
 
+    text = _DATA_IMG_RE.sub("", text)
     lines = text.splitlines(keepends=True)
     total_lines = len(lines)
 
