@@ -59,6 +59,25 @@ def _sanitize_filename(title: str) -> str:
     return clean[:120] or "Untitled"
 
 
+def _extract_description_from_body(body: str) -> str:
+    """Fallback description from the first non-heading paragraph."""
+    lines = [line.strip() for line in body.splitlines()]
+    para: list[str] = []
+    for line in lines:
+        if not line:
+            if para:
+                break
+            continue
+        if line.startswith("#"):
+            if not para:
+                continue
+        para.append(line)
+    if not para:
+        return ""
+    text = " ".join(para)
+    return " ".join(text.split())
+
+
 def _yaml_escape(value: str) -> str:
     """Escape a string for YAML single-line usage."""
     if value is None:
@@ -155,6 +174,8 @@ def capture(url: str, provider: str, model: str, *, raw: bool = False, context: 
     author = meta.get("author", "")
     created = meta.get("created", "")
     description = meta.get("description", "")
+    if not description:
+        description = _extract_description_from_body(body)
     filename = _sanitize_filename(title)
     today = datetime.now().strftime("%Y-%m-%d")
 

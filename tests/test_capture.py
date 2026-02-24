@@ -94,6 +94,25 @@ class CaptureTests(unittest.TestCase):
             # Check it's in the right directory
             self.assertIn("17 tars captures", str(path))
 
+    def test_description_falls_back_to_body(self) -> None:
+        web_result = json.dumps({"url": "https://dehora.net/tars-test/post", "content": "Some article text", "truncated": False})
+        with tempfile.TemporaryDirectory() as tmpdir:
+            with (
+                mock.patch.dict(os.environ, {"TARS_NOTES_DIR": tmpdir}),
+                mock.patch("tars.capture._run_web_tool", return_value=web_result),
+                mock.patch(
+                    "tars.capture.chat",
+                    side_effect=[
+                        '{"title":"Great Post","author":"","created":"","description":""}',
+                        "# Great Post\n\nThis is the first paragraph.\nStill first paragraph.\n\nSecond paragraph.",
+                    ],
+                ),
+            ):
+                result = json.loads(capture("https://dehora.net/tars-test/post", "ollama", "fake"))
+            self.assertTrue(result["ok"])
+            content = Path(result["path"]).read_text(encoding="utf-8")
+            self.assertIn('description: "This is the first paragraph. Still first paragraph."', content)
+
     def test_capture_raw_skips_summary(self) -> None:
         web_result = json.dumps({"url": "https://dehora.net/tars-test/post", "content": "# Raw Title\n\nRaw content here.", "truncated": False})
         with tempfile.TemporaryDirectory() as tmpdir:
