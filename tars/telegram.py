@@ -25,10 +25,13 @@ _KEYBOARD_ALIASES: dict[str, str] = {
     "Weather": "/weather",
     "Forecast": "/forecast",
     "Tasks": "/todoist today",
-    "Memory": "/memory",
-    "Note": "/note",
     "Todoist": "/todoist",
+    "Note": "/note",
+    "Remember": "/remember",
     "Capture": "/capture",
+    "Search": "/search",
+    "Sessions": "/sessions",
+    "Find": "/find",
 }
 
 # In-memory conversation state, keyed by chat_id
@@ -110,7 +113,9 @@ def _handle_slash_command(
             name, args = "weather_forecast", {}
         elif cmd == "/memory":
             name, args = "memory_recall", {}
-        elif cmd == "/remember" and len(parts) >= 3:
+        elif cmd == "/remember":
+            if len(parts) < 3:
+                return "Usage: /remember <semantic|procedural> <text>"
             name = "memory_remember"
             args = {"section": parts[1], "content": " ".join(parts[2:])}
         elif cmd == "/note":
@@ -133,6 +138,45 @@ def _handle_slash_command(
         elif cmd == "/brief":
             sections = build_brief_sections()
             return format_brief_text(sections)
+        elif cmd == "/search":
+            if len(parts) < 2:
+                return "Usage: /search <query>"
+            from tars.search import search as _search
+            query = " ".join(parts[1:])
+            results = _search(query, mode="hybrid", limit=5)
+            if not results:
+                return "No results."
+            lines = []
+            for i, r in enumerate(results, 1):
+                source = r.file_title or r.file_path
+                lines.append(f"{i}. [{r.score:.3f}] {source}")
+                preview = r.content.strip().splitlines()
+                if preview:
+                    lines.append(f"   {preview[0][:80]}")
+            return "\n".join(lines)
+        elif cmd == "/find":
+            if len(parts) < 2:
+                return "Usage: /find <query>"
+            from tars.search import search_notes as _search_notes
+            query = " ".join(parts[1:])
+            results = _search_notes(query, limit=5)
+            if not results:
+                return "No results."
+            lines = []
+            for i, r in enumerate(results, 1):
+                source = r.file_title or r.file_path
+                lines.append(f"{i}. [{r.score:.3f}] {source}")
+                preview = r.content.strip().splitlines()
+                if preview:
+                    lines.append(f"   {preview[0][:80]}")
+            return "\n".join(lines)
+        elif cmd == "/sessions":
+            from tars.sessions import list_sessions
+            sessions = list_sessions(limit=10)
+            if not sessions:
+                return "No sessions found."
+            lines = [f"{s.date}  {s.title}" for s in sessions]
+            return "\n".join(lines)
         else:
             return None  # Not a recognized command — let the model handle it
 
@@ -154,7 +198,7 @@ def _get_keyboard():
     from telegram import ReplyKeyboardMarkup
 
     return ReplyKeyboardMarkup(
-        [["Brief", "Weather", "Forecast"], ["Tasks", "Todoist", "Memory"], ["Note", "Capture"]],
+        [["Brief", "Weather", "Forecast"], ["Tasks", "Todoist", "Note"], ["Remember", "Capture", "Search"], ["Sessions", "Find"]],
         resize_keyboard=True,
     )
 

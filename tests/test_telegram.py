@@ -148,11 +148,9 @@ class TestKeyboardAliases(unittest.TestCase):
             )
 
     def test_expected_aliases_present(self):
-        self.assertIn("Brief", _KEYBOARD_ALIASES)
-        self.assertIn("Weather", _KEYBOARD_ALIASES)
-        self.assertIn("Forecast", _KEYBOARD_ALIASES)
-        self.assertIn("Tasks", _KEYBOARD_ALIASES)
-        self.assertIn("Memory", _KEYBOARD_ALIASES)
+        for key in ("Brief", "Weather", "Forecast", "Tasks", "Todoist",
+                     "Note", "Remember", "Capture", "Search", "Sessions", "Find"):
+            self.assertIn(key, _KEYBOARD_ALIASES)
 
     def test_tasks_maps_to_todoist_today(self):
         self.assertEqual(_KEYBOARD_ALIASES["Tasks"], "/todoist today")
