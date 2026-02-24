@@ -4,13 +4,14 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project
 
-Tars is a personal AI assistant with CLI, web, and email channels. Routes messages to configurable AI providers (ollama, claude), manages persistent memory in an Obsidian vault, and integrates with Todoist and weather APIs. Uses uv for package management with Python 3.14.
+Tars is a personal AI assistant with CLI, web, email, and Telegram channels. Routes messages to configurable AI providers (ollama, claude), manages persistent memory in an Obsidian vault, and integrates with Todoist and weather APIs. Uses uv for package management with Python 3.14.
 
 ## Commands
 
 - **Run CLI**: `uv run tars` (REPL) or `uv run tars "message"` (one-shot)
 - **Run server**: `uv run tars serve`
 - **Run email**: `uv run tars email`
+- **Run Telegram**: `uv run tars telegram`
 - **Rebuild index**: `uv run tars index`
 - **Run tests**: `uv run python -m unittest discover -s tests -v`
 - **Add dependency**: `uv add <package>`
@@ -18,7 +19,7 @@ Tars is a personal AI assistant with CLI, web, and email channels. Routes messag
 ## Architecture
 
 ```
-[cli/web/email] → [conversation.py] → [core.py] → ollama / claude
+[cli/web/email/telegram] → [conversation.py] → [core.py] → ollama / claude
                                      ↕
                                [tools.py] → todoist, weather, memory, search, web
                                      ↕
@@ -39,7 +40,8 @@ Tars is a personal AI assistant with CLI, web, and email channels. Routes messag
 - Use specific patterns for placeholder comments (e.g. `<!-- tars:memory -->`) — broad regex like `<!--.*?-->` will eat legitimate comments.
 - Always use `encoding="utf-8", errors="replace"` on file I/O for user-managed files — memory files live in an obsidian vault and can be edited externally.
 - When adding a new tool, audit all code paths that call `chat()` — internal paths (summarization, review, tidy) should use `use_tools=False` to prevent tool leakage.
-- When adding a CLI command, check web UI parity — unhandled slash commands in the web UI fall through to chat and get misinterpreted by the model.
+- When adding a CLI command, check web UI and Telegram parity — unhandled slash commands fall through to chat and get misinterpreted by the model.
+- Slash command dispatch is duplicated across `cli.py`, `email.py`, and `telegram.py` — when adding or modifying a command, update all three (or refactor to shared dispatch).
 
 ## Configuration
 
