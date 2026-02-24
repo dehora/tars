@@ -42,6 +42,8 @@ if [[ -z "$UV_BIN" ]]; then
   exit 1
 fi
 
+CMD='echo "[tars-email-brief] $(date -Iseconds) start"; '"$UV_BIN"' run tars email-brief'
+
 UNIT_DIR="$HOME/.config/systemd/user"
 SERVICE="$UNIT_DIR/tars-email-brief.service"
 TIMER="$UNIT_DIR/tars-email-brief.timer"
@@ -63,7 +65,7 @@ Description=tars email brief
 [Service]
 Type=oneshot
 WorkingDirectory=$TARS_HOME
-ExecStart=$UV_BIN run tars email-brief
+ExecStart=/bin/bash -lc '$CMD'
 SERVICE
 
 cat <<TIMER > "$TIMER"
