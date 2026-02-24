@@ -722,6 +722,8 @@ def main():
     srv.add_argument("--port", type=int, default=8180, help="port number")
     sub.add_parser("email", help="start email polling channel")
     sub.add_parser("email-brief", help="send the daily brief via email")
+    sub.add_parser("telegram", help="start Telegram bot channel")
+    sub.add_parser("telegram-brief", help="send the daily brief via Telegram")
 
     sched = sub.add_parser("schedule", help="manage scheduled commands")
     sched_sub = sched.add_subparsers(dest="schedule_command")
@@ -742,7 +744,7 @@ def main():
     # greedily match the first positional arg as a subcommand, so
     # `tars "hello"` fails with "invalid choice".  If argv[1] isn't a known
     # subcommand or flag, treat everything after flags as a message.
-    _subcommands = {"index", "notes-index", "search", "sgrep", "svec", "serve", "email", "email-brief", "schedule"}
+    _subcommands = {"index", "notes-index", "search", "sgrep", "svec", "serve", "email", "email-brief", "telegram", "telegram-brief", "schedule"}
     raw_args = sys.argv[1:]
     message_args: list[str] = []
     # Skip leading flags (-m, --model, --remote-model and their values)
@@ -799,6 +801,21 @@ def main():
             send_brief_email()
         except Exception as e:
             print(f"  [error] email brief failed: {e}", file=sys.stderr)
+        return
+
+    if args.command == "telegram":
+        from tars.telegram import run_telegram
+
+        run_telegram(config)
+        return
+
+    if args.command == "telegram-brief":
+        from tars.telegram import send_brief_telegram_sync
+
+        try:
+            send_brief_telegram_sync()
+        except Exception as e:
+            print(f"  [error] telegram brief failed: {e}", file=sys.stderr)
         return
 
     if args.command == "schedule":
@@ -861,6 +878,12 @@ def main_email():
 def main_index():
     """Convenience entrypoint for `tars-index`."""
     sys.argv = ["tars", "index"] + sys.argv[1:]
+    main()
+
+
+def main_telegram():
+    """Convenience entrypoint for `tars-telegram`."""
+    sys.argv = ["tars", "telegram"] + sys.argv[1:]
     main()
 
 

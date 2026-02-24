@@ -60,6 +60,8 @@ Tars is a personal AI assistant with CLI, web, and email channels. Routes messag
 | `TARS_EMAIL_TO` | — | Recipient address for email brief |
 | `TARS_EMAIL_POLL_INTERVAL` | `60` | Seconds between inbox checks |
 | `TARS_API_TOKEN` | — | Optional bearer token for API auth |
+| `TARS_TELEGRAM_TOKEN` | — | Telegram bot API token from BotFather |
+| `TARS_TELEGRAM_ALLOW` | — | Comma-separated Telegram user IDs |
 | `DEFAULT_LAT` / `DEFAULT_LON` | — | Weather location |
 
 ## Git commits

@@ -10,6 +10,7 @@ dependencies = [
     "python-dotenv>=1.2.1",
     "sqlite-vec>=0.1.6",
     "fastapi[standard]>=0.115.0",
+    "python-telegram-bot>=22.6",
 ]
 
 [project.scripts]
@@ -17,6 +18,7 @@ tars = "tars.cli:main"
 tars-serve = "tars.cli:main_serve"
 tars-email = "tars.cli:main_email"
 tars-index = "tars.cli:main_index"
+tars-telegram = "tars.cli:main_telegram"
 
 [build-system]
 requires = ["hatchling"]
