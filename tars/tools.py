@@ -1,6 +1,8 @@
 import json
+import os
 import subprocess
 import sys
+import shutil
 
 from tars.memory import _run_memory_tool
 from tars.notes import _run_note_tool
@@ -185,6 +187,26 @@ def _clean_args(args: dict) -> dict:
     return {k: v for k, v in args.items() if v is not None and v != ""}
 
 
+def _resolve_td() -> str | None:
+    """Resolve the todoist CLI binary, honoring TARS_TD if set."""
+    td_env = os.environ.get("TARS_TD", "").strip()
+    if td_env:
+        if os.path.isfile(td_env) and os.access(td_env, os.X_OK):
+            return td_env
+        return None
+    td_bin = shutil.which("td")
+    if td_bin:
+        return td_bin
+    for candidate in (
+        os.path.expanduser("~/.local/bin/td"),
+        "/opt/homebrew/bin/td",
+        "/usr/local/bin/td",
+    ):
+        if os.path.isfile(candidate) and os.access(candidate, os.X_OK):
+            return candidate
+    return None
+
+
 def run_tool(name: str, args: dict, *, quiet: bool = False) -> str:
     args = _clean_args(args)
     if not quiet:
@@ -200,8 +222,12 @@ def run_tool(name: str, args: dict, *, quiet: bool = False) -> str:
             return _run_note_tool(name, args)
         if name == "web_read":
             return _run_web_tool(name, args)
+        if name.startswith("todoist_"):
+            td_bin = _resolve_td()
+            if not td_bin:
+                return json.dumps({"error": "td CLI not found — install with: pip install todoist-cli or set TARS_TD to its path"})
         if name == "todoist_add_task":
-            cmd = ["td", "task", "add", args["content"]]
+            cmd = [td_bin, "task", "add", args["content"]]
             if due := args.get("due"):
                 cmd.extend(["--due", due])
             if project := args.get("project"):
@@ -209,12 +235,12 @@ def run_tool(name: str, args: dict, *, quiet: bool = False) -> str:
             if priority := args.get("priority"):
                 cmd.extend(["--priority", str(priority)])
         elif name == "todoist_today":
-            cmd = ["td", "today", "--json"]
+            cmd = [td_bin, "today", "--json"]
         elif name == "todoist_upcoming":
             days = args.get("days", 7)
-            cmd = ["td", "upcoming", str(days), "--json"]
+            cmd = [td_bin, "upcoming", str(days), "--json"]
         elif name == "todoist_complete_task":
-            cmd = ["td", "task", "complete", args["ref"]]
+            cmd = [td_bin, "task", "complete", args["ref"]]
         else:
             return json.dumps({"error": f"Unknown tool: {name}"})
 
@@ -223,6 +249,6 @@ def run_tool(name: str, args: dict, *, quiet: bool = False) -> str:
             return json.dumps({"error": result.stderr.strip() or f"td exited with code {result.returncode}"})
         return result.stdout.strip() or json.dumps({"ok": True})
     except FileNotFoundError:
-        return json.dumps({"error": "td CLI not found — install with: pip install todoist-cli"})
+        return json.dumps({"error": "td CLI not found — install with: pip install todoist-cli or set TARS_TD to its path"})
     except subprocess.TimeoutExpired:
         return json.dumps({"error": "td command timed out"})

@@ -83,6 +83,8 @@ TARS_HOME=/path/to/tars bin/tars-schedule-linux --hour 8 --minute 0
 
 # If uv is not on PATH, set TARS_UV to its full path:
 # TARS_HOME=/path/to/tars TARS_UV=/path/to/uv bin/tars-schedule-mac --hour 8 --minute 0
+# If td (todoist-cli) is not on PATH for launchd, set TARS_TD to its full path:
+# TARS_HOME=/path/to/tars TARS_TD=/path/to/td bin/tars-schedule-mac --hour 8 --minute 0
 
 # Remove scheduled brief (macOS)
 TARS_HOME=/path/to/tars bin/tars-schedule-mac --remove
