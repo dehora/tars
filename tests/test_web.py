@@ -13,6 +13,7 @@ from tars.web import (
     _extract_image_urls,
     _extract_markdown_with_images,
     _extract_text,
+    _fetch_html,
     _is_private_host,
     _run_web_tool,
     _MAX_CONTENT_LENGTH,
@@ -176,6 +177,35 @@ class SSRFTests(unittest.TestCase):
         self.assertIn("error", result)
         self.assertIn("private", result["error"].lower())
 
+    @mock.patch("tars.web._is_private_host", side_effect=[False, True])
+    @mock.patch("tars.web.urllib.request.urlopen")
+    def test_fetch_html_rejects_redirect_to_private(self, mock_urlopen, _) -> None:
+        mock_resp = mock.Mock()
+        mock_resp.url = "http://localhost/secret"
+        mock_resp.read.return_value = b"<p>secret</p>"
+        mock_resp.__enter__ = mock.Mock(return_value=mock_resp)
+        mock_resp.__exit__ = mock.Mock(return_value=False)
+        mock_urlopen.return_value = mock_resp
+
+        html, err = _fetch_html("https://example.com/redirect")
+        self.assertIsNone(html)
+        self.assertIsNotNone(err)
+        self.assertIn("redirected", err)
+
+    @mock.patch("tars.web._is_private_host", side_effect=[False, True])
+    @mock.patch("tars.web.urllib.request.urlopen")
+    def test_run_web_tool_rejects_redirect_to_private(self, mock_urlopen, _) -> None:
+        mock_resp = mock.Mock()
+        mock_resp.url = "http://169.254.169.254/metadata"
+        mock_resp.read.return_value = b"<p>metadata</p>"
+        mock_resp.__enter__ = mock.Mock(return_value=mock_resp)
+        mock_resp.__exit__ = mock.Mock(return_value=False)
+        mock_urlopen.return_value = mock_resp
+
+        result = json.loads(_run_web_tool("web_read", {"url": "https://example.com/redirect"}))
+        self.assertIn("error", result)
+        self.assertIn("redirected", result["error"])
+
 
 class RunWebToolTests(unittest.TestCase):
     def test_empty_url_returns_error(self) -> None:
@@ -195,6 +225,7 @@ class RunWebToolTests(unittest.TestCase):
     @mock.patch("tars.web.urllib.request.urlopen")
     def test_valid_url_returns_content(self, mock_urlopen, _) -> None:
         mock_resp = mock.Mock()
+        mock_resp.url = "https://example.com"
         mock_resp.read.return_value = b"<html><body><p>Hello world</p></body></html>"
         mock_resp.__enter__ = mock.Mock(return_value=mock_resp)
         mock_resp.__exit__ = mock.Mock(return_value=False)
@@ -210,6 +241,7 @@ class RunWebToolTests(unittest.TestCase):
     def test_truncation(self, mock_urlopen, _) -> None:
         long_text = "x" * (_MAX_CONTENT_LENGTH + 1000)
         mock_resp = mock.Mock()
+        mock_resp.url = "https://example.com"
         mock_resp.read.return_value = f"<p>{long_text}</p>".encode()
         mock_resp.__enter__ = mock.Mock(return_value=mock_resp)
         mock_resp.__exit__ = mock.Mock(return_value=False)
@@ -232,6 +264,7 @@ class RunWebToolTests(unittest.TestCase):
     def test_http_url_accepted(self, _) -> None:
         with mock.patch("tars.web.urllib.request.urlopen") as mock_urlopen:
             mock_resp = mock.Mock()
+            mock_resp.url = "http://example.com"
             mock_resp.read.return_value = b"<p>ok</p>"
             mock_resp.__enter__ = mock.Mock(return_value=mock_resp)
             mock_resp.__exit__ = mock.Mock(return_value=False)

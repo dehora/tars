@@ -269,6 +269,9 @@ def _fetch_html(url: str) -> tuple[str | None, str | None]:
     try:
         req = urllib.request.Request(url, headers={"User-Agent": _USER_AGENT})
         with urllib.request.urlopen(req, timeout=_TIMEOUT) as resp:
+            final_hostname = urlparse(resp.url).hostname or ""
+            if _is_private_host(final_hostname):
+                return None, "URL redirected to a private/internal address"
             raw = resp.read().decode("utf-8", errors="replace")
     except Exception as e:
         return None, f"Failed to fetch URL: {e}"
@@ -305,6 +308,9 @@ def _run_web_tool(name: str, args: dict) -> str:
     try:
         req = urllib.request.Request(url, headers={"User-Agent": _USER_AGENT})
         with urllib.request.urlopen(req, timeout=_TIMEOUT) as resp:
+            final_hostname = urlparse(resp.url).hostname or ""
+            if _is_private_host(final_hostname):
+                return json.dumps({"error": "URL redirected to a private/internal address"})
             raw = resp.read().decode("utf-8", errors="replace")
     except Exception as e:
         return json.dumps({"error": f"Failed to fetch URL: {e}"})

@@ -309,6 +309,8 @@ class CaptureWithContextTests(unittest.TestCase):
             prompt = mock_chat.call_args_list[1][0][0][0]["content"]
             self.assertIn("what about routing?", prompt)
             self.assertIn("relevant to this context", prompt)
+            self.assertIn("<conversation-context>", prompt)
+            self.assertIn("</conversation-context>", prompt)
 
     def test_no_context_omits_block(self) -> None:
         web_result = json.dumps({"url": "https://dehora.net/tars-test", "content": "article text", "truncated": False})

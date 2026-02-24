@@ -1,2 +1,3 @@
 #!/usr/bin/env bash
-exec uv run tars "$@"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+exec uv --directory "$(dirname "$SCRIPT_DIR")" run tars "$@"

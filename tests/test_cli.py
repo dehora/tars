@@ -304,6 +304,52 @@ class HandleTidyTests(unittest.TestCase):
         m.assert_any_call("  skipped")
 
 
+class OneShotHintTests(unittest.TestCase):
+    def test_hint_in_search_context_not_message(self) -> None:
+        from tars.cli import main
+
+        captured: dict = {}
+
+        def fake_process_message(conv, message, session_file):
+            captured["conv"] = conv
+            captured["message"] = message
+            return "ok"
+
+        with (
+            mock.patch("sys.argv", ["tars", "hello there"]),
+            mock.patch("tars.cli.process_message", side_effect=fake_process_message),
+            mock.patch("tars.cli._startup_index"),
+            mock.patch("tars.cli._session_path", return_value=None),
+            mock.patch("builtins.print"),
+        ):
+            main()
+
+        self.assertIn("conv", captured)
+        self.assertIn("message", captured)
+        self.assertNotIn("one-shot", captured["message"])
+        self.assertIn("one-shot", captured["conv"].search_context)
+
+    def test_message_content_unchanged(self) -> None:
+        from tars.cli import main
+
+        captured: dict = {}
+
+        def fake_process_message(conv, message, session_file):
+            captured["message"] = message
+            return "ok"
+
+        with (
+            mock.patch("sys.argv", ["tars", "what", "is", "the", "weather"]),
+            mock.patch("tars.cli.process_message", side_effect=fake_process_message),
+            mock.patch("tars.cli._startup_index"),
+            mock.patch("tars.cli._session_path", return_value=None),
+            mock.patch("builtins.print"),
+        ):
+            main()
+
+        self.assertEqual(captured["message"], "what is the weather")
+
+
 class HandleBriefTests(unittest.TestCase):
     def test_brief_formats_all_sections(self) -> None:
         def fake_run_tool(name, args, *, quiet=False):

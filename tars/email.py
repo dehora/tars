@@ -185,6 +185,8 @@ def _fetch_unseen(
             continue
         if _is_allowed_sender(msg, allowed):
             messages.append((num, msg))
+        else:
+            imap.store(num, "+FLAGS", "\\Seen")
 
     return messages
 

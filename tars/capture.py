@@ -276,9 +276,10 @@ def capture(url: str, provider: str, model: str, *, raw: bool = False, context: 
         if context:
             context_block = (
                 "The user captured this page during a conversation. "
-                "Here is recent context:\n\n"
-                f"{context}\n\n"
-                "Summarize the article with emphasis on aspects relevant to this context.\n\n"
+                "Summarize with emphasis on aspects relevant to this context.\n\n"
+                "<conversation-context>\n"
+                f"{context}\n"
+                "</conversation-context>\n\n"
             )
         summary_source = tokenized_markdown if tokenized_markdown else content
         prompt = (

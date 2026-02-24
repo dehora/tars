@@ -147,37 +147,66 @@ class EscalationFallbackTests(unittest.TestCase):
         conv = Conversation(id="test", provider="ollama", model="llama3.1:8b")
         err = self._api_error("RateLimitError")
 
-        call_count = 0
-        def stream_side_effect(*args, **kwargs):
-            nonlocal call_count
-            call_count += 1
-            if call_count == 1:
-                raise err
-            return iter(["fall", "back"])
-
         with (
             mock.patch.object(conversation, "route_message", return_value=("claude", "sonnet")),
-            mock.patch.object(conversation, "chat_stream", side_effect=stream_side_effect),
+            mock.patch.object(conversation, "chat", side_effect=err),
+            mock.patch.object(conversation, "chat_stream", return_value=iter(["fall", "back"])),
         ):
             deltas = list(process_message_stream(conv, "what's the weather"))
         self.assertEqual(deltas, ["fall", "back"])
         self.assertEqual(conv.messages[-1], {"role": "assistant", "content": "fallback"})
 
+    def test_escalated_uses_chat_not_stream(self) -> None:
+        conv = Conversation(id="test", provider="ollama", model="llama3.1:8b")
+
+        with (
+            mock.patch.object(conversation, "route_message", return_value=("claude", "sonnet")),
+            mock.patch.object(conversation, "chat", return_value="buffered response") as mock_chat,
+            mock.patch.object(conversation, "chat_stream") as mock_stream,
+        ):
+            deltas = list(process_message_stream(conv, "what's the weather"))
+
+        mock_chat.assert_called_once()
+        mock_stream.assert_not_called()
+        self.assertEqual(deltas, ["buffered response"])
+        self.assertEqual(conv.messages[-1]["content"], "buffered response")
+
+    def test_stream_fallback_yields_single_response(self) -> None:
+        """Escalated failure falls back cleanly — no partial output before fallback."""
+        conv = Conversation(id="test", provider="ollama", model="llama3.1:8b")
+        err = self._api_error("RateLimitError")
+
+        with (
+            mock.patch.object(conversation, "route_message", return_value=("claude", "sonnet")),
+            mock.patch.object(conversation, "chat", side_effect=err),
+            mock.patch.object(conversation, "chat_stream", return_value=iter(["fall", "back"])),
+        ):
+            deltas = list(process_message_stream(conv, "what's the weather"))
+
+        self.assertEqual(deltas, ["fall", "back"])
+        self.assertNotIn("buffered response", deltas)
+
+    def test_non_escalated_uses_stream_not_chat(self) -> None:
+        conv = Conversation(id="test", provider="ollama", model="llama3.1:8b")
+
+        with (
+            mock.patch.object(conversation, "route_message", return_value=("ollama", "llama3.1:8b")),
+            mock.patch.object(conversation, "chat") as mock_chat,
+            mock.patch.object(conversation, "chat_stream", return_value=iter(["streamed"])) as mock_stream,
+        ):
+            deltas = list(process_message_stream(conv, "hello"))
+
+        mock_stream.assert_called_once()
+        mock_chat.assert_not_called()
+        self.assertEqual(deltas, ["streamed"])
+
     def test_stream_bad_request_does_not_fall_back(self) -> None:
         conv = Conversation(id="test", provider="ollama", model="llama3.1:8b")
         err = self._api_error("BadRequestError")
 
-        call_count = 0
-        def stream_side_effect(*args, **kwargs):
-            nonlocal call_count
-            call_count += 1
-            if call_count == 1:
-                raise err
-            return iter(["ok"])
-
         with (
             mock.patch.object(conversation, "route_message", return_value=("claude", "sonnet")),
-            mock.patch.object(conversation, "chat_stream", side_effect=stream_side_effect),
+            mock.patch.object(conversation, "chat", side_effect=err),
         ):
             _anthropic = sys.modules["anthropic"]
             with self.assertRaises(_anthropic.APIStatusError):

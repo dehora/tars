@@ -15,6 +15,7 @@ if "ollama" not in sys.modules:
 from tars.email import (
     _email_config,
     _extract_body,
+    _fetch_unseen,
     _handle_slash_command,
     _is_allowed_sender,
     _strip_html,
@@ -216,6 +217,38 @@ class TestEmailConfig(unittest.TestCase):
         with mock.patch.dict(os.environ, env, clear=True):
             cfg = _email_config()
             self.assertEqual(cfg["poll_interval"], 60)
+
+
+class TestFetchUnseen(unittest.TestCase):
+    def _make_imap_mock(self, msg: email.message.Message) -> mock.Mock:
+        """Build an IMAP mock that returns a single message."""
+        imap = mock.Mock()
+        imap.search.return_value = (None, [b"1"])
+        msg_bytes = msg.as_bytes()
+        imap.fetch.return_value = (None, [(b"header", msg_bytes)])
+        return imap
+
+    def test_disallowed_sender_marked_seen(self) -> None:
+        msg = MIMEText("spam body", "plain")
+        msg["From"] = "spammer@evil.com"
+        msg["Message-ID"] = "<spam@evil.com>"
+
+        imap = self._make_imap_mock(msg)
+        result = _fetch_unseen(imap, ["allowed@example.com"])
+
+        self.assertEqual(result, [])
+        imap.store.assert_called_once_with(b"1", "+FLAGS", "\\Seen")
+
+    def test_allowed_sender_not_marked_seen(self) -> None:
+        msg = MIMEText("hello", "plain")
+        msg["From"] = "bill@example.com"
+        msg["Message-ID"] = "<msg@example.com>"
+
+        imap = self._make_imap_mock(msg)
+        result = _fetch_unseen(imap, ["bill@example.com"])
+
+        self.assertEqual(len(result), 1)
+        imap.store.assert_not_called()
 
 
 class TestSlashCommand(unittest.TestCase):
