@@ -81,6 +81,12 @@ TARS_HOME=/path/to/tars bin/tars-schedule-mac --hour 8 --minute 0
 # Schedule daily email brief (Linux systemd user)
 TARS_HOME=/path/to/tars bin/tars-schedule-linux --hour 8 --minute 0
 
+# Remove scheduled brief (macOS)
+TARS_HOME=/path/to/tars bin/tars-schedule-mac --remove
+
+# Remove scheduled brief (Linux systemd user)
+TARS_HOME=/path/to/tars bin/tars-schedule-linux --remove
+
 # Rebuild search index
 tars index
 # or: tars-index
