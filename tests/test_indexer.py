@@ -10,7 +10,7 @@ sys.modules.setdefault("dotenv", mock.Mock(load_dotenv=lambda: None))
 sys.modules.setdefault("ollama", mock.MagicMock())
 
 from tars import embeddings
-from tars.indexer import _discover_files, build_index
+from tars.indexer import _discover_files, _discover_vault_files, build_index, build_notes_index
 
 _DIM = 4
 
@@ -170,6 +170,99 @@ class BuildIndexTests(unittest.TestCase):
 
             self.assertEqual(stats["indexed"], 1)
             self.assertEqual(stats["skipped"], 0)
+
+
+class DiscoverVaultFilesTests(unittest.TestCase):
+    def test_finds_markdown_files_recursively(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            d = Path(td)
+            (d / "note1.md").write_text("# Note 1", encoding="utf-8")
+            sub = d / "subfolder"
+            sub.mkdir()
+            (sub / "note2.md").write_text("# Note 2", encoding="utf-8")
+            (sub / "image.png").write_text("not text", encoding="utf-8")
+
+            result = _discover_vault_files(d)
+            paths = [str(p) for p, _ in result]
+            types = [t for _, t in result]
+
+            self.assertIn(str(d / "note1.md"), paths)
+            self.assertIn(str(sub / "note2.md"), paths)
+            self.assertNotIn(str(sub / "image.png"), paths)
+            self.assertTrue(all(t == "note" for t in types))
+
+    def test_skips_hidden_dirs(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            d = Path(td)
+            (d / "visible.md").write_text("# Visible", encoding="utf-8")
+            hidden = d / ".obsidian"
+            hidden.mkdir()
+            (hidden / "config.md").write_text("# Config", encoding="utf-8")
+            trash = d / ".trash"
+            trash.mkdir()
+            (trash / "deleted.md").write_text("# Deleted", encoding="utf-8")
+
+            result = _discover_vault_files(d)
+            paths = [str(p) for p, _ in result]
+
+            self.assertIn(str(d / "visible.md"), paths)
+            self.assertNotIn(str(hidden / "config.md"), paths)
+            self.assertNotIn(str(trash / "deleted.md"), paths)
+
+    def test_empty_vault(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            result = _discover_vault_files(Path(td))
+            self.assertEqual(result, [])
+
+
+class BuildNotesIndexTests(unittest.TestCase):
+    def setUp(self) -> None:
+        self._patcher = mock.patch.object(embeddings, "ollama")
+        self._mock_ollama = self._patcher.start()
+        self._mock_ollama.embed.side_effect = _fake_embed
+
+    def tearDown(self) -> None:
+        self._patcher.stop()
+
+    def test_no_notes_dir(self) -> None:
+        with mock.patch.dict(os.environ, {}, clear=True):
+            os.environ.pop("TARS_NOTES_DIR", None)
+            stats = build_notes_index()
+        self.assertEqual(stats, {"indexed": 0, "skipped": 0, "chunks": 0, "deleted": 0})
+
+    def test_creates_notes_db_in_notes_dir(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            d = Path(td)
+            (d / "note.md").write_text("# My Note\n\nSome content.\n", encoding="utf-8")
+            with mock.patch.dict(os.environ, {"TARS_NOTES_DIR": td}):
+                stats = build_notes_index(model="test-model")
+            self.assertTrue((d / "notes.db").exists())
+            self.assertEqual(stats["indexed"], 1)
+            self.assertGreater(stats["chunks"], 0)
+
+    def test_uses_notes_collection(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            d = Path(td)
+            (d / "note.md").write_text("# Note\n\nContent.\n", encoding="utf-8")
+            with mock.patch.dict(os.environ, {"TARS_NOTES_DIR": td}):
+                build_notes_index(model="test-model")
+            import sqlite3
+            conn = sqlite3.connect(str(d / "notes.db"))
+            conn.row_factory = sqlite3.Row
+            row = conn.execute("SELECT name FROM collections").fetchone()
+            conn.close()
+            self.assertEqual(row["name"], "notes")
+
+    def test_incremental_skip(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            d = Path(td)
+            (d / "note.md").write_text("# Note\n\nFacts.\n", encoding="utf-8")
+            with mock.patch.dict(os.environ, {"TARS_NOTES_DIR": td}):
+                stats1 = build_notes_index(model="test-model")
+                stats2 = build_notes_index(model="test-model")
+            self.assertEqual(stats1["indexed"], 1)
+            self.assertEqual(stats2["indexed"], 0)
+            self.assertEqual(stats2["skipped"], 1)
 
 
 class StartupIndexTests(unittest.TestCase):

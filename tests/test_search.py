@@ -25,6 +25,7 @@ from tars.search import (
     _sanitize_fts_query,
     search,
     search_fts,
+    search_notes,
     search_vec,
 )
 
@@ -351,6 +352,89 @@ class SearchToolTests(unittest.TestCase):
                 db.init_db(dim=_DIM).close()
                 result = json.loads(_run_search_tool("memory_search", {"query": "anything"}))
                 self.assertEqual(result["results"], [])
+
+
+@unittest.skipUnless(_HAS_SQLITE_VEC, "sqlite-vec not installed")
+class SearchWithDbPathTests(unittest.TestCase):
+    def setUp(self) -> None:
+        self._patcher = mock.patch.object(embeddings, "ollama")
+        self._mock_ollama = self._patcher.start()
+        self._mock_ollama.embed.side_effect = _fake_embed
+
+    def tearDown(self) -> None:
+        self._patcher.stop()
+
+    def test_explicit_db_path_opens_that_db(self) -> None:
+        with tempfile.TemporaryDirectory() as td1, tempfile.TemporaryDirectory() as td2:
+            # Set up tars memory DB in td1
+            with mock.patch.dict(os.environ, {"TARS_MEMORY_DIR": td1}, clear=True):
+                conn, *_ = _setup_db_with_chunks(td1)
+                conn.close()
+
+            # Set up a second DB in td2 with different content
+            from pathlib import Path
+            from tars.db import init_db, ensure_collection, upsert_file, insert_chunks
+            alt_db = Path(td2) / "notes.db"
+            with mock.patch.dict(os.environ, {"TARS_MEMORY_DIR": td2}, clear=True):
+                conn2 = init_db(dim=_DIM, db_path=alt_db)
+                cid = ensure_collection(conn2, name="notes")
+                fid, _ = upsert_file(
+                    conn2,
+                    collection_id=cid,
+                    path="/notes/routing.md",
+                    title="routing",
+                    memory_type="note",
+                    content_hash="nnn",
+                    mtime=1.0,
+                    size=50,
+                )
+                insert_chunks(
+                    conn2, fid,
+                    [Chunk(content="routing algorithms explained", sequence=0,
+                           start_line=1, end_line=1, content_hash="n1")],
+                    [[0.9, 0.8, 0.7, 0.6]],
+                )
+                conn2.close()
+
+            results = search("routing", model="test-model", db_path=alt_db)
+            self.assertGreater(len(results), 0)
+            self.assertEqual(results[0].memory_type, "note")
+
+    def test_search_notes_no_notes_dir(self) -> None:
+        with mock.patch.dict(os.environ, {}, clear=True):
+            os.environ.pop("TARS_NOTES_DIR", None)
+            results = search_notes("anything", model="test-model")
+            self.assertEqual(results, [])
+
+    def test_search_notes_finds_indexed_content(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            from pathlib import Path
+            from tars.db import init_db, ensure_collection, upsert_file, insert_chunks
+            notes_db = Path(td) / "notes.db"
+            with mock.patch.dict(os.environ, {"TARS_NOTES_DIR": td, "TARS_MEMORY_DIR": td}, clear=True):
+                conn = init_db(dim=_DIM, db_path=notes_db)
+                cid = ensure_collection(conn, name="notes")
+                fid, _ = upsert_file(
+                    conn,
+                    collection_id=cid,
+                    path=str(Path(td) / "ideas.md"),
+                    title="ideas",
+                    memory_type="note",
+                    content_hash="qqq",
+                    mtime=1.0,
+                    size=80,
+                )
+                insert_chunks(
+                    conn, fid,
+                    [Chunk(content="quantum computing basics", sequence=0,
+                           start_line=1, end_line=1, content_hash="q1")],
+                    [[0.3, 0.4, 0.5, 0.6]],
+                )
+                conn.close()
+
+                results = search_notes("quantum computing", model="test-model")
+                self.assertGreater(len(results), 0)
+                self.assertEqual(results[0].file_title, "ideas")
 
 
 if __name__ == "__main__":

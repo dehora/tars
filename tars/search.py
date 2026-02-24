@@ -79,9 +79,10 @@ def search(
     limit: int = 10,
     min_score: float = 0.0,
     mode: str = "hybrid",
+    db_path=None,
 ) -> list[SearchResult]:
     """Search memory chunks. Returns results sorted by relevance."""
-    p = _db_path()
+    p = db_path if db_path is not None else _db_path()
     if p is None or not p.exists():
         return []
 
@@ -139,6 +140,12 @@ def search(
         return results
     finally:
         conn.close()
+
+
+def search_notes(query: str, **kwargs) -> list[SearchResult]:
+    """Search the personal notes vault index."""
+    from tars.db import _notes_db_path
+    return search(query, db_path=_notes_db_path(), **kwargs)
 
 
 def _run_search_tool(name: str, args: dict) -> str:

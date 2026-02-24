@@ -1,5 +1,6 @@
 """sqlite-vec database for chunk embeddings."""
 
+import os
 import re
 import sqlite3
 import struct
@@ -20,6 +21,14 @@ def _db_path() -> Path | None:
     if d is None:
         return None
     return d / "tars.db"
+
+
+def _notes_db_path() -> Path | None:
+    d = os.environ.get("TARS_NOTES_DIR")
+    if not d:
+        return None
+    p = Path(d)
+    return (p / "notes.db") if p.is_dir() else None
 
 
 def _connect(db_file: Path) -> sqlite3.Connection:
@@ -158,13 +167,13 @@ def db_stats() -> dict:
         conn.close()
 
 
-def _prepare_db(model: str) -> tuple[int | None, bool]:
+def _prepare_db(model: str, db_path: Path | None = None) -> tuple[int | None, bool]:
     """Pre-init check: handle model changes, return (cached_dim, model_changed).
 
     If the embedding model changed, drops vec_chunks so init_db recreates it
     with the correct dimensions. Returns cached dim when model is unchanged.
     """
-    p = _db_path()
+    p = db_path if db_path is not None else _db_path()
     if p is None or not p.exists():
         return None, False
 
@@ -208,12 +217,12 @@ def _prepare_db(model: str) -> tuple[int | None, bool]:
         conn.close()
 
 
-def init_db(*, dim: int) -> sqlite3.Connection | None:
+def init_db(*, dim: int, db_path: Path | None = None) -> sqlite3.Connection | None:
     """Create or open the database, ensuring schema exists.
 
-    Returns None if TARS_MEMORY_DIR is not configured.
+    Returns None if TARS_MEMORY_DIR is not configured (or TARS_NOTES_DIR for notes DB).
     """
-    p = _db_path()
+    p = db_path if db_path is not None else _db_path()
     if p is None:
         return None
     conn = _connect(p)

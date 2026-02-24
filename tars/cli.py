@@ -13,7 +13,7 @@ from tars.conversation import Conversation, process_message, process_message_str
 from tars.core import chat
 from tars.embeddings import DEFAULT_EMBEDDING_MODEL
 from tars.format import format_tool_result
-from tars.indexer import build_index
+from tars.indexer import build_index, build_notes_index
 from tars.memory import (
     _append_to_file,
     _memory_file,
@@ -23,7 +23,7 @@ from tars.memory import (
     save_correction,
     save_reward,
 )
-from tars.search import search
+from tars.search import search, search_notes
 from tars.sessions import _session_path, list_sessions
 from tars.tools import run_tool
 
@@ -103,6 +103,23 @@ def _handle_slash_search(user_input: str) -> bool:
         _print_search_results(results, mode)
     except Exception as e:
         print(f"  [error] search failed: {e}", file=sys.stderr)
+    return True
+
+
+def _handle_find(user_input: str) -> bool:
+    """Handle /find command (search personal notes vault). Returns True if handled."""
+    parts = user_input.strip().split(None, 1)
+    if parts[0] != "/find":
+        return False
+    query = parts[1] if len(parts) > 1 else ""
+    if not query:
+        print("  usage: /find <query>")
+        return True
+    try:
+        results = search_notes(query, limit=10)
+        _print_search_results(results, "notes")
+    except Exception as e:
+        print(f"  [error] notes search failed: {e}", file=sys.stderr)
     return True
 
 
@@ -382,7 +399,7 @@ def _handle_slash_tool(user_input: str) -> bool:
 
 _SLASH_COMMANDS = [
     "/todoist ", "/weather", "/forecast", "/memory", "/remember ", "/note ",
-    "/search ", "/sgrep ", "/svec ",
+    "/search ", "/sgrep ", "/svec ", "/find ",
     "/sessions", "/session ",
     "/w ", "/r ", "/review", "/tidy", "/brief", "/stats",
     "/capture ",
@@ -488,9 +505,10 @@ def repl(config):
                 print("    /capture <url> [--raw]  capture web page to vault")
                 print("    /model           show active model configuration")
                 print("  search:")
-                print("    /search <query>  hybrid keyword + semantic")
+                print("    /search <query>  hybrid keyword + semantic (tars memory)")
                 print("    /sgrep <query>   keyword (FTS5/BM25)")
                 print("    /svec <query>    semantic (vector KNN)")
+                print("    /find <query>    hybrid search over personal notes vault")
                 print("  sessions:")
                 print("    /sessions        list recent sessions")
                 print("    /session <query> search session logs")
@@ -578,6 +596,8 @@ def repl(config):
                 continue
             if _handle_slash_search(user_input):
                 continue
+            if _handle_find(user_input):
+                continue
             spinner = _Spinner()
             spinner.start()
             got_output = False
@@ -620,6 +640,21 @@ def _run_index(embedding_model: str) -> None:
     )
 
 
+def _run_notes_index(embedding_model: str) -> None:
+    """Index personal vault files and print stats."""
+    try:
+        stats = build_notes_index(model=embedding_model)
+    except RuntimeError as e:
+        print(f"  [warning] notes index failed ({type(e).__name__}): {e}", file=sys.stderr)
+        return
+    print(
+        f"notes-index: {stats['indexed']} indexed, "
+        f"{stats['skipped']} skipped, "
+        f"{stats['deleted']} deleted, "
+        f"{stats['chunks']} chunks"
+    )
+
+
 def _startup_index() -> None:
     """Run incremental index at startup, silently skip on failure."""
     try:
@@ -650,6 +685,12 @@ def main():
         default=DEFAULT_EMBEDDING_MODEL,
         help="ollama embedding model to use",
     )
+    nidx = sub.add_parser("notes-index", help="rebuild personal notes/vault search index")
+    nidx.add_argument(
+        "--embedding-model",
+        default=DEFAULT_EMBEDDING_MODEL,
+        help="ollama embedding model to use",
+    )
     for cmd, mode in [("search", "hybrid"), ("sgrep", "fts"), ("svec", "vec")]:
         sp = sub.add_parser(cmd, help=f"{mode} search over memory index")
         sp.add_argument("query", nargs="+", help="search query")
@@ -664,7 +705,7 @@ def main():
     # greedily match the first positional arg as a subcommand, so
     # `tars "hello"` fails with "invalid choice".  If argv[1] isn't a known
     # subcommand or flag, treat everything after flags as a message.
-    _subcommands = {"index", "search", "sgrep", "svec", "serve", "email", "email-brief"}
+    _subcommands = {"index", "notes-index", "search", "sgrep", "svec", "serve", "email", "email-brief"}
     raw_args = sys.argv[1:]
     message_args: list[str] = []
     # Skip leading flags (-m, --model, --remote-model and their values)
@@ -682,6 +723,10 @@ def main():
 
     if args.command == "index":
         _run_index(args.embedding_model)
+        return
+
+    if args.command == "notes-index":
+        _run_notes_index(args.embedding_model)
         return
 
     if args.command in ("search", "sgrep", "svec"):

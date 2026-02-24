@@ -5,6 +5,7 @@ from pathlib import Path
 from tars.chunker import _content_hash, chunk_markdown
 from tars.db import (
     _get_metadata,
+    _notes_db_path,
     _prepare_db,
     _set_metadata,
     delete_chunks_for_file,
@@ -17,6 +18,7 @@ from tars.db import (
 )
 from tars.embeddings import DEFAULT_EMBEDDING_MODEL, embed, embedding_dimensions
 from tars.memory import _MEMORY_FILES, _memory_dir
+from tars.notes import _notes_dir
 
 
 def _discover_files(memory_dir: Path) -> list[tuple[Path, str]]:
@@ -31,6 +33,103 @@ def _discover_files(memory_dir: Path) -> list[tuple[Path, str]]:
         for p in sorted(sessions_dir.glob("*.md")):
             found.append((p, "episodic"))
     return found
+
+
+def _discover_vault_files(vault_dir: "Path") -> list[tuple["Path", str]]:
+    """Return (path, memory_type) pairs for all indexable markdown files in the vault."""
+    found = []
+    for p in sorted(vault_dir.rglob("*.md")):
+        if any(part.startswith(".") for part in p.relative_to(vault_dir).parts):
+            continue  # skip .obsidian, .trash, etc.
+        found.append((p, "note"))
+    return found
+
+
+def build_notes_index(*, model: str = DEFAULT_EMBEDDING_MODEL) -> dict:
+    """Index all personal vault notes into sqlite-vec. Returns stats."""
+    stats = {"indexed": 0, "skipped": 0, "chunks": 0, "deleted": 0}
+
+    vault_dir = _notes_dir()
+    if vault_dir is None:
+        return stats
+
+    db_path = _notes_db_path()
+    if db_path is None:
+        return stats
+
+    cached_dim, model_changed = _prepare_db(model, db_path=db_path)
+    dim = cached_dim if cached_dim is not None else embedding_dimensions(model)
+
+    conn = init_db(dim=dim, db_path=db_path)
+    if conn is None:
+        raise RuntimeError("Failed to initialize notes index database")
+
+    try:
+        collection_id = ensure_collection(conn, name="notes")
+
+        if model_changed:
+            conn.execute(
+                "UPDATE files SET content_hash = '' WHERE collection_id = ?",
+                (collection_id,),
+            )
+            conn.commit()
+
+        stored_model = _get_metadata(conn, "embedding_model")
+        if stored_model != model:
+            _set_metadata(conn, "embedding_model", model)
+            conn.commit()
+
+        files = _discover_vault_files(vault_dir)
+
+        discovered_paths = {str(fp) for fp, _ in files}
+        indexed_paths = get_indexed_paths(conn, collection_id)
+        for path, file_id in indexed_paths.items():
+            if path not in discovered_paths:
+                delete_file(conn, file_id)
+                stats["deleted"] += 1
+
+        for filepath, memory_type in files:
+            content = filepath.read_text(encoding="utf-8", errors="replace")
+            content_hash = _content_hash(content)
+            stat = filepath.stat()
+
+            file_id, changed = upsert_file(
+                conn,
+                collection_id=collection_id,
+                path=str(filepath),
+                title=filepath.stem,
+                memory_type=memory_type,
+                content_hash=content_hash,
+                mtime=stat.st_mtime,
+                size=stat.st_size,
+            )
+
+            if not changed:
+                stats["skipped"] += 1
+                continue
+
+            delete_chunks_for_file(conn, file_id)
+            chunks = chunk_markdown(content)
+            if chunks:
+                chunk_embeddings = embed([c.content for c in chunks], model=model)
+                if len(chunk_embeddings) != len(chunks):
+                    conn.execute(
+                        "UPDATE files SET content_hash = '' WHERE id = ?",
+                        (file_id,),
+                    )
+                    conn.commit()
+                    raise ValueError(
+                        f"Embedding count mismatch for {filepath}: "
+                        f"got {len(chunk_embeddings)} embeddings for {len(chunks)} chunks"
+                    )
+                insert_chunks(conn, file_id, chunks, chunk_embeddings)
+                stats["chunks"] += len(chunks)
+
+            stats["indexed"] += 1
+    finally:
+        conn.close()
+
+    return stats
 
 
 def build_index(*, model: str = DEFAULT_EMBEDDING_MODEL) -> dict:
