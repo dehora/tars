@@ -2,18 +2,6 @@
 
 ## Next
 
-### 9. Scheduled / recurring commands
-
-Cron-like `/schedule` that runs `/brief` at 8am or `/todoist today` at a set time, pushing results to a notification channel. This is where the RPi deployment target starts to make sense — always-on, running scheduled tasks. Items 12 (email digest) and 13 (email search) are subsets of this — wiring existing slash commands to a scheduler.
-
-Why: turns tars from reactive (you ask) to proactive (it tells you). Unlocks several dependent features (proactive nudges, email digest). Significant architecture change (daemon mode, notifications).
-
-### 12. Email digest (`tars email-brief`)
-
-`/brief` results emailed on a schedule. Cron job or simple timer that runs the briefing and sends it to you. Both pieces exist (email channel + `/brief`), just wiring them together. Natural first step toward scheduled commands.
-
-Why: turns tars proactive for the most common use case. Minimal new code.
-
 ### 13. Email search (`/search` over email)
 
 Add `/search <query>` as a slash command over email. Search memory and sessions from your phone. The search infrastructure and email slash command dispatch both exist.
@@ -55,12 +43,6 @@ Why: moves tars from tool to partner. Highest ambition item — depends on sever
 Browser extension (Safari Web Extension) that adds a "Send to tars" button. Captures the current page URL and sends it to `/capture` via the API. Could use the existing `POST /tool` endpoint or a dedicated `POST /capture` route. Lets you capture articles while browsing without switching to the CLI or email.
 
 Why: lowest friction capture path — one click from the browser. Safari Web Extensions use the same WebExtension API as Chrome/Firefox, so it could be portable later.
-
-### 23. Capture enrichment
-
-Enhance `/capture` with metadata extraction: author, publish date, tags, reading time. Store in YAML frontmatter. Could also extract and save key quotes or generate a TL;DR alongside the full summary. Makes captures more useful as Obsidian notes.
-
-Why: makes captured notes first-class PKM citizens instead of raw dumps.
 
 ### 26. Procedural rule auto-ingest
 
@@ -139,3 +121,15 @@ When `/capture` is called mid-conversation, recent conversation context is passe
 ### 27. Vault search command (`/find`, `tars notes-index`)
 
 Add a `/find <query>` REPL command and `tars notes-index` CLI subcommand that searches the personal Obsidian vault (`TARS_NOTES_DIR`) via a separate `notes.db` index. Same chunk → embed → sqlite-vec pipeline as tars memory, with hidden directories (`.obsidian`, `.trash`) and inline base64 images excluded.
+
+### 9. Scheduled / recurring commands
+
+`tars schedule` CLI manages OS-level timers (launchd on macOS, systemd on Linux) for any tars subcommand. Supports calendar triggers (`--hour`/`--minute`) and file watchers (`--watch`). Includes `tars schedule test` to dry-run with baked environment. Replaces `bin/tars-schedule-{mac,linux}` scripts.
+
+### 12. Email digest (`tars email-brief`)
+
+`/brief` results emailed on a schedule via `tars email-brief` subcommand. Wired to OS scheduling via `tars schedule add`.
+
+### 23. Capture enrichment
+
+Enhance `/capture` with metadata extraction: author, publish date, tags, reading time. Store in YAML frontmatter. Could also extract and save key quotes or generate a TL;DR alongside the full summary. Makes captures more useful as Obsidian notes.
