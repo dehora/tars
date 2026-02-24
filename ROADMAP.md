@@ -4,9 +4,9 @@
 
 ### 13. Email search (`/search` over email)
 
-Add `/search <query>` as a slash command over email. Search memory and sessions from your phone. The search infrastructure and email slash command dispatch both exist.
+Add `/search <query>` as a slash command over email. The search infrastructure and email slash command dispatch both exist. (Note: `/search` is already available via Telegram.)
 
-Why: makes the knowledge system accessible from mobile. Very low effort given existing pieces.
+Why: parity with Telegram channel. Very low effort given existing pieces.
 
 ### 7. Context-aware tool suggestions
 
@@ -52,11 +52,12 @@ Why: closes a gap in the feedback loop. Rules should be live the moment they're 
 
 ## Fixes
 
-- tars/cli.py and tars/email.py: Slash command handling is accumulating if/elif chains. As more commands are added this will become unwieldy. Suggested fix: refactor to a dispatch table mapping command names to handler functions.
+- tars/cli.py, tars/email.py, and tars/telegram.py: Slash command handling is duplicated across channels as if/elif chains. As more commands are added this will become unwieldy. Suggested fix: extract shared dispatch to `tars/commands.py` with a dispatch table mapping command names to handler functions.
 
 - tars/tools.py _clean_args strips all empty strings. Suggested fix: Consider tool-specific sanitization or only stripping empty strings for parameters.
 
-## Done
+<details>
+<summary>Done</summary>
 
 ### 1. Memory hygiene command (`/tidy`)
 
@@ -130,6 +131,12 @@ Add a `/find <query>` REPL command and `tars notes-index` CLI subcommand that se
 
 `/brief` results emailed on a schedule via `tars email-brief` subcommand. Wired to OS scheduling via `tars schedule add`.
 
+### 28. Telegram channel (`tars telegram`)
+
+Telegram bot polling channel via `python-telegram-bot`. Persistent reply keyboard for one-tap commands, slash command dispatch, conversation support, daily brief sender (`tars telegram-brief`). User filtering via `TARS_TELEGRAM_ALLOW` user IDs.
+
 ### 23. Capture enrichment
 
 Enhance `/capture` with metadata extraction: author, publish date, tags, reading time. Store in YAML frontmatter. Could also extract and save key quotes or generate a TL;DR alongside the full summary. Makes captures more useful as Obsidian notes.
+
+</details>

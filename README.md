@@ -1,6 +1,6 @@
 # tars
 
-A personal AI assistant with CLI, web, and email channels. Routes messages to configurable AI providers (ollama, claude), manages persistent memory in an Obsidian vault, and integrates with Todoist, weather APIs, and Obsidian daily notes. Uses uv for package management with Python 3.14.
+A personal AI assistant with CLI, web, email, and Telegram channels. Routes messages to configurable AI providers (ollama, claude), manages persistent memory in an Obsidian vault, and integrates with Todoist, weather APIs, and Obsidian daily notes. Uses uv for package management with Python 3.14.
 
 ## What it does
 
@@ -10,6 +10,7 @@ tars is a conversational assistant that remembers things across sessions, manage
 - **CLI** — REPL with streaming, tab completion, and slash commands
 - **Web UI** — browser-based chat with SSE streaming
 - **Email** — IMAP polling + SMTP reply via Gmail, with slash commands in subject or body
+- **Telegram** — bot polling with persistent reply keyboard and slash commands
 
 **Tools:**
 - **Todoist** — add, list, complete tasks via natural language
@@ -38,7 +39,7 @@ When `TARS_REMOTE_MODEL` (or legacy `TARS_ESCALATION_MODEL`) is set, tars uses t
 ## How it works
 
 ```
-[CLI / Web / Email] → [conversation.py] → [core.py] → ollama / claude
+[CLI / Web / Email / Telegram] → [conversation.py] → [core.py] → ollama / claude
                                                ↕
                                          [tools.py] → todoist, weather, memory, notes, search, web
                                                ↕
@@ -74,6 +75,13 @@ tars email
 
 # Send daily brief via email
 tars email-brief
+
+# Telegram bot
+tars telegram
+# or: tars-telegram
+
+# Send daily brief via Telegram
+tars telegram-brief
 
 # Schedule daily email brief
 tars schedule add email-brief email-brief --hour 8 --minute 0
@@ -138,6 +146,26 @@ Slash commands work in the email subject line or body:
 | `/read <url>` | Fetch and return page content |
 | `/capture <url> [--raw]` | Capture web page to vault |
 
+### Telegram commands
+
+Slash commands work in the bot chat. A persistent reply keyboard provides one-tap access to common commands.
+
+| Command | Description |
+|---------|-------------|
+| `/todoist add <text>` | Add a task |
+| `/todoist today` | List today's tasks |
+| `/weather` | Current conditions |
+| `/forecast` | Today's hourly forecast |
+| `/memory` | Show persistent memory |
+| `/remember <section> <text>` | Save to memory |
+| `/note <text>` | Append to daily note |
+| `/capture <url> [--raw]` | Capture web page to vault |
+| `/brief` | Daily briefing digest |
+| `/search <query>` | Hybrid search over memory |
+| `/find <query>` | Search personal notes vault |
+| `/sessions` | List recent sessions |
+| `/clear` | Reset conversation |
+
 ## Configuration
 
 | Env var | Default | Purpose |
@@ -156,6 +184,8 @@ Slash commands work in the email subject line or body:
 | `TARS_EMAIL_ALLOW` | — | Comma-separated allowed sender addresses |
 | `TARS_EMAIL_TO` | — | Recipient address for email brief |
 | `TARS_EMAIL_POLL_INTERVAL` | `60` | Seconds between inbox checks |
+| `TARS_TELEGRAM_TOKEN` | — | Telegram bot API token from BotFather |
+| `TARS_TELEGRAM_ALLOW` | — | Comma-separated Telegram user IDs |
 | `TARS_API_TOKEN` | — | Optional bearer token for API auth |
 | `DEFAULT_LAT` / `DEFAULT_LON` | — | Weather location coordinates |
 
