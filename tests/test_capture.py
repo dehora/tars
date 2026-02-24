@@ -67,7 +67,13 @@ class CaptureTests(unittest.TestCase):
             with (
                 mock.patch.dict(os.environ, {"TARS_NOTES_DIR": tmpdir}),
                 mock.patch("tars.capture._run_web_tool", return_value=web_result),
-                mock.patch("tars.capture.chat", return_value="# Great Post\n\nSummarized content."),
+                mock.patch(
+                    "tars.capture.chat",
+                    side_effect=[
+                        '{"title":"Great Post","author":"Bill","created":"2026-02-01","description":"TLDR here."}',
+                        "# Great Post\n\nSummarized content.",
+                    ],
+                ),
             ):
                 result = json.loads(capture("https://dehora.net/tars-test/post", "ollama", "fake"))
             self.assertTrue(result["ok"])
@@ -75,8 +81,15 @@ class CaptureTests(unittest.TestCase):
             path = Path(result["path"])
             self.assertTrue(path.exists())
             content = path.read_text(encoding="utf-8")
-            self.assertIn("source: https://dehora.net/tars-test/post", content)
+            self.assertIn('title: "Great Post"', content)
+            self.assertIn('author: "Bill"', content)
+            self.assertIn('created: "2026-02-01"', content)
             self.assertIn("captured:", content)
+            self.assertIn('description: "TLDR here."', content)
+            self.assertIn("tags:", content)
+            self.assertIn("  - capture", content)
+            self.assertIn("  - tars", content)
+            self.assertIn('source: "https://dehora.net/tars-test/post"', content)
             self.assertIn("Summarized content.", content)
             # Check it's in the right directory
             self.assertIn("17 tars captures", str(path))
@@ -87,10 +100,10 @@ class CaptureTests(unittest.TestCase):
             with (
                 mock.patch.dict(os.environ, {"TARS_NOTES_DIR": tmpdir}),
                 mock.patch("tars.capture._run_web_tool", return_value=web_result),
-                mock.patch("tars.capture.chat") as mock_chat,
+                mock.patch("tars.capture.chat", return_value='{"title":"Raw Title","author":"","created":"","description":"Raw TLDR"}') as mock_chat,
             ):
                 result = json.loads(capture("https://dehora.net/tars-test/post", "ollama", "fake", raw=True))
-            mock_chat.assert_not_called()
+            self.assertEqual(mock_chat.call_count, 1)
             self.assertTrue(result["ok"])
             path = Path(result["path"])
             content = path.read_text(encoding="utf-8")
@@ -115,12 +128,17 @@ class CaptureTests(unittest.TestCase):
             with (
                 mock.patch.dict(os.environ, {"TARS_NOTES_DIR": tmpdir}),
                 mock.patch("tars.capture._run_web_tool", return_value=web_result),
-                mock.patch("tars.capture.chat", return_value="# T\n\nBody") as mock_chat,
+                mock.patch(
+                    "tars.capture.chat",
+                    side_effect=[
+                        '{"title":"T","author":"","created":"","description":""}',
+                        "# T\n\nBody",
+                    ],
+                ) as mock_chat,
             ):
                 capture("https://dehora.net/tars-test", "ollama", "fake")
-            mock_chat.assert_called_once()
-            _, kwargs = mock_chat.call_args
-            self.assertFalse(kwargs["use_tools"])
+            for _, kwargs in mock_chat.call_args_list:
+                self.assertFalse(kwargs["use_tools"])
 
 
 class ConversationContextTests(unittest.TestCase):
@@ -164,10 +182,16 @@ class CaptureWithContextTests(unittest.TestCase):
             with (
                 mock.patch.dict(os.environ, {"TARS_NOTES_DIR": tmpdir}),
                 mock.patch("tars.capture._run_web_tool", return_value=web_result),
-                mock.patch("tars.capture.chat", return_value="# T\n\nBody") as mock_chat,
+                mock.patch(
+                    "tars.capture.chat",
+                    side_effect=[
+                        '{"title":"T","author":"","created":"","description":""}',
+                        "# T\n\nBody",
+                    ],
+                ) as mock_chat,
             ):
                 capture("https://dehora.net/tars-test", "ollama", "fake", context="user: what about routing?")
-            prompt = mock_chat.call_args[0][0][0]["content"]
+            prompt = mock_chat.call_args_list[1][0][0][0]["content"]
             self.assertIn("what about routing?", prompt)
             self.assertIn("relevant to this context", prompt)
 
@@ -177,10 +201,16 @@ class CaptureWithContextTests(unittest.TestCase):
             with (
                 mock.patch.dict(os.environ, {"TARS_NOTES_DIR": tmpdir}),
                 mock.patch("tars.capture._run_web_tool", return_value=web_result),
-                mock.patch("tars.capture.chat", return_value="# T\n\nBody") as mock_chat,
+                mock.patch(
+                    "tars.capture.chat",
+                    side_effect=[
+                        '{"title":"T","author":"","created":"","description":""}',
+                        "# T\n\nBody",
+                    ],
+                ) as mock_chat,
             ):
                 capture("https://dehora.net/tars-test", "ollama", "fake")
-            prompt = mock_chat.call_args[0][0][0]["content"]
+            prompt = mock_chat.call_args_list[1][0][0][0]["content"]
             self.assertNotIn("relevant to this context", prompt)
 
 

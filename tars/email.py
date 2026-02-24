@@ -12,6 +12,7 @@ from email.message import EmailMessage
 from email.mime.text import MIMEText
 from pathlib import Path
 
+from tars.brief import build_brief_sections, format_brief_text
 from tars.cli import _parse_todoist_add
 from tars.config import ModelConfig, model_summary
 from tars.conversation import Conversation, process_message, save_session
@@ -61,7 +62,8 @@ def _email_config() -> dict | None:
     address = os.environ.get("TARS_EMAIL_ADDRESS")
     password = os.environ.get("TARS_EMAIL_PASSWORD")
     allow = os.environ.get("TARS_EMAIL_ALLOW")
-    if not address or not password or not allow:
+    to_addr = os.environ.get("TARS_EMAIL_TO")
+    if not address or not password or not allow or not to_addr:
         return None
     interval = os.environ.get("TARS_EMAIL_POLL_INTERVAL", "60")
     try:
@@ -73,6 +75,7 @@ def _email_config() -> dict | None:
         "password": password,
         "allow": [a.strip().lower() for a in allow.split(",") if a.strip()],
         "poll_interval": interval_sec,
+        "to": to_addr.strip(),
     }
 
 
@@ -217,6 +220,32 @@ def _send_reply(config: dict, original: email.message.Message, body: str) -> Non
         smtp.send_message(reply)
 
 
+def _send_message(config: dict, to_addr: str, subject: str, body: str) -> None:
+    """Send a standalone email (non-reply)."""
+    msg = MIMEText(body, "plain", "utf-8")
+    msg["From"] = config["address"]
+    msg["To"] = to_addr
+    msg["Subject"] = subject
+
+    with smtplib.SMTP("smtp.gmail.com", 587) as smtp:
+        smtp.starttls()
+        smtp.login(config["address"], config["password"])
+        smtp.send_message(msg)
+
+
+def send_brief_email() -> None:
+    """Send the daily brief to the configured recipient."""
+    config = _email_config()
+    if config is None:
+        raise RuntimeError(
+            "missing config — set TARS_EMAIL_ADDRESS, TARS_EMAIL_PASSWORD, "
+            "TARS_EMAIL_ALLOW, TARS_EMAIL_TO"
+        )
+    sections = build_brief_sections()
+    body = format_brief_text(sections)
+    _send_message(config, config["to"], "tars brief", body)
+
+
 def _handle_slash_command(
     body: str, provider: str = "", model: str = "",
 ) -> str | None:
@@ -296,7 +325,7 @@ def run_email(model_config: ModelConfig) -> None:
     if email_config is None:
         print(
             "email: missing config — set TARS_EMAIL_ADDRESS, "
-            "TARS_EMAIL_PASSWORD, TARS_EMAIL_ALLOW",
+            "TARS_EMAIL_PASSWORD, TARS_EMAIL_ALLOW, TARS_EMAIL_TO",
             file=sys.stderr,
         )
         return

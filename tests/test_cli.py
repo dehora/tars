@@ -315,7 +315,7 @@ class HandleBriefTests(unittest.TestCase):
                 return '{"hourly": []}'
             return '{}'
 
-        with mock.patch("tars.cli.run_tool", side_effect=fake_run_tool):
+        with mock.patch("tars.brief.run_tool", side_effect=fake_run_tool):
             with mock.patch("builtins.print") as m:
                 _handle_brief()
         output = " ".join(str(c) for c in m.call_args_list)
@@ -331,7 +331,7 @@ class HandleBriefTests(unittest.TestCase):
                 return '{"current": {"temperature_c": 10, "conditions": "Clear", "wind_speed_kmh": 5, "precipitation_mm": 0}}'
             return '{"hourly": []}'
 
-        with mock.patch("tars.cli.run_tool", side_effect=fake_run_tool):
+        with mock.patch("tars.brief.run_tool", side_effect=fake_run_tool):
             with mock.patch("builtins.print") as m:
                 _handle_brief()
         output = " ".join(str(c) for c in m.call_args_list)

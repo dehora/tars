@@ -112,6 +112,12 @@ Point the indexer at the full personal Obsidian vault (not just the tars vault).
 
 Why: the ultimate personal knowledge assistant play. The indexer and search already work — just needs a broader scope and careful chunking for diverse note formats.
 
+### 27. Vault search command
+
+Add a `/vault-search <query>` command that searches the personal Obsidian vault (e.g., `TARS_NOTES_DIR` or a separate vault path), not just the tars memory vault. Mirrors the email `/search` UX but against the full vault index.
+
+Why: makes personal notes instantly searchable without switching tools; a lower-effort precursor to full-vault RAG.
+
 ### 19. Proactive nudges
 
 Tars notices patterns in session history ("you add groceries every Thursday") and suggests things. Requires scheduled commands (item 9) plus lightweight pattern detection over sessions.

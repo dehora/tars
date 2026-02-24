@@ -72,6 +72,9 @@ tars serve
 tars email
 # or: tars-email
 
+# Send daily brief via email
+tars email-brief
+
 # Rebuild search index
 tars index
 # or: tars-index
@@ -136,6 +139,7 @@ Slash commands work in the email subject line or body:
 | `TARS_EMAIL_ADDRESS` | — | Gmail address for email channel |
 | `TARS_EMAIL_PASSWORD` | — | Gmail app password |
 | `TARS_EMAIL_ALLOW` | — | Comma-separated allowed sender addresses |
+| `TARS_EMAIL_TO` | — | Recipient address for email brief |
 | `TARS_EMAIL_POLL_INTERVAL` | `60` | Seconds between inbox checks |
 | `TARS_API_TOKEN` | — | Optional bearer token for API auth |
 | `DEFAULT_LAT` / `DEFAULT_LON` | — | Weather location coordinates |

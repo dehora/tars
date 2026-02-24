@@ -8,6 +8,7 @@ from pathlib import Path
 from dotenv import load_dotenv
 
 from tars.config import apply_cli_overrides, load_model_config, model_summary
+from tars.brief import build_brief_sections, format_brief_text
 from tars.conversation import Conversation, process_message, process_message_stream, save_session
 from tars.core import chat
 from tars.embeddings import DEFAULT_EMBEDDING_MODEL
@@ -264,21 +265,10 @@ def _handle_tidy(provider: str, model: str) -> None:
 def _handle_brief() -> None:
     """Run daily briefing: todoist + weather."""
     print("  briefing...")
-    sections: list[tuple[str, str]] = []
-
-    for label, tool_name in [("tasks", "todoist_today"), ("weather", "weather_now"), ("forecast", "weather_forecast")]:
-        try:
-            raw = run_tool(tool_name, {}, quiet=True)
-            sections.append((label, format_tool_result(tool_name, raw)))
-        except Exception as e:
-            sections.append((label, f"unavailable: {e}"))
-
+    sections = build_brief_sections()
     print()
-    for label, content in sections:
-        print(f"  [{label}]")
-        for line in content.splitlines():
-            print(f"    {line}")
-        print()
+    for line in format_brief_text(sections).splitlines():
+        print(f"  {line}")
 
 
 _FLAGS = {"--due", "--project", "--priority"}
@@ -668,12 +658,13 @@ def main():
     srv.add_argument("--host", default="127.0.0.1", help="bind address")
     srv.add_argument("--port", type=int, default=8180, help="port number")
     sub.add_parser("email", help="start email polling channel")
+    sub.add_parser("email-brief", help="send the daily brief via email")
 
     # Detect one-shot messages before argparse sees them — argparse subparsers
     # greedily match the first positional arg as a subcommand, so
     # `tars "hello"` fails with "invalid choice".  If argv[1] isn't a known
     # subcommand or flag, treat everything after flags as a message.
-    _subcommands = {"index", "search", "sgrep", "svec", "serve", "email"}
+    _subcommands = {"index", "search", "sgrep", "svec", "serve", "email", "email-brief"}
     raw_args = sys.argv[1:]
     message_args: list[str] = []
     # Skip leading flags (-m, --model, --remote-model and their values)
@@ -717,6 +708,15 @@ def main():
         from tars.email import run_email
 
         run_email(config)
+        return
+
+    if args.command == "email-brief":
+        from tars.email import send_brief_email
+
+        try:
+            send_brief_email()
+        except Exception as e:
+            print(f"  [error] email brief failed: {e}", file=sys.stderr)
         return
 
     _startup_index()

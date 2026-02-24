@@ -184,6 +184,7 @@ class TestEmailConfig(unittest.TestCase):
             "TARS_EMAIL_ADDRESS": "tars@gmail.com",
             "TARS_EMAIL_PASSWORD": "secret",
             "TARS_EMAIL_ALLOW": "a@b.com, c@d.com",
+            "TARS_EMAIL_TO": "me@example.com",
         }
         with mock.patch.dict(os.environ, env, clear=True):
             cfg = _email_config()
@@ -198,6 +199,7 @@ class TestEmailConfig(unittest.TestCase):
             "TARS_EMAIL_PASSWORD": "secret",
             "TARS_EMAIL_ALLOW": "a@b.com",
             "TARS_EMAIL_POLL_INTERVAL": "30",
+            "TARS_EMAIL_TO": "me@example.com",
         }
         with mock.patch.dict(os.environ, env, clear=True):
             cfg = _email_config()
@@ -209,6 +211,7 @@ class TestEmailConfig(unittest.TestCase):
             "TARS_EMAIL_PASSWORD": "secret",
             "TARS_EMAIL_ALLOW": "a@b.com",
             "TARS_EMAIL_POLL_INTERVAL": "bad",
+            "TARS_EMAIL_TO": "me@example.com",
         }
         with mock.patch.dict(os.environ, env, clear=True):
             cfg = _email_config()
