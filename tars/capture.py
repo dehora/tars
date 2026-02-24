@@ -21,7 +21,8 @@ clean markdown with:
 2. The article content in markdown, preserving headings, lists, and code blocks
 3. Strip author bios, related posts, comment sections
 
-Return ONLY the cleaned markdown, no commentary."""
+Return ONLY the cleaned markdown, no commentary. Do NOT add prefaces like \
+"Here is the cleaned markdown article content:"."""
 
 _METADATA_PROMPT = """\
 Extract metadata from this web page content and return ONLY valid JSON with:
@@ -76,6 +77,31 @@ def _extract_description_from_body(body: str) -> str:
         return ""
     text = " ".join(para)
     return " ".join(text.split())
+
+
+def _strip_summarizer_preamble(body: str) -> str:
+    """Remove common model preambles before extracting title/description."""
+    lines = body.splitlines()
+    cleaned: list[str] = []
+    skip_prefixes = (
+        "here is the cleaned markdown",
+        "here's the cleaned markdown",
+        "here is the cleaned article",
+        "here's the cleaned article",
+        "here is the article",
+        "here's the article",
+        "below is the cleaned",
+        "below is the article",
+    )
+    for line in lines:
+        stripped = line.strip()
+        lower = stripped.lower()
+        if not stripped and not cleaned:
+            continue
+        if lower.startswith(skip_prefixes):
+            continue
+        cleaned.append(line)
+    return "\n".join(cleaned).lstrip()
 
 
 def _yaml_escape(value: str) -> str:
@@ -168,6 +194,7 @@ def capture(url: str, provider: str, model: str, *, raw: bool = False, context: 
         )
         messages = [{"role": "user", "content": prompt}]
         body = chat(messages, provider, model, use_tools=False)
+    body = _strip_summarizer_preamble(body)
 
     # Extract title and build file
     title = meta.get("title") or _extract_title(body, url)

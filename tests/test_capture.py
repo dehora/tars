@@ -104,7 +104,7 @@ class CaptureTests(unittest.TestCase):
                     "tars.capture.chat",
                     side_effect=[
                         '{"title":"Great Post","author":"","created":"","description":""}',
-                        "# Great Post\n\nThis is the first paragraph.\nStill first paragraph.\n\nSecond paragraph.",
+                        "Here is the cleaned markdown article content:\n\n# Great Post\n\nThis is the first paragraph.\nStill first paragraph.\n\nSecond paragraph.",
                     ],
                 ),
             ):
