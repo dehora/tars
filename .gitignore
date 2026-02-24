@@ -19,3 +19,4 @@ wheels/
 # Local artifacts
 *.png
 *.log
+.DS_Store
