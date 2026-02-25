@@ -42,6 +42,11 @@ Tars is a personal AI assistant with CLI, web, email, and Telegram channels. Rou
 - When adding a new tool, audit all code paths that call `chat()` — internal paths (summarization, review, tidy) should use `use_tools=False` to prevent tool leakage.
 - When adding a CLI command, check web UI and Telegram parity — unhandled slash commands fall through to chat and get misinterpreted by the model.
 - Slash command dispatch is duplicated across `cli.py`, `email.py`, and `telegram.py` — when adding or modifying a command, update all three (or refactor to shared dispatch).
+- User and external input: don't trust by default, prefer to santise and escape for commands calls and prompts. 
+- Comments: 
+      - Write self-documenting code and prefer clear names over comments. 
+      - Never add comments that restate what code does. 
+      - Only comment in depth for complex algorithms, non-obvious business logic, and 'why' not 'what'. 
 
 ## Configuration
 
