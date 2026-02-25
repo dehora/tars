@@ -13,48 +13,10 @@ from email.mime.text import MIMEText
 from pathlib import Path
 
 from tars.brief import build_brief_sections, format_brief_text
-from tars.cli import _parse_todoist_add
+from tars.commands import dispatch
 from tars.config import ModelConfig, model_summary
 from tars.conversation import Conversation, process_message, save_session
-from tars.format import format_tool_result
 from tars.sessions import _session_path
-from tars.tools import run_tool
-
-def _parse_todoist_natural(text: str, provider: str, model: str) -> dict:
-    """Use the model to extract task fields from natural language."""
-    import json as _json
-
-    from tars.core import chat
-
-    messages = [{"role": "user", "content": f"{_TODOIST_PARSE_PROMPT}{text}"}]
-    try:
-        raw = chat(messages, provider, model, use_tools=False)
-        # Extract JSON from response (model might wrap in ```json blocks)
-        raw = raw.strip()
-        if raw.startswith("```"):
-            raw = raw.split("\n", 1)[1].rsplit("```", 1)[0].strip()
-        result = _json.loads(raw)
-        if isinstance(result, dict) and result.get("content"):
-            return result
-    except Exception as e:
-        print(f"  [email] todoist parse failed, using raw text: {e}", file=sys.stderr)
-    return {"content": text}
-
-
-_TODOIST_PARSE_PROMPT = """\
-Extract task details from this text. Return ONLY valid JSON with these fields:
-- "content": the task description (required)
-- "project": project name if mentioned, otherwise omit
-- "due": due date if mentioned (e.g. "today", "tomorrow", "friday"), otherwise omit
-- "priority": 1-4 if mentioned (4=urgent), otherwise omit
-
-Examples:
-"eggs to Groceries" → {"content": "eggs", "project": "Groceries"}
-"buy milk --due tomorrow" → {"content": "buy milk", "due": "tomorrow"}
-"call dentist p3" → {"content": "call dentist", "priority": 3}
-"fix the bike" → {"content": "fix the bike"}
-
-Text: """
 
 
 def _email_config() -> dict | None:
@@ -248,74 +210,6 @@ def send_brief_email() -> None:
     _send_message(config, config["to"], "tars brief", body)
 
 
-def _handle_slash_command(
-    body: str, provider: str = "", model: str = "",
-) -> str | None:
-    """Handle slash commands in email body. Returns reply text, or None if not a command."""
-    stripped = body.strip()
-    if not stripped.startswith("/"):
-        return None
-    parts = stripped.split()
-    cmd = parts[0]
-
-    try:
-        if cmd == "/todoist":
-            sub = parts[1] if len(parts) > 1 else ""
-            if sub == "add" and len(parts) > 2:
-                raw_text = " ".join(parts[2:])
-                has_flags = any(p.startswith("--") for p in parts[2:])
-                if has_flags or not provider:
-                    args = _parse_todoist_add(parts[2:])
-                else:
-                    args = _parse_todoist_natural(raw_text, provider, model)
-                if not args.get("content"):
-                    return "Usage: /todoist add <text> [--due D] [--project P] [--priority N]"
-                name = "todoist_add_task"
-            elif sub == "today":
-                args = {}
-                name = "todoist_today"
-            elif sub == "upcoming":
-                try:
-                    days = int(parts[2]) if len(parts) > 2 else 7
-                except ValueError:
-                    return "Usage: /todoist upcoming [days]"
-                args = {"days": days}
-                name = "todoist_upcoming"
-            elif sub == "complete" and len(parts) > 2:
-                args = {"ref": " ".join(parts[2:])}
-                name = "todoist_complete_task"
-            else:
-                return "Usage: /todoist add|today|upcoming|complete ..."
-        elif cmd == "/weather":
-            name, args = "weather_now", {}
-        elif cmd == "/forecast":
-            name, args = "weather_forecast", {}
-        elif cmd == "/memory":
-            name, args = "memory_recall", {}
-        elif cmd == "/remember" and len(parts) >= 3:
-            name = "memory_remember"
-            args = {"section": parts[1], "content": " ".join(parts[2:])}
-        elif cmd == "/note" and len(parts) >= 2:
-            name = "note_daily"
-            args = {"content": " ".join(parts[1:])}
-        elif cmd == "/read" and len(parts) >= 2:
-            name = "web_read"
-            args = {"url": parts[1]}
-        elif cmd == "/capture" and len(parts) >= 2:
-            from tars.capture import capture as _capture
-            raw_flag = "--raw" in parts
-            url = next((p for p in parts[1:] if p != "--raw"), "")
-            result = _capture(url, provider, model, raw=raw_flag)
-            return format_tool_result("capture", result)
-        else:
-            return None  # Not a recognized command — let the model handle it
-
-        raw = run_tool(name, args, quiet=True)
-        return format_tool_result(name, raw)
-    except Exception as e:
-        return f"Tool error: {e}"
-
-
 # In-memory conversation state, keyed by thread ID
 _conversations: dict[str, Conversation] = {}
 _session_files: dict[str, Path | None] = {}
@@ -368,13 +262,13 @@ def run_email(model_config: ModelConfig) -> None:
                 print(f"email: [{from_addr}] {subject}")
 
                 # Try slash command: check subject first, then body
-                slash_reply = _handle_slash_command(
+                slash_reply = dispatch(
                     subject,
                     model_config.primary_provider,
                     model_config.primary_model,
                 )
                 if slash_reply is None and body:
-                    slash_reply = _handle_slash_command(
+                    slash_reply = dispatch(
                         body,
                         model_config.primary_provider,
                         model_config.primary_model,

@@ -7,12 +7,10 @@ import sys
 from pathlib import Path
 
 from tars.brief import build_brief_sections, format_brief_text
-from tars.cli import _parse_todoist_add
+from tars.commands import dispatch
 from tars.config import ModelConfig, model_summary
 from tars.conversation import Conversation, process_message, save_session
-from tars.format import format_tool_result
 from tars.sessions import _session_path
-from tars.tools import run_tool
 
 logger = logging.getLogger(__name__)
 
@@ -63,129 +61,6 @@ def _telegram_config() -> dict | None:
     }
 
 
-def _handle_slash_command(
-    text: str, provider: str = "", model: str = "",
-) -> str | None:
-    """Handle slash commands. Returns reply text, or None if not a command."""
-    stripped = text.strip()
-    if not stripped.startswith("/"):
-        return None
-    parts = stripped.split()
-    cmd = parts[0]
-
-    # Strip bot username suffix (e.g. /weather@tars_bot → /weather)
-    if "@" in cmd:
-        cmd = cmd.split("@")[0]
-
-    try:
-        if cmd == "/todoist":
-            sub = parts[1] if len(parts) > 1 else ""
-            if sub == "add" and len(parts) > 2:
-                raw_text = " ".join(parts[2:])
-                has_flags = any(p.startswith("--") for p in parts[2:])
-                if has_flags or not provider:
-                    args = _parse_todoist_add(parts[2:])
-                else:
-                    from tars.email import _parse_todoist_natural
-
-                    args = _parse_todoist_natural(raw_text, provider, model)
-                if not args.get("content"):
-                    return "Usage: /todoist add <text> [--due D] [--project P] [--priority N]"
-                name = "todoist_add_task"
-            elif sub == "today":
-                args = {}
-                name = "todoist_today"
-            elif sub == "upcoming":
-                try:
-                    days = int(parts[2]) if len(parts) > 2 else 7
-                except ValueError:
-                    return "Usage: /todoist upcoming [days]"
-                args = {"days": days}
-                name = "todoist_upcoming"
-            elif sub == "complete" and len(parts) > 2:
-                args = {"ref": " ".join(parts[2:])}
-                name = "todoist_complete_task"
-            else:
-                return "Usage: /todoist add|today|upcoming|complete ..."
-        elif cmd == "/weather":
-            name, args = "weather_now", {}
-        elif cmd == "/forecast":
-            name, args = "weather_forecast", {}
-        elif cmd == "/memory":
-            name, args = "memory_recall", {}
-        elif cmd == "/remember":
-            if len(parts) < 3:
-                return "Usage: /remember <semantic|procedural> <text>"
-            name = "memory_remember"
-            args = {"section": parts[1], "content": " ".join(parts[2:])}
-        elif cmd == "/note":
-            if len(parts) < 2:
-                return "Usage: /note <text>"
-            name = "note_daily"
-            args = {"content": " ".join(parts[1:])}
-        elif cmd == "/read" and len(parts) >= 2:
-            name = "web_read"
-            args = {"url": parts[1]}
-        elif cmd == "/capture":
-            if len(parts) < 2:
-                return "Usage: /capture <url> [--raw]"
-            from tars.capture import capture as _capture
-
-            raw_flag = "--raw" in parts
-            url = next((p for p in parts[1:] if p != "--raw"), "")
-            result = _capture(url, provider, model, raw=raw_flag)
-            return format_tool_result("capture", result)
-        elif cmd == "/brief":
-            sections = build_brief_sections()
-            return format_brief_text(sections)
-        elif cmd == "/search":
-            if len(parts) < 2:
-                return "Usage: /search <query>"
-            from tars.search import search as _search
-            query = " ".join(parts[1:])
-            results = _search(query, mode="hybrid", limit=5)
-            if not results:
-                return "No results."
-            lines = []
-            for i, r in enumerate(results, 1):
-                source = r.file_title or r.file_path
-                lines.append(f"{i}. [{r.score:.3f}] {source}")
-                preview = r.content.strip().splitlines()
-                if preview:
-                    lines.append(f"   {preview[0][:80]}")
-            return "\n".join(lines)
-        elif cmd == "/find":
-            if len(parts) < 2:
-                return "Usage: /find <query>"
-            from tars.search import search_notes as _search_notes
-            query = " ".join(parts[1:])
-            results = _search_notes(query, limit=5)
-            if not results:
-                return "No results."
-            lines = []
-            for i, r in enumerate(results, 1):
-                source = r.file_title or r.file_path
-                lines.append(f"{i}. [{r.score:.3f}] {source}")
-                preview = r.content.strip().splitlines()
-                if preview:
-                    lines.append(f"   {preview[0][:80]}")
-            return "\n".join(lines)
-        elif cmd == "/sessions":
-            from tars.sessions import list_sessions
-            sessions = list_sessions(limit=10)
-            if not sessions:
-                return "No sessions found."
-            lines = [f"{s.date}  {s.title}" for s in sessions]
-            return "\n".join(lines)
-        else:
-            return None  # Not a recognized command — let the model handle it
-
-        raw = run_tool(name, args, quiet=True)
-        return format_tool_result(name, raw)
-    except Exception as e:
-        return f"Tool error: {e}"
-
-
 def _truncate(text: str, limit: int = _MAX_MESSAGE_LENGTH) -> str:
     """Truncate text to Telegram's message length limit."""
     if len(text) <= limit:
@@ -222,6 +97,7 @@ async def _cmd_help(update, context) -> None:
         "/note <text> — append to daily note\n"
         "/capture <url> [--raw]\n"
         "/brief — daily briefing digest\n"
+        "/export — export conversation as markdown\n"
         "/clear — reset conversation\n"
         "/help — this message"
     )
@@ -262,13 +138,34 @@ async def _handle_message(update, context) -> None:
 
     # Try slash command
     if text.startswith("/"):
+        # Strip @botname suffix (e.g. /weather@tars_bot → /weather)
+        first = text.split()[0]
+        if "@" in first:
+            cmd_stripped = first.split("@")[0]
+            rest = text[len(first):]
+            text = cmd_stripped + rest
+
         # Skip /start, /help, /clear — handled by dedicated handlers
-        cmd = text.split()[0].split("@")[0]
+        cmd = text.split()[0]
         if cmd in ("/start", "/help", "/clear"):
             return
 
+        # Get or create conversation for export support
+        chat_id = update.effective_chat.id
+        if chat_id not in _conversations:
+            _conversations[chat_id] = Conversation(
+                id=f"telegram-{chat_id}",
+                provider=provider,
+                model=model,
+                remote_provider=_model_config.remote_provider,
+                remote_model=_model_config.remote_model,
+                routing_policy=_model_config.routing_policy,
+            )
+            _session_files[chat_id] = _session_path()
+
         await update.effective_chat.send_action("typing")
-        result = await asyncio.to_thread(_handle_slash_command, text, provider, model)
+        conv = _conversations[chat_id]
+        result = await asyncio.to_thread(dispatch, text, provider, model, conv)
         if result is not None:
             await update.message.reply_text(_truncate(result))
             return

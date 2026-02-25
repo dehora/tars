@@ -15,54 +15,8 @@ from tars.cli import (
     _handle_review,
     _handle_sessions,
     _handle_slash_search,
-    _handle_slash_tool,
     _handle_tidy,
-    _parse_todoist_add,
 )
-
-
-class ParseTodoistAddTests(unittest.TestCase):
-    def test_simple(self) -> None:
-        args = _parse_todoist_add(["buy", "eggs"])
-        self.assertEqual(args["content"], "buy eggs")
-
-    def test_single_word_due(self) -> None:
-        args = _parse_todoist_add(["buy", "eggs", "--due", "today"])
-        self.assertEqual(args["content"], "buy eggs")
-        self.assertEqual(args["due"], "today")
-
-    def test_multi_word_due(self) -> None:
-        args = _parse_todoist_add(["buy", "eggs", "--due", "tomorrow", "3pm"])
-        self.assertEqual(args["content"], "buy eggs")
-        self.assertEqual(args["due"], "tomorrow 3pm")
-
-    def test_due_with_date_string(self) -> None:
-        args = _parse_todoist_add(["buy", "eggs", "--due", "next", "monday"])
-        self.assertEqual(args["due"], "next monday")
-        self.assertEqual(args["content"], "buy eggs")
-
-    def test_all_flags(self) -> None:
-        args = _parse_todoist_add([
-            "buy", "eggs", "--due", "tomorrow", "3pm",
-            "--project", "Groceries", "--priority", "4",
-        ])
-        self.assertEqual(args["content"], "buy eggs")
-        self.assertEqual(args["due"], "tomorrow 3pm")
-        self.assertEqual(args["project"], "Groceries")
-        self.assertEqual(args["priority"], 4)
-
-    def test_priority_is_int(self) -> None:
-        args = _parse_todoist_add(["task", "--priority", "2"])
-        self.assertEqual(args["priority"], 2)
-
-    def test_priority_invalid_defaults_to_1(self) -> None:
-        args = _parse_todoist_add(["task", "--priority", "high"])
-        self.assertEqual(args["priority"], 1)
-
-    def test_flags_before_content_gives_empty_content(self) -> None:
-        args = _parse_todoist_add(["--due", "tomorrow", "buy", "eggs"])
-        # Greedy parsing: "buy" and "eggs" consumed by --due
-        self.assertEqual(args["content"], "")
 
 
 class HandleReviewTests(unittest.TestCase):
@@ -82,13 +36,15 @@ class HandleReviewTests(unittest.TestCase):
                     with mock.patch("builtins.input", return_value="y"):
                         with mock.patch("tars.cli._memory_file", return_value=Path(tmpdir) / "Procedural.md"):
                             with mock.patch("tars.cli.archive_feedback") as mock_archive:
-                                with mock.patch("builtins.print"):
-                                    _handle_review("ollama", "test-model")
+                                with mock.patch("tars.cli.build_index") as mock_index:
+                                    with mock.patch("builtins.print"):
+                                        _handle_review("ollama", "test-model")
             # Rules should be written to Procedural.md
             text = (Path(tmpdir) / "Procedural.md").read_text()
             self.assertIn("- route weather queries to weather_now", text)
             self.assertIn("- check memory before adding duplicates", text)
             mock_archive.assert_called_once()
+            mock_index.assert_called_once()
 
     def test_review_declined(self) -> None:
         corrections = "# Corrections\n\n## 2026-01-01T00:00:00\n- input: x\n- got: y\n"
@@ -122,55 +78,36 @@ class HandleReviewTests(unittest.TestCase):
                             _handle_review("ollama", "test-model")
         mock_print.assert_any_call("  no memory dir configured")
 
+    def test_review_triggers_reindex(self) -> None:
+        corrections = "# Corrections\n\n## 2026-01-01T00:00:00\n- input: x\n- got: y\n"
+        model_reply = "- a rule\n"
+        with tempfile.TemporaryDirectory() as tmpdir:
+            with mock.patch("tars.cli.load_feedback", return_value=(corrections, "")):
+                with mock.patch("tars.cli.chat", return_value=model_reply):
+                    with mock.patch("builtins.input", return_value="y"):
+                        with mock.patch("tars.cli._memory_file", return_value=Path(tmpdir) / "Procedural.md"):
+                            with mock.patch("tars.cli.archive_feedback"):
+                                with mock.patch("tars.cli.build_index") as mock_index:
+                                    with mock.patch("builtins.print") as mock_print:
+                                        _handle_review("ollama", "test-model")
+        mock_index.assert_called_once()
+        mock_print.assert_any_call("  index updated")
 
-class HandleNoteTests(unittest.TestCase):
-    def test_note_dispatches(self) -> None:
-        with mock.patch("tars.cli._print_tool") as m:
-            result = _handle_slash_tool("/note interesting idea")
-        self.assertTrue(result)
-        m.assert_called_once_with("note_daily", {"content": "interesting idea"})
-
-    def test_note_no_content(self) -> None:
-        with mock.patch("builtins.print") as m:
-            result = _handle_slash_tool("/note")
-        self.assertTrue(result)
-        m.assert_any_call("  usage: /note <text>")
-
-
-class HandleSlashToolTests(unittest.TestCase):
-    def test_weather_dispatches(self) -> None:
-        with mock.patch("tars.cli._print_tool") as m:
-            result = _handle_slash_tool("/weather")
-        self.assertTrue(result)
-        m.assert_called_once_with("weather_now", {})
-
-    def test_forecast_dispatches(self) -> None:
-        with mock.patch("tars.cli._print_tool") as m:
-            result = _handle_slash_tool("/forecast")
-        self.assertTrue(result)
-        m.assert_called_once_with("weather_forecast", {})
-
-    def test_todoist_today_dispatches(self) -> None:
-        with mock.patch("tars.cli._print_tool") as m:
-            result = _handle_slash_tool("/todoist today")
-        self.assertTrue(result)
-        m.assert_called_once_with("todoist_today", {})
-
-    def test_unknown_returns_false(self) -> None:
-        result = _handle_slash_tool("/unknown")
-        self.assertFalse(result)
-
-    def test_empty_content_prints_usage(self) -> None:
-        with mock.patch("builtins.print") as m:
-            result = _handle_slash_tool("/todoist add --due tomorrow")
-        self.assertTrue(result)
-        m.assert_any_call("  usage: /todoist add <text> [--due D] [--project P] [--priority N]")
-
-    def test_upcoming_bad_days_prints_usage(self) -> None:
-        with mock.patch("builtins.print") as m:
-            result = _handle_slash_tool("/todoist upcoming abc")
-        self.assertTrue(result)
-        m.assert_any_call("  usage: /todoist upcoming [days]")
+    def test_review_reindex_failure_warns(self) -> None:
+        corrections = "# Corrections\n\n## 2026-01-01T00:00:00\n- input: x\n- got: y\n"
+        model_reply = "- a rule\n"
+        with tempfile.TemporaryDirectory() as tmpdir:
+            with mock.patch("tars.cli.load_feedback", return_value=(corrections, "")):
+                with mock.patch("tars.cli.chat", return_value=model_reply):
+                    with mock.patch("builtins.input", return_value="y"):
+                        with mock.patch("tars.cli._memory_file", return_value=Path(tmpdir) / "Procedural.md"):
+                            with mock.patch("tars.cli.archive_feedback"):
+                                with mock.patch("tars.cli.build_index", side_effect=RuntimeError("no db")):
+                                    with mock.patch("builtins.print") as mock_print:
+                                        _handle_review("ollama", "test-model")
+        # Should warn but not crash
+        output = " ".join(str(c) for c in mock_print.call_args_list)
+        self.assertIn("reindex failed", output)
 
 
 class HandleSessionsTests(unittest.TestCase):

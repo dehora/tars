@@ -7,12 +7,12 @@ from pathlib import Path
 
 from dotenv import load_dotenv
 
+from tars.commands import dispatch
 from tars.config import apply_cli_overrides, load_model_config, model_summary
 from tars.brief import build_brief_sections, format_brief_text
 from tars.conversation import Conversation, process_message, process_message_stream, save_session
 from tars.core import chat
 from tars.embeddings import DEFAULT_EMBEDDING_MODEL
-from tars.format import format_tool_result
 from tars.indexer import build_index, build_notes_index
 from tars.memory import (
     _append_to_file,
@@ -25,7 +25,6 @@ from tars.memory import (
 )
 from tars.search import search, search_notes
 from tars.sessions import _session_path, list_sessions
-from tars.tools import run_tool
 
 load_dotenv()
 
@@ -207,6 +206,11 @@ def _handle_review(provider: str, model: str) -> None:
         _append_to_file(p, rule)
     archive_feedback()
     print(f"  {len(rules)} rules added to Procedural.md")
+    try:
+        build_index()
+        print("  index updated")
+    except Exception as e:
+        print(f"  [warning] reindex failed: {e}", file=sys.stderr)
 
 
 _TIDY_PROMPT = """\
@@ -305,113 +309,6 @@ def _handle_brief() -> None:
         print(f"  {line}")
 
 
-_FLAGS = {"--due", "--project", "--priority"}
-
-
-def _parse_todoist_add(tokens: list[str]) -> dict:
-    """Parse '/todoist add content --due D --project P --priority N' into args dict.
-
-    Flag values are greedy — they consume tokens until the next flag or end.
-    This lets --due accept multi-word values like 'tomorrow 3pm'.
-    """
-    args: dict = {}
-    content_parts: list[str] = []
-    i = 0
-    while i < len(tokens):
-        t = tokens[i]
-        if t in _FLAGS and i + 1 < len(tokens):
-            flag = t[2:]  # "due", "project", "priority"
-            i += 1
-            val_parts: list[str] = []
-            while i < len(tokens) and tokens[i] not in _FLAGS:
-                val_parts.append(tokens[i])
-                i += 1
-            val = " ".join(val_parts)
-            if flag == "priority":
-                try:
-                    args[flag] = int(val)
-                except ValueError:
-                    args[flag] = 1  # default priority
-            else:
-                args[flag] = val
-        else:
-            content_parts.append(t)
-            i += 1
-    args["content"] = " ".join(content_parts)
-    return args
-
-
-def _print_tool(name: str, args: dict) -> None:
-    """Run a tool and print its formatted result."""
-    raw = run_tool(name, args, quiet=True)
-    formatted = format_tool_result(name, raw)
-    for line in formatted.splitlines():
-        print(f"  {line}")
-
-
-def _handle_slash_tool(user_input: str) -> bool:
-    """Handle direct tool commands. Returns True if handled."""
-    parts = user_input.strip().split()
-    cmd = parts[0] if parts else ""
-
-    if cmd == "/todoist":
-        sub = parts[1] if len(parts) > 1 else ""
-        if sub == "add" and len(parts) > 2:
-            args = _parse_todoist_add(parts[2:])
-            if not args.get("content"):
-                print("  usage: /todoist add <text> [--due D] [--project P] [--priority N]")
-                return True
-            name = "todoist_add_task"
-        elif sub == "today":
-            args = {}
-            name = "todoist_today"
-        elif sub == "upcoming":
-            try:
-                days = int(parts[2]) if len(parts) > 2 else 7
-            except ValueError:
-                print("  usage: /todoist upcoming [days]")
-                return True
-            args = {"days": days}
-            name = "todoist_upcoming"
-        elif sub == "complete" and len(parts) > 2:
-            args = {"ref": " ".join(parts[2:])}
-            name = "todoist_complete_task"
-        else:
-            print("  usage: /todoist add|today|upcoming|complete ...")
-            return True
-        _print_tool(name, args)
-        return True
-
-    if cmd == "/weather":
-        _print_tool("weather_now", {})
-        return True
-
-    if cmd == "/forecast":
-        _print_tool("weather_forecast", {})
-        return True
-
-    if cmd == "/memory":
-        _print_tool("memory_recall", {})
-        return True
-
-    if cmd == "/remember":
-        if len(parts) < 3:
-            print("  usage: /remember <semantic|procedural> <content>")
-            return True
-        section = parts[1]
-        content = " ".join(parts[2:])
-        _print_tool("memory_remember", {"section": section, "content": content})
-        return True
-
-    if cmd == "/note":
-        if len(parts) < 2:
-            print("  usage: /note <text>")
-            return True
-        content = " ".join(parts[1:])
-        _print_tool("note_daily", {"content": content})
-        return True
-
-    return False
 
 
 _SLASH_COMMANDS = [
@@ -419,7 +316,7 @@ _SLASH_COMMANDS = [
     "/search ", "/sgrep ", "/svec ", "/find ",
     "/sessions", "/session ",
     "/w ", "/r ", "/review", "/tidy", "/brief", "/stats", "/schedule",
-    "/capture ",
+    "/capture ", "/export",
     "/model",
     "/help", "/clear",
 ]
@@ -536,6 +433,8 @@ def repl(config):
                 print("    /tidy            clean up memory (duplicates, junk)")
                 print("  daily:")
                 print("    /brief           todoist + weather digest")
+                print("  export:")
+                print("    /export          export conversation as markdown")
                 print("  system:")
                 print("    /schedule        show installed schedules")
                 print("    /stats           memory and index health")
@@ -614,11 +513,14 @@ def repl(config):
                 continue
             if _handle_sessions(user_input):
                 continue
-            if _handle_slash_tool(user_input):
-                continue
             if _handle_slash_search(user_input):
                 continue
             if _handle_find(user_input):
+                continue
+            result = dispatch(user_input, config.primary_provider, config.primary_model, conv=conv)
+            if result is not None:
+                for line in result.splitlines():
+                    print(f"  {line}")
                 continue
             spinner = _Spinner()
             spinner.start()
