@@ -135,12 +135,9 @@ def _systemd_dir() -> Path:
 # -- plist generation (macOS) --
 
 
-def _build_command_string(uv_path: str, command: str, args: list[str]) -> str:
-    """Build the shell command string for the schedule."""
-    parts = [f'echo "[tars-{command}] $(date -Iseconds) start"']
-    cmd_parts = [uv_path, "run", "tars", command] + args
-    parts.append(" ".join(cmd_parts))
-    return "; ".join(parts)
+def _build_command_argv(uv_path: str, command: str, args: list[str]) -> list[str]:
+    """Build the command argv for the schedule."""
+    return [uv_path, "run", "tars", command] + args
 
 
 def _generate_plist(
@@ -150,12 +147,12 @@ def _generate_plist(
     repo_dir: Path,
 ) -> dict:
     """Generate a launchd plist dict."""
-    cmd = _build_command_string(uv_path, entry.command, entry.args)
+    argv = _build_command_argv(uv_path, entry.command, entry.args)
     log_dir = _log_dir_macos()
 
     plist: dict = {
         "Label": _label(entry.name),
-        "ProgramArguments": ["/bin/bash", "-lc", cmd],
+        "ProgramArguments": argv,
         "WorkingDirectory": str(repo_dir),
         "StandardOutPath": str(log_dir / f"tars-{entry.name}.log"),
         "StandardErrorPath": str(log_dir / f"tars-{entry.name}.err.log"),
@@ -187,7 +184,8 @@ def _generate_systemd_service(
     repo_dir: Path,
 ) -> str:
     """Generate a systemd service unit file."""
-    cmd = _build_command_string(uv_path, entry.command, entry.args)
+    argv = _build_command_argv(uv_path, entry.command, entry.args)
+    exec_line = " ".join(argv)
     lines = [
         "[Unit]",
         f"Description=tars {entry.name}",
@@ -195,7 +193,7 @@ def _generate_systemd_service(
         "[Service]",
         "Type=oneshot",
         f"WorkingDirectory={repo_dir}",
-        f"ExecStart=/bin/bash -lc '{cmd}'",
+        f"ExecStart={exec_line}",
     ]
     for key, val in env.items():
         lines.append(f"Environment={key}={val}")
@@ -592,7 +590,7 @@ def _schedule_test_linux(name: str) -> str:
 
     try:
         result = subprocess.run(
-            ["/bin/bash", "-lc", exec_start.lstrip("/bin/bash -lc ").strip("'")],
+            exec_start.split(),
             cwd=work_dir,
             env=test_env,
             capture_output=True,

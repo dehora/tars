@@ -344,15 +344,16 @@ def run_telegram(model_config: ModelConfig) -> None:
     print(f"telegram: allowed users: {config['allow']}")
 
     user_filter = filters.User(user_id=config["allow"])
+    private_filter = filters.ChatType.PRIVATE & user_filter
 
     app = ApplicationBuilder().token(config["token"]).build()
 
-    app.add_handler(CommandHandler("start", _cmd_start, filters=user_filter))
-    app.add_handler(CommandHandler("help", _cmd_help, filters=user_filter))
-    app.add_handler(CommandHandler("clear", _cmd_clear, filters=user_filter))
+    app.add_handler(CommandHandler("start", _cmd_start, filters=private_filter))
+    app.add_handler(CommandHandler("help", _cmd_help, filters=private_filter))
+    app.add_handler(CommandHandler("clear", _cmd_clear, filters=private_filter))
     # Catch-all for other slash commands and text messages
     app.add_handler(
-        MessageHandler(filters.TEXT & user_filter, _handle_message)
+        MessageHandler(filters.TEXT & private_filter, _handle_message)
     )
 
     async def _shutdown(app) -> None:

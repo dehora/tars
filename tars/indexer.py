@@ -1,6 +1,9 @@
 """Orchestration: discover memory files, chunk, embed, and store."""
 
+import sys as _sys_mod
 from pathlib import Path
+
+_stderr = _sys_mod.stderr
 
 from tars.chunker import _content_hash, chunk_markdown
 from tars.db import (
@@ -89,9 +92,13 @@ def build_notes_index(*, model: str = DEFAULT_EMBEDDING_MODEL) -> dict:
                 stats["deleted"] += 1
 
         for filepath, memory_type in files:
-            content = filepath.read_text(encoding="utf-8", errors="replace")
-            content_hash = _content_hash(content)
-            stat = filepath.stat()
+            try:
+                content = filepath.read_text(encoding="utf-8", errors="replace")
+                content_hash = _content_hash(content)
+                stat = filepath.stat()
+            except OSError as e:
+                print(f"  [warning] skipping {filepath}: {e}", file=_stderr)
+                continue
 
             file_id, changed = upsert_file(
                 conn,
@@ -176,9 +183,13 @@ def build_index(*, model: str = DEFAULT_EMBEDDING_MODEL) -> dict:
                 stats["deleted"] += 1
 
         for filepath, memory_type in files:
-            content = filepath.read_text(encoding="utf-8", errors="replace")
-            content_hash = _content_hash(content)
-            stat = filepath.stat()
+            try:
+                content = filepath.read_text(encoding="utf-8", errors="replace")
+                content_hash = _content_hash(content)
+                stat = filepath.stat()
+            except OSError as e:
+                print(f"  [warning] skipping {filepath}: {e}", file=_stderr)
+                continue
 
             file_id, changed = upsert_file(
                 conn,

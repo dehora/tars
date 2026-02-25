@@ -6,6 +6,9 @@ from datetime import datetime
 from pathlib import Path
 from urllib.parse import urlparse
 
+# Regex matching both ![](url) and ![](<url>) image lines
+_IMAGE_LINE_RE = re.compile(r"^!\[\]\(<?([^<>\n]+?)>?\)$")
+
 from tars.core import chat
 from tars.notes import _notes_dir
 from tars.web import _extract_html_title, _extract_markdown_with_images, _fetch_html, _run_web_tool
@@ -120,7 +123,7 @@ def _inline_images_by_anchor(body: str, source: str, limit: int = 10) -> str:
     anchors: list[str] = []
     last_text = ""
     for line in source_lines:
-        if line.startswith("![](") and line.endswith(")"):
+        if _IMAGE_LINE_RE.match(line):
             image_lines.append(line)
             anchors.append(last_text)
         else:
@@ -150,7 +153,7 @@ def _has_text(markdown: str) -> bool:
         stripped = line.strip()
         if not stripped:
             continue
-        if stripped.startswith("![](") and stripped.endswith(")"):
+        if _IMAGE_LINE_RE.match(stripped):
             continue
         return True
     return False
@@ -164,10 +167,11 @@ def _tokenize_images(markdown: str, limit: int = 10) -> tuple[str, list[str]]:
     images: list[str] = []
     for line in markdown.splitlines():
         stripped = line.strip()
-        if stripped.startswith("![](") and stripped.endswith(")"):
+        m = _IMAGE_LINE_RE.match(stripped)
+        if m:
             if len(images) >= limit:
                 continue
-            images.append(stripped[len("![]("):-1])
+            images.append(m.group(1))
             token = f"[[tars-image-{len(images)}]]"
             output.append(token)
         else:
@@ -183,7 +187,7 @@ def _replace_image_tokens(body: str, images: list[str]) -> tuple[str, bool]:
     for idx, url in enumerate(images, start=1):
         token = f"[[tars-image-{idx}]]"
         if token in body:
-            body = body.replace(token, f"![]({url})")
+            body = body.replace(token, f"![](<{url}>)")
             replaced = True
     return body, replaced
 
@@ -274,11 +278,13 @@ def capture(url: str, provider: str, model: str, *, raw: bool = False, context: 
     else:
         context_block = ""
         if context:
+            # Escape closing tags to prevent context from breaking XML boundaries
+            safe_context = context.replace("</conversation-context>", "&lt;/conversation-context&gt;")
             context_block = (
                 "The user captured this page during a conversation. "
                 "Summarize with emphasis on aspects relevant to this context.\n\n"
                 "<conversation-context>\n"
-                f"{context}\n"
+                f"{safe_context}\n"
                 "</conversation-context>\n\n"
             )
         summary_source = tokenized_markdown if tokenized_markdown else content

@@ -103,6 +103,22 @@ class _ImageExtractor(HTMLParser):
         return self._urls
 
 
+def _is_safe_image_url(url: str) -> bool:
+    """Check that an image URL uses http/https and has no control characters."""
+    parsed = urlparse(url)
+    if parsed.scheme not in ("http", "https"):
+        return False
+    # Reject URLs with control characters, newlines, or unescaped parens
+    if any(c in url for c in ("\n", "\r", "\x00")):
+        return False
+    return True
+
+
+def _sanitize_image_url(url: str) -> str:
+    """Percent-encode parentheses in image URLs for safe markdown embedding."""
+    return url.replace("(", "%28").replace(")", "%29")
+
+
 def _extract_image_urls(html: str, base_url: str) -> list[str]:
     """Extract and normalize image URLs from HTML."""
     extractor = _ImageExtractor()
@@ -115,6 +131,9 @@ def _extract_image_urls(html: str, base_url: str) -> list[str]:
         if src.lower().endswith(".svg"):
             continue
         full = urllib.parse.urljoin(base_url, src)
+        if not _is_safe_image_url(full):
+            continue
+        full = _sanitize_image_url(full)
         if full not in seen:
             seen.add(full)
             urls.append(full)
@@ -151,7 +170,10 @@ class _MarkdownExtractor(HTMLParser):
                 full = urllib.parse.urljoin(self._base_url, src)
                 if full.startswith("data:") or full.lower().endswith(".svg"):
                     continue
-                self._parts.append(f"\n![]({full})\n")
+                if not _is_safe_image_url(full):
+                    continue
+                full = _sanitize_image_url(full)
+                self._parts.append(f"\n![](<{full}>)\n")
 
     def handle_endtag(self, tag: str) -> None:
         tag_lower = tag.lower()

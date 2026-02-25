@@ -121,9 +121,9 @@ class ExtractMarkdownWithImagesTests(unittest.TestCase):
         )
         markdown = _extract_markdown_with_images(html, "https://example.com/post")
         self.assertIn("Intro", markdown)
-        self.assertIn("![](https://example.com/a.jpg)", markdown)
+        self.assertIn("![](<https://example.com/a.jpg>)", markdown)
         self.assertIn("Middle", markdown)
-        self.assertIn("![](https://example.com/b.jpg)", markdown)
+        self.assertIn("![](<https://example.com/b.jpg>)", markdown)
         self.assertIn("End", markdown)
 
 

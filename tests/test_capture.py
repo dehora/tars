@@ -154,7 +154,7 @@ class CaptureTests(unittest.TestCase):
             path = Path(result["path"])
             content = path.read_text(encoding="utf-8")
             self.assertIn("Raw content here.", content)
-            self.assertIn("![](https://dehora.net/a.jpg)", content)
+            self.assertIn("![](<https://dehora.net/a.jpg>)", content)
 
     def test_inline_images_reinserted_when_missing(self) -> None:
         web_result = json.dumps({"url": "https://dehora.net/tars-test/post", "content": "Some article text", "truncated": False})
@@ -176,7 +176,7 @@ class CaptureTests(unittest.TestCase):
             self.assertTrue(result["ok"])
             content = Path(result["path"]).read_text(encoding="utf-8")
             self.assertIn("Intro", content)
-            self.assertIn("![](https://dehora.net/a.jpg)", content)
+            self.assertIn("![](<https://dehora.net/a.jpg>)", content)
             self.assertIn("End", content)
 
     def test_tokens_replaced_with_images(self) -> None:
@@ -198,7 +198,7 @@ class CaptureTests(unittest.TestCase):
                 result = json.loads(capture("https://dehora.net/tars-test/post", "ollama", "fake"))
             self.assertTrue(result["ok"])
             content = Path(result["path"]).read_text(encoding="utf-8")
-            self.assertIn("![](https://dehora.net/a.jpg)", content)
+            self.assertIn("![](<https://dehora.net/a.jpg>)", content)
             self.assertNotIn("[[tars-image-1]]", content)
 
     def test_html_title_used_when_metadata_missing(self) -> None:

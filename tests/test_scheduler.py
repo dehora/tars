@@ -102,9 +102,7 @@ class TestGeneratePlist(unittest.TestCase):
         entry = self._make_entry(command="index", args=["--embedding-model", "qwen3"])
         plist = _generate_plist(entry, {}, "/home/user/.local/bin/uv", Path("/repo"))
         prog = plist["ProgramArguments"]
-        self.assertEqual(prog[0], "/bin/bash")
-        self.assertEqual(prog[1], "-lc")
-        self.assertIn("uv run tars index --embedding-model qwen3", prog[2])
+        self.assertEqual(prog, ["/home/user/.local/bin/uv", "run", "tars", "index", "--embedding-model", "qwen3"])
 
     def test_working_directory(self):
         entry = self._make_entry()
