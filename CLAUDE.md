@@ -74,8 +74,3 @@ Use third-person singular and present tense verbs in commit messages (e.g., "Add
 
 - You can ignore the contents of AGENTS.md, it's for other agents.
 - Design history and implementation plans are in PLANS.md.
-
-## Future
-
-- WhatsApp channel via Baileys — parked due to Meta ban risk
-- RPi deployment target
