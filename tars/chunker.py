@@ -12,7 +12,7 @@ _DATA_IMG_RE = re.compile(r"!\[[^\]]*\]\(data:[^)]+\)")
 
 _BOUNDARY_SCORES = {
     "h1": 100, "h2": 90, "h3": 80, "h4": 70, "h5": 60, "h6": 50,
-    "fence": 80, "hr": 70, "blank": 10, "list": 5,
+    "fence": 80, "hr": 70, "blank": 10, "list": 1,
 }
 
 
@@ -23,6 +23,23 @@ class Chunk:
     start_line: int  # 1-indexed
     end_line: int    # 1-indexed, inclusive
     content_hash: str
+    context: str = ""
+
+
+def _build_heading_context(lines, classifications, up_to):
+    """Return 'H1 > H2 > H3' breadcrumb from headings in lines[0:up_to)."""
+    stack = {}
+    for i in range(up_to):
+        kind, _ = classifications[i]
+        if kind and kind.startswith("h"):
+            level = int(kind[1])
+            stack[level] = lines[i].lstrip("#").strip()
+            for deeper in list(stack):
+                if deeper > level:
+                    del stack[deeper]
+    if not stack:
+        return ""
+    return " > ".join(stack[k] for k in sorted(stack))
 
 
 def _estimate_tokens(text: str) -> int:
@@ -62,7 +79,7 @@ def _score_boundary(baseline: int, distance: int, window: int) -> float:
 def chunk_markdown(
     text: str,
     *,
-    target_tokens: int = 800,
+    target_tokens: int = 400,
     overlap_fraction: float = 0.1,
 ) -> list[Chunk]:
     if not text or not text.strip():
@@ -111,6 +128,7 @@ def chunk_markdown(
                     start_line=pos + 1,
                     end_line=total_lines,
                     content_hash=_content_hash(chunk_text),
+                    context=_build_heading_context(lines, classifications, pos),
                 ))
             break
 
@@ -187,6 +205,7 @@ def chunk_markdown(
                 start_line=pos + 1,
                 end_line=best_idx,
                 content_hash=_content_hash(chunk_text),
+                context=_build_heading_context(lines, classifications, pos),
             ))
             seq += 1
 

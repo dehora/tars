@@ -118,7 +118,11 @@ def build_notes_index(*, model: str = DEFAULT_EMBEDDING_MODEL) -> dict:
             delete_chunks_for_file(conn, file_id)
             chunks = chunk_markdown(content)
             if chunks:
-                chunk_embeddings = embed([c.content for c in chunks], model=model)
+                embed_texts = [
+                    (c.context + "\n" + c.content) if c.context else c.content
+                    for c in chunks
+                ]
+                chunk_embeddings = embed(embed_texts, model=model)
                 if len(chunk_embeddings) != len(chunks):
                     conn.execute(
                         "UPDATE files SET content_hash = '' WHERE id = ?",
@@ -209,7 +213,11 @@ def build_index(*, model: str = DEFAULT_EMBEDDING_MODEL) -> dict:
             delete_chunks_for_file(conn, file_id)
             chunks = chunk_markdown(content)
             if chunks:
-                chunk_embeddings = embed([c.content for c in chunks], model=model)
+                embed_texts = [
+                    (c.context + "\n" + c.content) if c.context else c.content
+                    for c in chunks
+                ]
+                chunk_embeddings = embed(embed_texts, model=model)
                 if len(chunk_embeddings) != len(chunks):
                     # Reset hash so the file is reindexed on next run
                     conn.execute(

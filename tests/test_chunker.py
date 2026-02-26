@@ -2,6 +2,7 @@ import unittest
 
 from tars.chunker import (
     Chunk,
+    _build_heading_context,
     _classify_line,
     _content_hash,
     _estimate_tokens,
@@ -51,7 +52,7 @@ class ClassifyLineTests(unittest.TestCase):
     def test_list(self) -> None:
         kind, score = _classify_line("- item")
         self.assertEqual(kind, "list")
-        self.assertEqual(score, 5)
+        self.assertEqual(score, 1)
 
     def test_plain_text(self) -> None:
         kind, score = _classify_line("Just some text.")
@@ -193,6 +194,57 @@ class ChunkMarkdownTests(unittest.TestCase):
         full = "".join(c.content for c in chunks)
         self.assertNotIn("data:image", full)
         self.assertIn("Middle text.", full)
+
+
+class HeadingContextTests(unittest.TestCase):
+    def test_chunk_context_empty_for_no_headings(self) -> None:
+        text = "Just plain text.\n" * 5
+        chunks = chunk_markdown(text, target_tokens=2000)
+        self.assertEqual(len(chunks), 1)
+        self.assertEqual(chunks[0].context, "")
+
+    def test_chunk_context_multi_chunk(self) -> None:
+        text = "# Alpha\n\n" + ("word " * 300 + "\n") * 2
+        text += "\n# Beta\n\n" + ("word " * 300 + "\n") * 2
+        chunks = chunk_markdown(text, target_tokens=200)
+        self.assertGreater(len(chunks), 1)
+        last = chunks[-1]
+        self.assertIn("Beta", last.context)
+
+    def test_chunk_context_nested_headings(self) -> None:
+        text = "# Top\n\n## Middle\n\n### Deep\n\n"
+        text += ("word " * 300 + "\n") * 3
+        chunks = chunk_markdown(text, target_tokens=200)
+        self.assertGreater(len(chunks), 1)
+        second = chunks[1]
+        self.assertEqual(second.context, "Top > Middle > Deep")
+
+    def test_chunk_context_heading_reset(self) -> None:
+        text = "# First\n\n## Sub\n\n"
+        text += ("word " * 300 + "\n") * 2
+        text += "\n# Second\n\n"
+        text += ("word " * 300 + "\n") * 2
+        chunks = chunk_markdown(text, target_tokens=200)
+        last = chunks[-1]
+        self.assertIn("Second", last.context)
+        self.assertNotIn("Sub", last.context)
+
+    def test_content_hash_excludes_context(self) -> None:
+        text = "# Heading\n\n" + ("word " * 300 + "\n") * 3
+        chunks = chunk_markdown(text, target_tokens=200)
+        for chunk in chunks:
+            expected = _content_hash(chunk.content)
+            self.assertEqual(chunk.content_hash, expected)
+
+    def test_list_resists_splitting(self) -> None:
+        text = "# Shopping List\n\n"
+        for i in range(15):
+            text += f"- Item number {i} with some description text\n"
+        chunks = chunk_markdown(text, target_tokens=400)
+        items_in_first = sum(1 for line in chunks[0].content.splitlines()
+                            if line.startswith("- Item"))
+        self.assertGreaterEqual(items_in_first, 10,
+                                "Most list items should stay in the same chunk")
 
 
 if __name__ == "__main__":

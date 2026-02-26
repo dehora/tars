@@ -265,6 +265,30 @@ class BuildNotesIndexTests(unittest.TestCase):
             self.assertEqual(stats2["skipped"], 1)
 
 
+class ContextInEmbeddingTests(unittest.TestCase):
+    def setUp(self) -> None:
+        self._patcher = mock.patch.object(embeddings, "ollama")
+        self._mock_ollama = self._patcher.start()
+        self._mock_ollama.embed.side_effect = _fake_embed
+
+    def tearDown(self) -> None:
+        self._patcher.stop()
+
+    def test_heading_context_prepended_in_embed_input(self) -> None:
+        content = "# Recipes\n\n## Main Dishes\n\n" + ("Pasta with sauce and garlic bread.\n" * 200)
+        with tempfile.TemporaryDirectory() as td:
+            d = Path(td)
+            (d / "Memory.md").write_text(content, encoding="utf-8")
+            with mock.patch.dict(os.environ, {"TARS_MEMORY_DIR": td}):
+                with mock.patch("tars.indexer.embed", side_effect=lambda texts, **kw: [[0.1] * _DIM for _ in texts]) as mock_embed:
+                    build_index(model="test-model")
+            self.assertTrue(mock_embed.called)
+            texts = mock_embed.call_args[0][0]
+            context_texts = [t for t in texts if t.startswith("Recipes > Main Dishes")]
+            self.assertGreater(len(context_texts), 0,
+                               "At least one embed input should have heading context prepended")
+
+
 class StartupIndexTests(unittest.TestCase):
     def test_swallows_exceptions(self) -> None:
         from tars.cli import _startup_index
