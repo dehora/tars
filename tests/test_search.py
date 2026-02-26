@@ -21,6 +21,7 @@ from tars.chunker import Chunk
 from tars.search import (
     SearchResult,
     _reciprocal_rank_fusion,
+    _run_notes_search_tool,
     _run_search_tool,
     _sanitize_fts_query,
     search,
@@ -435,6 +436,44 @@ class SearchWithDbPathTests(unittest.TestCase):
                 results = search_notes("quantum computing", model="test-model")
                 self.assertGreater(len(results), 0)
                 self.assertEqual(results[0].file_title, "ideas")
+
+
+class NotesSearchToolTests(unittest.TestCase):
+    def test_returns_results(self) -> None:
+        fake_results = [
+            SearchResult(
+                content="recipe for pasta",
+                score=0.85,
+                file_path="/notes/cooking.md",
+                file_title="cooking",
+                memory_type="note",
+                start_line=1,
+                end_line=3,
+                chunk_rowid=1,
+            )
+        ]
+        with mock.patch("tars.search.search_notes", return_value=fake_results):
+            result = json.loads(_run_notes_search_tool("notes_search", {"query": "pasta"}))
+            self.assertIn("results", result)
+            self.assertEqual(len(result["results"]), 1)
+            self.assertEqual(result["results"][0]["content"], "recipe for pasta")
+            self.assertEqual(result["results"][0]["score"], 0.85)
+            self.assertEqual(result["results"][0]["file"], "cooking")
+
+    def test_no_results(self) -> None:
+        with mock.patch("tars.search.search_notes", return_value=[]):
+            result = json.loads(_run_notes_search_tool("notes_search", {"query": "nonexistent"}))
+            self.assertEqual(result["results"], [])
+            self.assertIn("message", result)
+
+    def test_empty_query(self) -> None:
+        result = json.loads(_run_notes_search_tool("notes_search", {"query": ""}))
+        self.assertIn("error", result)
+
+    def test_limit_passed(self) -> None:
+        with mock.patch("tars.search.search_notes", return_value=[]) as mock_search:
+            _run_notes_search_tool("notes_search", {"query": "test", "limit": 3})
+            mock_search.assert_called_once_with("test", limit=3)
 
 
 if __name__ == "__main__":

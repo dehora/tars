@@ -151,6 +151,29 @@ def search_notes(query: str, **kwargs) -> list[SearchResult]:
     return search(query, db_path=_notes_db_path(), **kwargs)
 
 
+def _run_notes_search_tool(name: str, args: dict) -> str:
+    """Handle notes_search tool calls."""
+    query = args.get("query", "")
+    limit = args.get("limit", 5)
+    if not query:
+        return json.dumps({"error": "query is required"})
+    results = search_notes(query, limit=limit)
+    if not results:
+        return json.dumps({"results": [], "message": "No matching notes found."})
+    return json.dumps({
+        "results": [
+            {
+                "content": r.content,
+                "score": round(r.score, 3),
+                "file": r.file_title or r.file_path,
+                "type": r.memory_type,
+                "lines": f"{r.start_line}-{r.end_line}",
+            }
+            for r in results
+        ]
+    })
+
+
 def _run_search_tool(name: str, args: dict) -> str:
     """Handle memory_search tool calls."""
     query = args.get("query", "")

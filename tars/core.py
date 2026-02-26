@@ -51,6 +51,11 @@ when the user asks about something that might be in memory.
 Use note_daily to append thoughts, ideas, or notes to the user's Obsidian \
 daily journal when they ask to jot something down or make a note.
 
+Use notes_search to search the user's personal Obsidian vault when they ask \
+about their own notes, daily journals, or personal knowledge. This is separate \
+from memory_search — memory is tars's own persistent context, notes are the \
+user's personal knowledge base.
+
 Use web_read when the user shares a URL and wants to discuss its content."""
 
 MEMORY_PROMPT_PREFACE = """\

@@ -102,6 +102,19 @@ class TestRouter(unittest.TestCase):
         self.assertEqual(provider, "claude")
         self.assertEqual(model, "sonnet")
 
+    def test_notes_keywords(self):
+        config = ModelConfig(
+            primary_provider="ollama",
+            primary_model="llama3.1:8b",
+            remote_provider="claude",
+            remote_model="sonnet",
+            routing_policy="tool",
+        )
+        for msg in ["check my notes", "search my daily note", "find it in obsidian"]:
+            provider, model = route_message(msg, config)
+            self.assertEqual(provider, "claude", f"failed for: {msg}")
+            self.assertEqual(model, "sonnet", f"failed for: {msg}")
+
     def test_direct_tool_name(self):
         config = ModelConfig(
             primary_provider="ollama",

@@ -6,7 +6,7 @@ import shutil
 
 from tars.memory import _run_memory_tool
 from tars.notes import _run_note_tool
-from tars.search import _run_search_tool
+from tars.search import _run_notes_search_tool, _run_search_tool
 from tars.weather import _run_weather_tool
 from tars.web import _run_web_tool
 
@@ -146,6 +146,28 @@ ANTHROPIC_TOOLS = [
         },
     },
     {
+        "name": "notes_search",
+        "description": (
+            "Search the user's personal notes vault (Obsidian) using hybrid keyword + "
+            "semantic search. Use this when the user asks about their own notes, daily "
+            "journals, or personal knowledge base — NOT for tars memory."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "query": {
+                    "type": "string",
+                    "description": "What to search for in the user's notes",
+                },
+                "limit": {
+                    "type": "integer",
+                    "description": "Max results to return (default 5)",
+                },
+            },
+            "required": ["query"],
+        },
+    },
+    {
         "name": "note_daily",
         "description": "Append a note to today's Obsidian daily note. Use when the user wants to jot something down or save a thought.",
         "input_schema": {
@@ -216,6 +238,8 @@ def run_tool(name: str, args: dict, *, quiet: bool = False) -> str:
             return _run_memory_tool(name, args)
         if name == "memory_search":
             return _run_search_tool(name, args)
+        if name == "notes_search":
+            return _run_notes_search_tool(name, args)
         if name in ("weather_now", "weather_forecast"):
             return _run_weather_tool(name, args)
         if name == "note_daily":

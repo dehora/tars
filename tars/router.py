@@ -10,7 +10,7 @@ _TOOL_NAMES = {
     "todoist_add_task", "todoist_today", "todoist_upcoming",
     "todoist_complete_task", "weather_now", "weather_forecast",
     "memory_remember", "memory_update", "memory_forget", "memory_recall",
-    "memory_search", "note_daily", "web_read",
+    "memory_search", "notes_search", "note_daily", "web_read",
 }
 
 # Keyword patterns that suggest tool intent.  Each pattern is compiled as
@@ -29,6 +29,9 @@ _TOOL_PATTERNS = [
     r"\bnote:", r"\bnote\s+that\b", r"\bjot\s+down\b",
     # Search
     r"\bsearch\s+for\b", r"\blook\s+up\b",
+    # Notes vault
+    r"\bmy\s+notes?\b", r"\bdaily\s+notes?\b", r"\bin\s+my\s+vault\b",
+    r"\bobsidian\b",
     # Web
     r"https?://", r"\bread\s+this\b",
 ]
