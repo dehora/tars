@@ -135,6 +135,10 @@ Add a `/find <query>` REPL command and `tars notes-index` CLI subcommand that se
 
 Telegram bot polling channel via `python-telegram-bot`. Persistent reply keyboard for one-tap commands, slash command dispatch, conversation support, daily brief sender (`tars telegram-brief`). User filtering via `TARS_TELEGRAM_ALLOW` user IDs.
 
+### 29. Chunker & indexer quality improvements
+
+Heading context breadcrumbs on chunks (`H1 > H2 > H3`), reduced chunk size (800 → 400 tokens), list cohesion (score 5 → 1), and context-aware embeddings. Heading context is prepended to embed input only — stored content and FTS unchanged. Tagged `find-v1` before changes. Requires reindex.
+
 ### 23. Capture enrichment
 
 Enhance `/capture` with metadata extraction: author, publish date, tags, reading time. Store in YAML frontmatter. Could also extract and save key quotes or generate a TL;DR alongside the full summary. Makes captures more useful as Obsidian notes.
