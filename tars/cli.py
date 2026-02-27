@@ -10,7 +10,7 @@ from dotenv import load_dotenv
 from tars.colors import bold, cyan, dim, green, red, yellow
 from tars.commands import dispatch
 from tars.config import apply_cli_overrides, load_model_config, model_summary
-from tars.brief import build_brief_sections, format_brief_text
+from tars.brief import build_brief_sections, format_brief_cli
 from tars.conversation import Conversation, process_message, process_message_stream, save_session
 from tars.core import chat
 from tars.embeddings import DEFAULT_EMBEDDING_MODEL
@@ -306,7 +306,7 @@ def _handle_brief() -> None:
     print(dim("  briefing..."))
     sections = build_brief_sections()
     print()
-    for line in format_brief_text(sections).splitlines():
+    for line in format_brief_cli(sections).splitlines():
         print(f"  {line}")
 
 
