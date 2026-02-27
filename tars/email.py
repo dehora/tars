@@ -214,6 +214,10 @@ def send_brief_email() -> None:
 _conversations: dict[str, Conversation] = {}
 _session_files: dict[str, Path | None] = {}
 
+_MAX_RETRIES = 3
+# msg_num → (attempt_count, cached_reply_text_or_None)
+_failed: dict[bytes, tuple[int, str | None]] = {}
+
 
 def run_email(model_config: ModelConfig) -> None:
     """Poll inbox and process messages. Runs until interrupted."""
@@ -254,59 +258,93 @@ def run_email(model_config: ModelConfig) -> None:
                 imap = None
                 continue
 
+            seen_nums: set[bytes] = set()
+
             for msg_num, msg in emails:
+                seen_nums.add(msg_num)
                 tid = _thread_id(msg)
-                body = _extract_body(msg)
                 _, from_addr = email.utils.parseaddr(msg.get("From", ""))
                 subject = msg.get("Subject", "(no subject)")
-                print(f"email: [{from_addr}] {subject}")
 
-                # Try slash command: check subject first, then body
-                slash_reply = dispatch(
-                    subject,
-                    model_config.primary_provider,
-                    model_config.primary_model,
-                )
-                if slash_reply is None and body:
+                attempts, cached_reply = _failed.get(msg_num, (0, None))
+
+                if attempts >= _MAX_RETRIES:
+                    print(f"email: max retries for [{from_addr}] {subject}", file=sys.stderr)
+                    try:
+                        _send_reply(
+                            email_config, msg,
+                            "I wasn't able to send a reply after multiple attempts. "
+                            "Please resend your message.",
+                        )
+                    except Exception:
+                        pass
+                    imap.store(msg_num, "+FLAGS", "\\Seen")
+                    _failed.pop(msg_num, None)
+                    continue
+
+                # Use cached reply from a previous send failure
+                if cached_reply is not None:
+                    reply_text = cached_reply
+                    print(f"email: retrying send ({attempts + 1}/{_MAX_RETRIES}) [{from_addr}]")
+                else:
+                    body = _extract_body(msg)
+                    print(f"email: [{from_addr}] {subject}")
+
+                    # Try slash command: check subject first, then body
                     slash_reply = dispatch(
-                        body,
+                        subject,
                         model_config.primary_provider,
                         model_config.primary_model,
                     )
-                if slash_reply is not None:
-                    reply_text = slash_reply
-                    print(f"email: [slash] {slash_reply[:60]}")
-                elif not body:
-                    # Mark seen even if we skip (no body, not a command).
-                    imap.store(msg_num, "+FLAGS", "\\Seen")
-                    continue
-                else:
-                    # Get or create conversation
-                    if tid not in _conversations:
-                        _conversations[tid] = Conversation(
-                            id=f"email-{tid}",
-                            provider=model_config.primary_provider,
-                            model=model_config.primary_model,
-                            remote_provider=model_config.remote_provider,
-                            remote_model=model_config.remote_model,
-                            routing_policy=model_config.routing_policy,
+                    if slash_reply is None and body:
+                        slash_reply = dispatch(
+                            body,
+                            model_config.primary_provider,
+                            model_config.primary_model,
                         )
-                        _session_files[tid] = _session_path()
-                    conv = _conversations[tid]
+                    if slash_reply is not None:
+                        reply_text = slash_reply
+                        print(f"email: [slash] {slash_reply[:60]}")
+                    elif not body:
+                        imap.store(msg_num, "+FLAGS", "\\Seen")
+                        _failed.pop(msg_num, None)
+                        continue
+                    else:
+                        if tid not in _conversations:
+                            _conversations[tid] = Conversation(
+                                id=f"email-{tid}",
+                                provider=model_config.primary_provider,
+                                model=model_config.primary_model,
+                                remote_provider=model_config.remote_provider,
+                                remote_model=model_config.remote_model,
+                                routing_policy=model_config.routing_policy,
+                            )
+                            _session_files[tid] = _session_path()
+                        conv = _conversations[tid]
 
-                    try:
-                        reply_text = process_message(conv, body, _session_files[tid])
-                    except Exception as e:
-                        print(f"email: process failed: {e}", file=sys.stderr)
-                        reply_text = "Sorry, I encountered an error processing your message."
+                        try:
+                            reply_text = process_message(conv, body, _session_files[tid])
+                        except Exception as e:
+                            error_type = type(e).__name__
+                            print(f"email: process failed: {e}", file=sys.stderr)
+                            reply_text = (
+                                f"I couldn't process your message ({error_type}). "
+                                "Try again later."
+                            )
 
                 try:
                     _send_reply(email_config, msg, reply_text)
-                    # Mark as Seen only after successful reply.
                     imap.store(msg_num, "+FLAGS", "\\Seen")
+                    _failed.pop(msg_num, None)
                     print(f"email: replied to {from_addr}")
                 except Exception as e:
-                    print(f"email: send failed (will retry): {e}", file=sys.stderr)
+                    _failed[msg_num] = (attempts + 1, reply_text)
+                    print(f"email: send failed ({attempts + 1}/{_MAX_RETRIES}): {e}", file=sys.stderr)
+
+            # Clean stale tracking for messages no longer UNSEEN
+            stale = [k for k in _failed if k not in seen_nums]
+            for k in stale:
+                del _failed[k]
 
             time.sleep(email_config["poll_interval"])
 
