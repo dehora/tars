@@ -2,47 +2,17 @@
 
 ## Next
 
-### 13. Email search (`/search` over email)
-
-Add `/search <query>` as a slash command over email. The search infrastructure and email slash command dispatch both exist. (Note: `/search` is already available via Telegram.)
-
-Why: parity with Telegram channel. Very low effort given existing pieces.
-
-### 7. Context-aware tool suggestions
-
-A lightweight intent pre-filter (few-shot prompt or regex patterns) before the main model to improve tool routing. When Memory.md says "I use Todoist for todos" and the user says "remind me to buy eggs", route confidently to todoist.
-
-Why: better routing = fewer `/w` corrections = better Procedural.md rules = better routing. Virtuous cycle.
-
-### 14. Inbound webhooks
-
-A `/webhook` endpoint that accepts POST from IFTTT/Zapier/GitHub and routes through conversation. "GitHub issue assigned to you" → tars creates a todoist task. Turns tars into a personal automation hub.
-
-Why: connects tars to external event sources. Medium effort — needs auth, payload parsing, and action mapping.
-
 ### 16. Conversation export
 
 Dump a conversation or search results as markdown. Useful for pulling tars knowledge back into Obsidian manually or sharing context.
 
 Why: closes the loop between tars conversations and the PKM vault.
 
-### 17. Voice notes via email
-
-Whisper (local via ollama or API) transcribing voice memos sent as email attachments. Email an audio note from your phone → tars transcribes → processes as text. The email infra already handles attachments.
-
-Why: lowest friction input method. Big UX jump but depends on reliable transcription.
-
 ### 19. Proactive nudges
 
 Tars notices patterns in session history ("you add groceries every Thursday") and suggests things. Requires scheduled commands (item 9) plus lightweight pattern detection over sessions.
 
 Why: moves tars from tool to partner. Highest ambition item — depends on several other pieces landing first.
-
-### 22. Safari capture extension
-
-Browser extension (Safari Web Extension) that adds a "Send to tars" button. Captures the current page URL and sends it to `/capture` via the API. Could use the existing `POST /tool` endpoint or a dedicated `POST /capture` route. Lets you capture articles while browsing without switching to the CLI or email.
-
-Why: lowest friction capture path — one click from the browser. Safari Web Extensions use the same WebExtension API as Chrome/Firefox, so it could be portable later.
 
 ### 26. Procedural rule auto-ingest
 
@@ -138,6 +108,10 @@ Telegram bot polling channel via `python-telegram-bot`. Persistent reply keyboar
 ### 29. Chunker & indexer quality improvements
 
 Heading context breadcrumbs on chunks (`H1 > H2 > H3`), reduced chunk size (800 → 400 tokens), list cohesion (score 5 → 1), and context-aware embeddings. Heading context is prepended to embed input only — stored content and FTS unchanged. Tagged `find-v1` before changes. Requires reindex.
+
+### 7. Context-aware tool suggestions
+
+RouteResult with tool hints and procedural memory injected into system prompt. When Memory.md says "I use Todoist for todos" and the user says "remind me to buy eggs", route confidently to todoist.
 
 ### 23. Capture enrichment
 
