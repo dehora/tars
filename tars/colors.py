@@ -51,3 +51,10 @@ def magenta(s: str) -> str:
 
 def blue(s: str) -> str:
     return f"{_BLUE}{s}{RESET}" if _ENABLED else s
+
+
+def link(url: str, text: str) -> str:
+    """Wrap text in an OSC 8 terminal hyperlink."""
+    if not _ENABLED:
+        return text
+    return f"\033]8;;{url}\033\\{text}\033]8;;\033\\"

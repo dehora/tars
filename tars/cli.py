@@ -7,7 +7,7 @@ from pathlib import Path
 
 from dotenv import load_dotenv
 
-from tars.colors import bold, cyan, dim, green, red, yellow
+from tars.colors import bold, cyan, dim, green, link, red, yellow
 from tars.commands import dispatch
 from tars.config import apply_cli_overrides, load_model_config, model_summary
 from tars.brief import build_brief_sections, format_brief_cli
@@ -51,7 +51,10 @@ def _print_search_results(results, mode: str) -> None:
         return
     for i, r in enumerate(results, 1):
         source = r.file_title or r.file_path
-        print(f"  {i}. {dim(f'[{r.score:.3f}]')} {source}:{r.start_line}-{r.end_line} ({r.memory_type})")
+        title = bold(link(f"file://{r.file_path}", source))
+        location = dim(f":{r.start_line}-{r.end_line}")
+        meta = dim(f"[{r.score:.3f}] ({r.memory_type})")
+        print(f"  {i}. {title}{location} {meta}")
         for line in _preview_lines(r.content):
             print(f"     {line}")
         if i < len(results):
