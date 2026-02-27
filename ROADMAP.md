@@ -2,29 +2,51 @@
 
 ## Next
 
-### 16. Conversation export
-
-Dump a conversation or search results as markdown. Useful for pulling tars knowledge back into Obsidian manually or sharing context.
-
-Why: closes the loop between tars conversations and the PKM vault.
-
-### 19. Proactive nudges
-
-Tars notices patterns in session history ("you add groceries every Thursday") and suggests things. Requires scheduled commands (item 9) plus lightweight pattern detection over sessions.
-
-Why: moves tars from tool to partner. Highest ambition item — depends on several other pieces landing first.
-
 ### 26. Procedural rule auto-ingest
 
 When `/review` produces new rules, automatically re-index the procedural file so the rules are immediately searchable. Currently requires a manual `tars index` after review.
 
 Why: closes a gap in the feedback loop. Rules should be live the moment they're accepted.
 
+### 30. QoL: CLI
+
+- Tab completion for slash commands
+- Inline help for tool arguments (e.g. `/capture` shows usage on empty args)
+- Friendlier error messages (model errors, network failures, missing config)
+
+### 31. QoL: Web UI
+
+- Conversation history browser (list past conversations, click to view)
+- Model indicator (which model handled each message)
+- Streaming progress indicator
+
+### 32. QoL: Email reliability
+
+- Don't mark messages Seen until processing succeeds (currently lost on failure)
+- Retry failed processing before moving on
+- Better error reporting back to sender
+
+### 33. QoL: Cross-channel visibility
+
+- Shared view of conversations and state across channels (CLI, web, email, Telegram)
+- Currently each channel feels isolated — no way to see what happened in another
+
 ## Fixes
 
-- tars/cli.py, tars/email.py, and tars/telegram.py: Slash command handling is duplicated across channels as if/elif chains. As more commands are added this will become unwieldy. Suggested fix: extract shared dispatch to `tars/commands.py` with a dispatch table mapping command names to handler functions.
-
 - tars/tools.py _clean_args strips all empty strings. Suggested fix: Consider tool-specific sanitization or only stripping empty strings for parameters.
+
+<details>
+<summary>Parked</summary>
+
+### 16. Conversation export
+
+Dump a conversation or search results as markdown.
+
+### 19. Proactive nudges
+
+Pattern detection over session history for suggestions.
+
+</details>
 
 <details>
 <summary>Done</summary>
