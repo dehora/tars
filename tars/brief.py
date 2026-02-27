@@ -41,7 +41,7 @@ _PRIORITY_COLORS = {
     "p1": dim,
 }
 
-_TEMP_RE = re.compile(r"(\d+°)")
+_TEMP_RE = re.compile(r"(\d+\.?\d*°)")
 _PRECIP_RE = re.compile(r"(🌧\d+%)")
 
 
