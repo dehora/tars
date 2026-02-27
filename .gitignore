@@ -20,3 +20,7 @@ wheels/
 *.png
 *.log
 .DS_Store
+
+# Coverage
+.coverage
+htmlcov/
