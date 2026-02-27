@@ -7,6 +7,7 @@ from pathlib import Path
 
 from dotenv import load_dotenv
 
+from tars.colors import bold, cyan, dim, green, red, yellow
 from tars.commands import dispatch
 from tars.config import apply_cli_overrides, load_model_config, model_summary
 from tars.brief import build_brief_sections, format_brief_text
@@ -50,7 +51,7 @@ def _print_search_results(results, mode: str) -> None:
         return
     for i, r in enumerate(results, 1):
         source = r.file_title or r.file_path
-        print(f"  {i}. [{r.score:.3f}] {source}:{r.start_line}-{r.end_line} ({r.memory_type})")
+        print(f"  {i}. {dim(f'[{r.score:.3f}]')} {source}:{r.start_line}-{r.end_line} ({r.memory_type})")
         for line in _preview_lines(r.content):
             print(f"     {line}")
         if i < len(results):
@@ -95,7 +96,7 @@ def _handle_sessions(user_input: str) -> bool:
             episodic = [r for r in results if r.memory_type == "episodic"]
             _print_search_results(episodic, "episodic")
         except Exception as e:
-            print(f"  [error] search failed: {e}", file=sys.stderr)
+            print(f"  {red('[error]')} search failed: {e}", file=sys.stderr)
         return True
     if stripped == "/session":
         print("  usage: /session <query>")
@@ -118,7 +119,7 @@ def _handle_slash_search(user_input: str) -> bool:
         results = search(query, mode=mode, limit=10)
         _print_search_results(results, mode)
     except Exception as e:
-        print(f"  [error] search failed: {e}", file=sys.stderr)
+        print(f"  {red('[error]')} search failed: {e}", file=sys.stderr)
     return True
 
 
@@ -135,7 +136,7 @@ def _handle_find(user_input: str) -> bool:
         results = search_notes(query, limit=10)
         _print_search_results(results, "notes")
     except Exception as e:
-        print(f"  [error] notes search failed: {e}", file=sys.stderr)
+        print(f"  {red('[error]')} notes search failed: {e}", file=sys.stderr)
     return True
 
 
@@ -170,7 +171,7 @@ def _handle_review(provider: str, model: str) -> None:
 
     n_corrections = corrections.count("## 20") if corrections else 0
     n_rewards = rewards.count("## 20") if rewards else 0
-    print(f"  reviewing {n_corrections} corrections, {n_rewards} rewards...")
+    print(dim(f"  reviewing {n_corrections} corrections, {n_rewards} rewards..."))
 
     prompt = _REVIEW_PROMPT.format(corrections=corrections, rewards=rewards)
     messages = [{"role": "user", "content": prompt}]
@@ -210,7 +211,7 @@ def _handle_review(provider: str, model: str) -> None:
         build_index()
         print("  index updated")
     except Exception as e:
-        print(f"  [warning] reindex failed: {e}", file=sys.stderr)
+        print(f"  {yellow('[warning]')} reindex failed: {e}", file=sys.stderr)
 
 
 _TIDY_PROMPT = """\
@@ -253,7 +254,7 @@ def _handle_tidy(provider: str, model: str) -> None:
         print("  nothing to tidy")
         return
 
-    print("  scanning memory for junk...")
+    print(dim("  scanning memory for junk..."))
     prompt = _TIDY_PROMPT.format(semantic=semantic, procedural=procedural)
     messages = [{"role": "user", "content": prompt}]
     reply = chat(messages, provider, model)
@@ -302,7 +303,7 @@ def _handle_tidy(provider: str, model: str) -> None:
 
 def _handle_brief() -> None:
     """Run daily briefing: todoist + weather."""
-    print("  briefing...")
+    print(dim("  briefing..."))
     sections = build_brief_sections()
     print()
     for line in format_brief_text(sections).splitlines():
@@ -365,7 +366,7 @@ class _Spinner:
         i = 0
         while self._spinning:
             frame = _SPINNER_FRAMES[i % len(_SPINNER_FRAMES)]
-            sys.stdout.write(f"\r  {frame} thinking...")
+            sys.stdout.write(f"\r  {frame} {dim('thinking...')}")
             sys.stdout.flush()
             i += 1
             time.sleep(0.08)
@@ -388,16 +389,18 @@ _LOGO = r"""
 
 
 def _welcome(config) -> None:
-    print(_LOGO.rstrip())
-    print(f"  [{config.primary_provider}:{config.primary_model}] ctrl-d to quit")
-    print("  ? for shortcuts, /help for commands")
+    print(cyan(_LOGO.rstrip()))
+    print(dim(f"  [{config.primary_provider}:{config.primary_model}] ctrl-d to quit"))
+    print(dim("  ? for shortcuts, /help for commands"))
 
 
-_SHORTCUTS = """\
-  /todoist    tasks        /weather    now
-  /brief     daily digest  /find       search notes
-  /memory    recall        /search     search tars
-  /w /r      feedback      /help       full help"""
+def _shortcuts() -> str:
+    return (
+        f"  {cyan('/todoist')}    tasks        {cyan('/weather')}    now\n"
+        f"  {cyan('/brief')}     daily digest  {cyan('/find')}       search notes\n"
+        f"  {cyan('/memory')}    recall        {cyan('/search')}     search tars\n"
+        f"  {cyan('/w /r')}      feedback      {cyan('/help')}       full help"
+    )
 
 
 def repl(config):
@@ -423,48 +426,48 @@ def repl(config):
     try:
         while True:
             try:
-                user_input = input("you> ")
+                user_input = input(bold(green("you> ")))
             except (EOFError, KeyboardInterrupt):
                 print()
                 break
             if not user_input.strip():
                 continue
             if user_input.strip() == "?":
-                print(_SHORTCUTS)
+                print(_shortcuts())
                 continue
             if user_input.strip() == "/help":
-                print("  tools:")
-                print("    /todoist add <text> [--due D] [--project P] [--priority N]")
-                print("    /todoist today|upcoming [days]|complete <ref>")
-                print("    /weather         current conditions")
-                print("    /forecast        today's hourly forecast")
-                print("    /memory          show persistent memory")
-                print("    /remember <semantic|procedural> <text>")
-                print("    /note <text>         append to today's daily note")
-                print("    /capture <url> [--raw]  capture web page to vault")
-                print("    /model           show active model configuration")
-                print("  search:")
-                print("    /search <query>  hybrid keyword + semantic (tars memory)")
-                print("    /sgrep <query>   keyword (FTS5/BM25)")
-                print("    /svec <query>    semantic (vector KNN)")
-                print("    /find <query>    hybrid search over personal notes vault")
-                print("  sessions:")
-                print("    /sessions        list recent sessions")
-                print("    /session <query> search session logs")
-                print("  feedback:")
-                print("    /w [note]        flag last response as wrong")
-                print("    /r [note]        flag last response as good")
-                print("    /review          review corrections and apply learnings")
-                print("    /tidy            clean up memory (duplicates, junk)")
-                print("  daily:")
-                print("    /brief           todoist + weather digest")
-                print("  export:")
-                print("    /export          export conversation as markdown")
-                print("  system:")
-                print("    /schedule        show installed schedules")
-                print("    /stats           memory and index health")
-                print("    /model           show active model configuration")
-                print("  /help              show this help")
+                print(f"  {bold('tools:')}")
+                print(f"    {cyan('/todoist')} add <text> [--due D] [--project P] [--priority N]")
+                print(f"    {cyan('/todoist')} today|upcoming [days]|complete <ref>")
+                print(f"    {cyan('/weather')}         current conditions")
+                print(f"    {cyan('/forecast')}        today's hourly forecast")
+                print(f"    {cyan('/memory')}          show persistent memory")
+                print(f"    {cyan('/remember')} <semantic|procedural> <text>")
+                print(f"    {cyan('/note')} <text>         append to today's daily note")
+                print(f"    {cyan('/capture')} <url> [--raw]  capture web page to vault")
+                print(f"    {cyan('/model')}           show active model configuration")
+                print(f"  {bold('search:')}")
+                print(f"    {cyan('/search')} <query>  hybrid keyword + semantic (tars memory)")
+                print(f"    {cyan('/sgrep')} <query>   keyword (FTS5/BM25)")
+                print(f"    {cyan('/svec')} <query>    semantic (vector KNN)")
+                print(f"    {cyan('/find')} <query>    hybrid search over personal notes vault")
+                print(f"  {bold('sessions:')}")
+                print(f"    {cyan('/sessions')}        list recent sessions")
+                print(f"    {cyan('/session')} <query> search session logs")
+                print(f"  {bold('feedback:')}")
+                print(f"    {cyan('/w')} [note]        flag last response as wrong")
+                print(f"    {cyan('/r')} [note]        flag last response as good")
+                print(f"    {cyan('/review')}          review corrections and apply learnings")
+                print(f"    {cyan('/tidy')}            clean up memory (duplicates, junk)")
+                print(f"  {bold('daily:')}")
+                print(f"    {cyan('/brief')}           todoist + weather digest")
+                print(f"  {bold('export:')}")
+                print(f"    {cyan('/export')}          export conversation as markdown")
+                print(f"  {bold('system:')}")
+                print(f"    {cyan('/schedule')}        show installed schedules")
+                print(f"    {cyan('/stats')}           memory and index health")
+                print(f"    {cyan('/model')}           show active model configuration")
+                print(f"  {cyan('/help')}              show this help")
                 continue
             if user_input.strip().startswith(("/w", "/r")):
                 parts = user_input.strip().split(None, 1)
@@ -554,7 +557,7 @@ def repl(config):
                 if spinner.spinning:
                     spinner.stop()
                 if not got_output:
-                    sys.stdout.write("tars> ")
+                    sys.stdout.write(bold(cyan("tars> ")))
                     got_output = True
                 sys.stdout.write(delta)
                 sys.stdout.flush()
@@ -579,7 +582,7 @@ def _run_index(embedding_model: str) -> None:
     try:
         stats = build_index(model=embedding_model)
     except RuntimeError as e:
-        print(f"  [warning] index update failed ({type(e).__name__}): {e}", file=sys.stderr)
+        print(f"  {yellow('[warning]')} index update failed ({type(e).__name__}): {e}", file=sys.stderr)
         return
     print(
         f"index: {stats['indexed']} indexed, "
@@ -594,7 +597,7 @@ def _run_notes_index(embedding_model: str) -> None:
     try:
         stats = build_notes_index(model=embedding_model)
     except RuntimeError as e:
-        print(f"  [warning] notes index failed ({type(e).__name__}): {e}", file=sys.stderr)
+        print(f"  {yellow('[warning]')} notes index failed ({type(e).__name__}): {e}", file=sys.stderr)
         return
     print(
         f"notes-index: {stats['indexed']} indexed, "
@@ -610,7 +613,7 @@ def _startup_index() -> None:
         build_index()
     except Exception as e:
         print(
-            f"  [warning] index update failed ({type(e).__name__}): {e}",
+            f"  {yellow('[warning]')} index update failed ({type(e).__name__}): {e}",
             file=sys.stderr,
         )
 
@@ -702,7 +705,7 @@ def main():
             results = search(query, mode=mode, limit=args.limit)
             _print_search_results(results, mode)
         except Exception as e:
-            print(f"  [error] search failed: {e}", file=sys.stderr)
+            print(f"  {red('[error]')} search failed: {e}", file=sys.stderr)
         return
 
     if args.command == "serve":
@@ -727,7 +730,7 @@ def main():
         try:
             send_brief_email()
         except Exception as e:
-            print(f"  [error] email brief failed: {e}", file=sys.stderr)
+            print(f"  {red('[error]')} email brief failed: {e}", file=sys.stderr)
         return
 
     if args.command == "telegram":
@@ -742,7 +745,7 @@ def main():
         try:
             send_brief_telegram_sync()
         except Exception as e:
-            print(f"  [error] telegram brief failed: {e}", file=sys.stderr)
+            print(f"  {red('[error]')} telegram brief failed: {e}", file=sys.stderr)
         return
 
     if args.command == "schedule":
