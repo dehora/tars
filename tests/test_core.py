@@ -45,7 +45,7 @@ class ChatRoutingTests(unittest.TestCase):
     def test_chat_passes_search_context(self) -> None:
         with mock.patch.object(core, "chat_ollama", return_value="ok") as m:
             core.chat([], "ollama", "m", search_context="ctx")
-        m.assert_called_once_with([], "m", search_context="ctx", use_tools=True)
+        m.assert_called_once_with([], "m", search_context="ctx", use_tools=True, tool_hints=None)
 
 
 class SystemPromptContentTests(unittest.TestCase):
@@ -59,22 +59,68 @@ class SystemPromptContentTests(unittest.TestCase):
 
 class BuildSystemPromptTests(unittest.TestCase):
     def test_without_context(self) -> None:
-        with mock.patch.object(core, "_load_memory", return_value=""):
+        with (
+            mock.patch.object(core, "_load_memory", return_value=""),
+            mock.patch.object(core, "_load_procedural", return_value=""),
+        ):
             prompt = core._build_system_prompt()
         self.assertEqual(prompt, core.SYSTEM_PROMPT)
         self.assertNotIn("<memory>", prompt)
 
     def test_with_memory(self) -> None:
-        with mock.patch.object(core, "_load_memory", return_value="- fact"):
+        with (
+            mock.patch.object(core, "_load_memory", return_value="- fact"),
+            mock.patch.object(core, "_load_procedural", return_value=""),
+        ):
             prompt = core._build_system_prompt()
         self.assertIn("<memory>", prompt)
         self.assertIn("- fact", prompt)
 
     def test_with_search_context(self) -> None:
-        with mock.patch.object(core, "_load_memory", return_value=""):
+        with (
+            mock.patch.object(core, "_load_memory", return_value=""),
+            mock.patch.object(core, "_load_procedural", return_value=""),
+        ):
             prompt = core._build_system_prompt(search_context="recent stuff")
         self.assertIn("<relevant-context>", prompt)
         self.assertIn("recent stuff", prompt)
+
+    def test_tool_hints_in_prompt(self) -> None:
+        with (
+            mock.patch.object(core, "_load_memory", return_value=""),
+            mock.patch.object(core, "_load_procedural", return_value=""),
+        ):
+            prompt = core._build_system_prompt(tool_hints=["todoist_add_task", "weather_now"])
+        self.assertIn("<tool-hints>", prompt)
+        self.assertIn("todoist_add_task", prompt)
+        self.assertIn("weather_now", prompt)
+
+    def test_procedural_in_prompt(self) -> None:
+        with (
+            mock.patch.object(core, "_load_memory", return_value=""),
+            mock.patch.object(core, "_load_procedural", return_value="- always confirm tasks"),
+        ):
+            prompt = core._build_system_prompt()
+        self.assertIn("<procedural-rules>", prompt)
+        self.assertIn("- always confirm tasks", prompt)
+
+    def test_procedural_empty_excluded(self) -> None:
+        with (
+            mock.patch.object(core, "_load_memory", return_value=""),
+            mock.patch.object(core, "_load_procedural", return_value=""),
+        ):
+            prompt = core._build_system_prompt()
+        self.assertNotIn("<procedural-rules>", prompt)
+
+    def test_tool_hints_before_untrusted(self) -> None:
+        with (
+            mock.patch.object(core, "_load_memory", return_value="- fact"),
+            mock.patch.object(core, "_load_procedural", return_value=""),
+        ):
+            prompt = core._build_system_prompt(tool_hints=["weather_now"])
+        hints_pos = prompt.index("<tool-hints>")
+        preface_pos = prompt.index(core.MEMORY_PROMPT_PREFACE)
+        self.assertLess(hints_pos, preface_pos)
 
 
 class SearchRelevantContextTests(unittest.TestCase):

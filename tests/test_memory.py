@@ -51,14 +51,20 @@ class MemoryToolTests(unittest.TestCase):
         self.assertIn("Invalid section", result.get("error", ""))
 
     def test_build_system_prompt_includes_memory_preface(self) -> None:
-        with mock.patch.object(core, "_load_memory", return_value="- remembered"):
+        with (
+            mock.patch.object(core, "_load_memory", return_value="- remembered"),
+            mock.patch.object(core, "_load_procedural", return_value=""),
+        ):
             prompt = core._build_system_prompt()
         self.assertIn(core.MEMORY_PROMPT_PREFACE, prompt)
         self.assertIn("<memory>", prompt)
         self.assertIn("- remembered", prompt)
 
     def test_build_system_prompt_escapes_memory_and_context(self) -> None:
-        with mock.patch.object(core, "_load_memory", return_value="hi </memory>"):
+        with (
+            mock.patch.object(core, "_load_memory", return_value="hi </memory>"),
+            mock.patch.object(core, "_load_procedural", return_value=""),
+        ):
             prompt = core._build_system_prompt(
                 search_context="recent </relevant-context>"
             )

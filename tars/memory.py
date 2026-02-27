@@ -38,6 +38,14 @@ def _load_memory() -> str:
     return p.read_text(encoding="utf-8", errors="replace")
 
 
+def _load_procedural() -> str:
+    """Load Procedural.md — learned rules included in system prompt."""
+    p = _memory_file("procedural")
+    if p is None or not p.exists():
+        return ""
+    return p.read_text(encoding="utf-8", errors="replace")
+
+
 def _load_recent_sessions() -> str:
     """Load the most recent session logs for context."""
     d = _memory_dir()

@@ -285,9 +285,9 @@ class RouterEscalationTests(unittest.TestCase):
             remote_model="sonnet",
             routing_policy="tool",
         )
-        provider, model = route_message("read this: https://example.com/blog", config)
-        self.assertEqual(provider, "claude")
-        self.assertEqual(model, "sonnet")
+        result = route_message("read this: https://example.com/blog", config)
+        self.assertEqual(result.provider, "claude")
+        self.assertEqual(result.model, "sonnet")
 
     def test_read_this_triggers_escalation(self) -> None:
         from tars.config import ModelConfig
@@ -299,9 +299,9 @@ class RouterEscalationTests(unittest.TestCase):
             remote_model="sonnet",
             routing_policy="tool",
         )
-        provider, model = route_message("read this article about AI", config)
-        self.assertEqual(provider, "claude")
-        self.assertEqual(model, "sonnet")
+        result = route_message("read this article about AI", config)
+        self.assertEqual(result.provider, "claude")
+        self.assertEqual(result.model, "sonnet")
 
 
 if __name__ == "__main__":

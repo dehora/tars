@@ -4,7 +4,7 @@ from collections.abc import Generator
 import anthropic
 import ollama
 
-from tars.memory import _load_memory
+from tars.memory import _load_memory, _load_procedural
 from tars.tools import ANTHROPIC_TOOLS, OLLAMA_TOOLS, run_tool
 
 _MAX_TOKENS = int(os.environ.get("TARS_MAX_TOKENS", "1024"))
@@ -89,12 +89,25 @@ def _search_relevant_context(opening_message: str, limit: int = 5) -> str:
     return "\n\n".join(parts)
 
 
-def _build_system_prompt(*, search_context: str = "") -> str:
+def _build_system_prompt(*, search_context: str = "", tool_hints: list[str] | None = None) -> str:
     prompt = SYSTEM_PROMPT
+
+    if tool_hints:
+        hint_text = ", ".join(tool_hints)
+        prompt += (
+            f"\n\n<tool-hints>"
+            f"\nBased on the user's message, these tools are likely relevant: {hint_text}"
+            f"\n</tool-hints>"
+        )
+
+    procedural = _load_procedural()
     memory = _load_memory()
-    if not memory and not search_context:
-        return prompt
-    prompt += f"\n\n---\n\n{MEMORY_PROMPT_PREFACE}"
+    has_untrusted = bool(procedural or memory or search_context)
+
+    if has_untrusted:
+        prompt += f"\n\n---\n\n{MEMORY_PROMPT_PREFACE}"
+    if procedural:
+        prompt += f"\n\n<procedural-rules>\n{_escape_prompt_block(procedural)}\n</procedural-rules>"
     if memory:
         prompt += f"\n\n<memory>\n{_escape_prompt_block(memory)}\n</memory>"
     if search_context:
@@ -103,7 +116,8 @@ def _build_system_prompt(*, search_context: str = "") -> str:
 
 
 def chat_anthropic(
-    messages: list[dict], model: str, *, search_context: str = "", use_tools: bool = True,
+    messages: list[dict], model: str, *,
+    search_context: str = "", use_tools: bool = True, tool_hints: list[str] | None = None,
 ) -> str:
     resolved = CLAUDE_MODELS.get(model, model)
     client = anthropic.Anthropic()
@@ -113,7 +127,7 @@ def chat_anthropic(
     while True:
         kwargs: dict = dict(
             model=resolved, max_tokens=_MAX_TOKENS,
-            system=_build_system_prompt(search_context=search_context),
+            system=_build_system_prompt(search_context=search_context, tool_hints=tool_hints),
             messages=local_messages,
         )
         if tools:
@@ -143,9 +157,10 @@ def chat_anthropic(
 
 
 def chat_ollama(
-    messages: list[dict], model: str, *, search_context: str = "", use_tools: bool = True,
+    messages: list[dict], model: str, *,
+    search_context: str = "", use_tools: bool = True, tool_hints: list[str] | None = None,
 ) -> str:
-    local_messages = [{"role": "system", "content": _build_system_prompt(search_context=search_context)}]
+    local_messages = [{"role": "system", "content": _build_system_prompt(search_context=search_context, tool_hints=tool_hints)}]
     local_messages.extend(m.copy() for m in messages)
     tools = OLLAMA_TOOLS if use_tools else []
 
@@ -169,12 +184,12 @@ def chat_ollama(
 
 def chat(
     messages: list[dict], provider: str, model: str,
-    *, search_context: str = "", use_tools: bool = True,
+    *, search_context: str = "", use_tools: bool = True, tool_hints: list[str] | None = None,
 ) -> str:
     if provider == "claude":
-        return chat_anthropic(messages, model, search_context=search_context, use_tools=use_tools)
+        return chat_anthropic(messages, model, search_context=search_context, use_tools=use_tools, tool_hints=tool_hints)
     if provider == "ollama":
-        return chat_ollama(messages, model, search_context=search_context, use_tools=use_tools)
+        return chat_ollama(messages, model, search_context=search_context, use_tools=use_tools, tool_hints=tool_hints)
     raise ValueError(f"Unknown provider: {provider}")
 
 
@@ -203,13 +218,14 @@ def chat(
 
 
 def chat_anthropic_stream(
-    messages: list[dict], model: str, *, search_context: str = "",
+    messages: list[dict], model: str, *,
+    search_context: str = "", tool_hints: list[str] | None = None,
 ) -> Generator[str, None, None]:
     """Streaming version of chat_anthropic. Yields text deltas."""
     resolved = CLAUDE_MODELS.get(model, model)
     client = anthropic.Anthropic()
     local_messages = [m.copy() for m in messages]
-    system = _build_system_prompt(search_context=search_context)
+    system = _build_system_prompt(search_context=search_context, tool_hints=tool_hints)
 
     # Step 1: tool-calling loop (non-streamed).
     # Keep going until the model stops requesting tools.
@@ -251,10 +267,11 @@ def chat_anthropic_stream(
 
 
 def chat_ollama_stream(
-    messages: list[dict], model: str, *, search_context: str = "",
+    messages: list[dict], model: str, *,
+    search_context: str = "", tool_hints: list[str] | None = None,
 ) -> Generator[str, None, None]:
     """Streaming version of chat_ollama. Yields text deltas."""
-    local_messages = [{"role": "system", "content": _build_system_prompt(search_context=search_context)}]
+    local_messages = [{"role": "system", "content": _build_system_prompt(search_context=search_context, tool_hints=tool_hints)}]
     local_messages.extend(m.copy() for m in messages)
 
     # Step 1: tool-calling loop (non-streamed), same as chat_ollama.
@@ -278,12 +295,13 @@ def chat_ollama_stream(
 
 
 def chat_stream(
-    messages: list[dict], provider: str, model: str, *, search_context: str = "",
+    messages: list[dict], provider: str, model: str, *,
+    search_context: str = "", tool_hints: list[str] | None = None,
 ) -> Generator[str, None, None]:
     """Route to the appropriate streaming chat function."""
     if provider == "claude":
-        yield from chat_anthropic_stream(messages, model, search_context=search_context)
+        yield from chat_anthropic_stream(messages, model, search_context=search_context, tool_hints=tool_hints)
     elif provider == "ollama":
-        yield from chat_ollama_stream(messages, model, search_context=search_context)
+        yield from chat_ollama_stream(messages, model, search_context=search_context, tool_hints=tool_hints)
     else:
         raise ValueError(f"Unknown provider: {provider}")

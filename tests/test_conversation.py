@@ -19,6 +19,7 @@ sys.modules["anthropic"].APITimeoutError = type("APITimeoutError", (Exception,),
 
 from tars import conversation
 from tars.conversation import Conversation, process_message, process_message_stream, save_session
+from tars.router import RouteResult
 
 
 class ProcessMessageTests(unittest.TestCase):
@@ -104,7 +105,7 @@ class EscalationFallbackTests(unittest.TestCase):
     def test_rate_limit_falls_back_to_default(self) -> None:
         conv = Conversation(id="test", provider="ollama", model="llama3.1:8b")
         with (
-            mock.patch.object(conversation, "route_message", return_value=("claude", "sonnet")),
+            mock.patch.object(conversation, "route_message", return_value=RouteResult("claude", "sonnet")),
             mock.patch.object(
                 conversation, "chat",
                 side_effect=[self._api_error("RateLimitError"), "fallback reply"],
@@ -120,7 +121,7 @@ class EscalationFallbackTests(unittest.TestCase):
     def test_bad_request_does_not_fall_back(self) -> None:
         conv = Conversation(id="test", provider="ollama", model="llama3.1:8b")
         with (
-            mock.patch.object(conversation, "route_message", return_value=("claude", "sonnet")),
+            mock.patch.object(conversation, "route_message", return_value=RouteResult("claude", "sonnet")),
             mock.patch.object(
                 conversation, "chat",
                 side_effect=self._api_error("BadRequestError"),
@@ -134,7 +135,7 @@ class EscalationFallbackTests(unittest.TestCase):
         _anthropic = sys.modules["anthropic"]
         conv = Conversation(id="test", provider="claude", model="sonnet")
         with (
-            mock.patch.object(conversation, "route_message", return_value=("claude", "sonnet")),
+            mock.patch.object(conversation, "route_message", return_value=RouteResult("claude", "sonnet")),
             mock.patch.object(
                 conversation, "chat",
                 side_effect=self._api_error("BadRequestError"),
@@ -148,7 +149,7 @@ class EscalationFallbackTests(unittest.TestCase):
         err = self._api_error("RateLimitError")
 
         with (
-            mock.patch.object(conversation, "route_message", return_value=("claude", "sonnet")),
+            mock.patch.object(conversation, "route_message", return_value=RouteResult("claude", "sonnet")),
             mock.patch.object(conversation, "chat", side_effect=err),
             mock.patch.object(conversation, "chat_stream", return_value=iter(["fall", "back"])),
         ):
@@ -160,7 +161,7 @@ class EscalationFallbackTests(unittest.TestCase):
         conv = Conversation(id="test", provider="ollama", model="llama3.1:8b")
 
         with (
-            mock.patch.object(conversation, "route_message", return_value=("claude", "sonnet")),
+            mock.patch.object(conversation, "route_message", return_value=RouteResult("claude", "sonnet")),
             mock.patch.object(conversation, "chat", return_value="buffered response") as mock_chat,
             mock.patch.object(conversation, "chat_stream") as mock_stream,
         ):
@@ -177,7 +178,7 @@ class EscalationFallbackTests(unittest.TestCase):
         err = self._api_error("RateLimitError")
 
         with (
-            mock.patch.object(conversation, "route_message", return_value=("claude", "sonnet")),
+            mock.patch.object(conversation, "route_message", return_value=RouteResult("claude", "sonnet")),
             mock.patch.object(conversation, "chat", side_effect=err),
             mock.patch.object(conversation, "chat_stream", return_value=iter(["fall", "back"])),
         ):
@@ -190,7 +191,7 @@ class EscalationFallbackTests(unittest.TestCase):
         conv = Conversation(id="test", provider="ollama", model="llama3.1:8b")
 
         with (
-            mock.patch.object(conversation, "route_message", return_value=("ollama", "llama3.1:8b")),
+            mock.patch.object(conversation, "route_message", return_value=RouteResult("ollama", "llama3.1:8b")),
             mock.patch.object(conversation, "chat") as mock_chat,
             mock.patch.object(conversation, "chat_stream", return_value=iter(["streamed"])) as mock_stream,
         ):
@@ -205,7 +206,7 @@ class EscalationFallbackTests(unittest.TestCase):
         err = self._api_error("BadRequestError")
 
         with (
-            mock.patch.object(conversation, "route_message", return_value=("claude", "sonnet")),
+            mock.patch.object(conversation, "route_message", return_value=RouteResult("claude", "sonnet")),
             mock.patch.object(conversation, "chat", side_effect=err),
         ):
             _anthropic = sys.modules["anthropic"]

@@ -81,11 +81,13 @@ def process_message(
             print(f"  [warning] startup search failed: {e}", file=sys.stderr)
 
     conv.messages.append({"role": "user", "content": user_input})
-    provider, model = route_message(user_input, _model_config_for(conv))
+    route = route_message(user_input, _model_config_for(conv))
+    provider, model = route.provider, route.model
     escalated = (provider, model) != (conv.provider, conv.model)
     try:
         reply = chat(
-            conv.messages, provider, model, search_context=conv.search_context,
+            conv.messages, provider, model,
+            search_context=conv.search_context, tool_hints=route.tool_hints,
         )
     except (anthropic.APIStatusError, anthropic.APIConnectionError, anthropic.APITimeoutError) as exc:
         if not escalated or not _should_fallback(exc):
@@ -93,7 +95,8 @@ def process_message(
         status = getattr(exc, "status_code", "connection")
         print(f"  [router] escalation failed ({status}), falling back to {conv.provider}:{conv.model}", file=sys.stderr)
         reply = chat(
-            conv.messages, conv.provider, conv.model, search_context=conv.search_context,
+            conv.messages, conv.provider, conv.model,
+            search_context=conv.search_context, tool_hints=route.tool_hints,
         )
     conv.messages.append({"role": "assistant", "content": reply})
     conv.msg_count += 1
@@ -120,14 +123,18 @@ def process_message_stream(
     conv.messages.append({"role": "user", "content": user_input})
 
     # Yield deltas to the caller while accumulating the full reply.
-    provider, model = route_message(user_input, _model_config_for(conv))
+    route = route_message(user_input, _model_config_for(conv))
+    provider, model = route.provider, route.model
     escalated = (provider, model) != (conv.provider, conv.model)
     full_reply: list[str] = []
     if escalated:
         # Buffer escalated calls so we can fall back cleanly without emitting
         # partial output followed by a second full response.
         try:
-            reply = chat(conv.messages, provider, model, search_context=conv.search_context)
+            reply = chat(
+                conv.messages, provider, model,
+                search_context=conv.search_context, tool_hints=route.tool_hints,
+            )
             full_reply = [reply]
             yield reply
         except (anthropic.APIStatusError, anthropic.APIConnectionError, anthropic.APITimeoutError) as exc:
@@ -136,13 +143,15 @@ def process_message_stream(
             status = getattr(exc, "status_code", "connection")
             print(f"  [router] escalation failed ({status}), falling back to {conv.provider}:{conv.model}", file=sys.stderr)
             for delta in chat_stream(
-                conv.messages, conv.provider, conv.model, search_context=conv.search_context,
+                conv.messages, conv.provider, conv.model,
+                search_context=conv.search_context, tool_hints=route.tool_hints,
             ):
                 full_reply.append(delta)
                 yield delta
     else:
         for delta in chat_stream(
-            conv.messages, provider, model, search_context=conv.search_context,
+            conv.messages, provider, model,
+            search_context=conv.search_context, tool_hints=route.tool_hints,
         ):
             full_reply.append(delta)
             yield delta

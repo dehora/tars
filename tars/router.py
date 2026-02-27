@@ -2,8 +2,17 @@
 
 import re
 import sys
+from dataclasses import dataclass, field
 
 from tars.config import ModelConfig
+
+
+@dataclass(frozen=True)
+class RouteResult:
+    provider: str
+    model: str
+    tool_hints: list[str] = field(default_factory=list)
+
 
 # Tool names from tars/tools.py — direct mentions always escalate.
 _TOOL_NAMES = {
@@ -13,52 +22,75 @@ _TOOL_NAMES = {
     "memory_search", "notes_search", "note_daily", "web_read",
 }
 
-# Keyword patterns that suggest tool intent.  Each pattern is compiled as
-# case-insensitive and checked against the full message text.
-_TOOL_PATTERNS = [
+# Keyword patterns that suggest tool intent, mapped to relevant tool names.
+_TOOL_HINT_PATTERNS: list[tuple[str, list[str]]] = [
     # Todoist
-    r"\badd\s+task\b", r"\btodo\b", r"\btodoist\b", r"\bremind\s+me\b",
-    r"\bbuy\b", r"\bgroceries\b", r"\btasks?\s+(today|upcoming|due)\b",
-    r"\bcomplete\s+task\b",
+    (r"\badd\s+task\b",                ["todoist_add_task"]),
+    (r"\btodo\b",                      ["todoist_add_task", "todoist_today"]),
+    (r"\btodoist\b",                   ["todoist_add_task", "todoist_today", "todoist_upcoming"]),
+    (r"\bremind\s+me\b",              ["todoist_add_task"]),
+    (r"\bbuy\b",                       ["todoist_add_task"]),
+    (r"\bgroceries\b",                ["todoist_add_task"]),
+    (r"\btasks?\s+(today|upcoming|due)\b", ["todoist_today", "todoist_upcoming"]),
+    (r"\bcomplete\s+task\b",          ["todoist_complete_task"]),
     # Weather
-    r"\bweather\b", r"\bforecast\b", r"\btemperature\b",
-    r"\bwill\s+it\s+rain\b",
+    (r"\bweather\b",                   ["weather_now", "weather_forecast"]),
+    (r"\bforecast\b",                  ["weather_forecast"]),
+    (r"\btemperature\b",              ["weather_now"]),
+    (r"\bwill\s+it\s+rain\b",        ["weather_now"]),
     # Memory
-    r"\bremember\b", r"\bforget\b", r"\brecall\b",
+    (r"\bremember\b",                  ["memory_remember"]),
+    (r"\bforget\b",                    ["memory_forget"]),
+    (r"\brecall\b",                    ["memory_recall"]),
     # Notes
-    r"\bnote:", r"\bnote\s+that\b", r"\bjot\s+down\b",
+    (r"\bnote:",                       ["note_daily"]),
+    (r"\bnote\s+that\b",             ["note_daily"]),
+    (r"\bjot\s+down\b",              ["note_daily"]),
     # Search
-    r"\bsearch\s+for\b", r"\blook\s+up\b",
+    (r"\bsearch\s+for\b",            ["memory_search"]),
+    (r"\blook\s+up\b",               ["memory_search"]),
     # Notes vault
-    r"\bmy\s+notes?\b", r"\bdaily\s+notes?\b", r"\bin\s+my\s+vault\b",
-    r"\bobsidian\b",
+    (r"\bmy\s+notes?\b",             ["notes_search"]),
+    (r"\bdaily\s+notes?\b",          ["notes_search", "note_daily"]),
+    (r"\bin\s+my\s+vault\b",         ["notes_search"]),
+    (r"\bobsidian\b",                 ["notes_search"]),
     # Web
-    r"https?://", r"\bread\s+this\b",
+    (r"https?://",                     ["web_read"]),
+    (r"\bread\s+this\b",             ["web_read"]),
 ]
 
-_COMPILED_PATTERNS = [re.compile(p, re.IGNORECASE) for p in _TOOL_PATTERNS]
+_COMPILED_HINT_PATTERNS = [(re.compile(p, re.IGNORECASE), hints) for p, hints in _TOOL_HINT_PATTERNS]
 
 
-def _has_tool_intent(text: str) -> str | None:
+def _has_tool_intent(text: str) -> tuple[str | None, list[str]]:
     """Check whether text contains signals suggesting tool use.
 
-    Returns the matched trigger string, or None.
+    Returns (trigger_string, deduplicated_tool_hints).
     """
     lower = text.lower()
     for name in _TOOL_NAMES:
         if name in lower:
-            return name
-    for pat, raw in zip(_COMPILED_PATTERNS, _TOOL_PATTERNS):
+            return name, [name]
+
+    trigger = None
+    seen: set[str] = set()
+    hints: list[str] = []
+    for pat, pat_hints in _COMPILED_HINT_PATTERNS:
         m = pat.search(text)
         if m:
-            return m.group()
-    return None
+            if trigger is None:
+                trigger = m.group()
+            for h in pat_hints:
+                if h not in seen:
+                    seen.add(h)
+                    hints.append(h)
+    return trigger, hints
 
 
-def route_message(user_input: str, config: ModelConfig) -> tuple[str, str]:
+def route_message(user_input: str, config: ModelConfig) -> RouteResult:
     """Decide which provider/model to use for a message.
 
-    Returns (provider, model) — either the default or the escalation target.
+    Returns a RouteResult with provider, model, and tool_hints.
     """
     default_provider = config.primary_provider
     default_model = config.primary_model
@@ -70,26 +102,29 @@ def route_message(user_input: str, config: ModelConfig) -> tuple[str, str]:
             f"  [router] {default_provider}:{default_model} (routing={config.routing_policy})",
             file=sys.stderr,
         )
-        return default_provider, default_model
+        return RouteResult(default_provider, default_model)
 
     if esc_provider is None or esc_model is None:
         print(
             f"  [router] {default_provider}:{default_model} (no escalation configured)",
             file=sys.stderr,
         )
-        return default_provider, default_model
+        return RouteResult(default_provider, default_model)
 
     if default_provider == esc_provider and default_model == esc_model:
         print(
             f"  [router] {default_provider}:{default_model} (default matches remote)",
             file=sys.stderr,
         )
-        return default_provider, default_model
+        return RouteResult(default_provider, default_model)
 
-    trigger = _has_tool_intent(user_input)
+    trigger, hints = _has_tool_intent(user_input)
     if trigger:
-        print(f"  [router] escalating to {esc_provider}:{esc_model} (matched: {trigger!r})", file=sys.stderr)
-        return esc_provider, esc_model
+        print(
+            f"  [router] escalating to {esc_provider}:{esc_model} (matched: {trigger!r}, hints: {hints})",
+            file=sys.stderr,
+        )
+        return RouteResult(esc_provider, esc_model, hints)
 
     print(f"  [router] {default_provider}:{default_model} (no tool intent)", file=sys.stderr)
-    return default_provider, default_model
+    return RouteResult(default_provider, default_model)
