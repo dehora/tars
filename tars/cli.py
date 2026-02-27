@@ -7,6 +7,7 @@ from pathlib import Path
 
 from dotenv import load_dotenv
 
+from tars.colors import _ENABLED as _COLORS_ENABLED
 from tars.colors import bold, cyan, dim, green, link, red, yellow
 from tars.commands import dispatch
 from tars.config import apply_cli_overrides, load_model_config, model_summary
@@ -325,6 +326,8 @@ _SLASH_COMMANDS = [
     "/help", "/clear",
 ]
 
+_COMMAND_NAMES = {c.strip() for c in _SLASH_COMMANDS} | {"?"}
+
 _TODOIST_SUBS = ["add ", "today", "upcoming ", "complete "]
 _REMEMBER_SUBS = ["semantic ", "procedural "]
 
@@ -344,6 +347,17 @@ def _completer(text: str, state: int) -> str | None:
     else:
         options = [c for c in _SLASH_COMMANDS if c.startswith(text)]
     return options[state] if state < len(options) else None
+
+
+def _recolor_input(user_input: str) -> None:
+    stripped = user_input.strip()
+    cmd = stripped.split()[0] if stripped else ""
+    if cmd not in _COMMAND_NAMES:
+        return
+    if not _COLORS_ENABLED:
+        return
+    colored = user_input.replace(cmd, cyan(cmd), 1)
+    print(f"\033[A\033[2K{bold(green('you> '))}{colored}")
 
 
 _SPINNER_FRAMES = "⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏"
@@ -424,7 +438,10 @@ def repl(config):
     readline.set_history_length(1000)
     readline.set_completer(_completer)
     readline.set_completer_delims("")
-    readline.parse_and_bind("tab: complete")
+    if "libedit" in (readline.__doc__ or ""):
+        readline.parse_and_bind("bind ^I rl_complete")
+    else:
+        readline.parse_and_bind("tab: complete")
     _welcome(config)
     try:
         while True:
@@ -435,6 +452,7 @@ def repl(config):
                 break
             if not user_input.strip():
                 continue
+            _recolor_input(user_input)
             if user_input.strip() == "?":
                 print(_shortcuts())
                 continue
