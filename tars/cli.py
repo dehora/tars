@@ -378,6 +378,28 @@ class _Spinner:
         sys.stdout.flush()
 
 
+_LOGO = r"""
+  _
+ | |_ __ _ _ __ ___
+ | __/ _` | '__/ __|
+ | || (_| | |  \__ \
+  \__\__,_|_|  |___/
+"""
+
+
+def _welcome(config) -> None:
+    print(_LOGO.rstrip())
+    print(f"  [{config.primary_provider}:{config.primary_model}] ctrl-d to quit")
+    print("  ? for shortcuts, /help for commands")
+
+
+_SHORTCUTS = """\
+  /todoist    tasks        /weather    now
+  /brief     daily digest  /find       search notes
+  /memory    recall        /search     search tars
+  /w /r      feedback      /help       full help"""
+
+
 def repl(config):
     conv = Conversation(
         id="repl",
@@ -397,7 +419,7 @@ def repl(config):
     readline.set_completer(_completer)
     readline.set_completer_delims("")
     readline.parse_and_bind("tab: complete")
-    print(f"tars [{config.primary_provider}:{config.primary_model}] (ctrl-d to quit)")
+    _welcome(config)
     try:
         while True:
             try:
@@ -406,6 +428,9 @@ def repl(config):
                 print()
                 break
             if not user_input.strip():
+                continue
+            if user_input.strip() == "?":
+                print(_SHORTCUTS)
                 continue
             if user_input.strip() == "/help":
                 print("  tools:")
