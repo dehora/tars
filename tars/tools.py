@@ -219,6 +219,16 @@ def _resolve_td() -> str | None:
     td_bin = shutil.which("td")
     if td_bin:
         return td_bin
+    # Check fnm stable paths (Node.js version manager)
+    fnm_base = os.path.expanduser("~/.local/share/fnm/node-versions")
+    if os.path.isdir(fnm_base):
+        try:
+            for ver in sorted(os.listdir(fnm_base), reverse=True):
+                fnm_td = os.path.join(fnm_base, ver, "installation", "bin", "td")
+                if os.path.isfile(fnm_td) and os.access(fnm_td, os.X_OK):
+                    return fnm_td
+        except OSError:
+            pass
     for candidate in (
         os.path.expanduser("~/.local/bin/td"),
         "/opt/homebrew/bin/td",

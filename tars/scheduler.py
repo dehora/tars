@@ -32,6 +32,7 @@ _KNOWN_ENV_KEYS = [
     "TARS_API_TOKEN",
     "DEFAULT_LAT",
     "DEFAULT_LON",
+    "TARS_TD",
 ]
 
 
