@@ -64,6 +64,28 @@ def _load_dotenv_values() -> dict[str, str | None]:
         return {}
 
 
+def _build_path() -> str:
+    """Build a PATH for scheduled environments.
+
+    launchd/systemd run with minimal PATH that lacks tool directories
+    (e.g. fnm-managed node). Resolve stable paths for known dependencies.
+    """
+    dirs: list[str] = []
+    # fnm stable node bin (needed by node-based CLIs like td)
+    fnm_base = Path.home() / ".local" / "share" / "fnm" / "node-versions"
+    if fnm_base.is_dir():
+        try:
+            for ver in sorted(os.listdir(fnm_base), reverse=True):
+                bin_dir = fnm_base / ver / "installation" / "bin"
+                if (bin_dir / "node").is_file():
+                    dirs.append(str(bin_dir))
+                    break
+        except OSError:
+            pass
+    dirs.extend(["/usr/local/bin", "/usr/bin", "/bin"])
+    return ":".join(dirs)
+
+
 def _capture_env() -> dict[str, str]:
     """Capture known tars env vars from .env and current environment."""
     env: dict[str, str] = {}
@@ -78,6 +100,7 @@ def _capture_env() -> dict[str, str]:
         val = os.environ.get(key)
         if val:
             env[key] = val
+    env["PATH"] = _build_path()
     return env
 
 
