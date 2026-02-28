@@ -8,7 +8,7 @@ sys.modules.setdefault("anthropic", mock.Mock())
 sys.modules.setdefault("ollama", mock.Mock())
 sys.modules.setdefault("dotenv", mock.Mock(load_dotenv=lambda: None))
 
-from tars.commands import _export_conversation, _parse_todoist_add, dispatch
+from tars.commands import _export_conversation, _parse_todoist_add, command_names, dispatch
 
 
 class ParseTodoistAddTests(unittest.TestCase):
@@ -60,7 +60,9 @@ class DispatchTests(unittest.TestCase):
         self.assertIsNone(dispatch("just a message"))
 
     def test_unrecognized_command(self) -> None:
-        self.assertIsNone(dispatch("/unknown stuff"))
+        result = dispatch("/unknown stuff")
+        self.assertIsNotNone(result)
+        self.assertIn("Unknown command", result)
 
     @mock.patch("tars.commands.run_tool", return_value='{"ok": true}')
     def test_weather(self, mock_run) -> None:
@@ -264,6 +266,125 @@ class ExportTests(unittest.TestCase):
         conv = Conversation(id="test-2", provider="ollama", model="test")
         result = _export_conversation(conv)
         self.assertEqual(result, "No conversation to export.")
+
+
+class CentralizedDispatchTests(unittest.TestCase):
+    def test_dispatch_channel_guard_cli_only(self) -> None:
+        result = dispatch("/review", context={"channel": "telegram"})
+        self.assertIn("CLI", result)
+
+    def test_dispatch_channel_guard_interactive(self) -> None:
+        result = dispatch("/w", context={"channel": "telegram"})
+        self.assertIn("CLI", result)
+
+    def test_dispatch_unknown_slash_returns_error(self) -> None:
+        result = dispatch("/notacommand")
+        self.assertIsNotNone(result)
+        self.assertIn("Unknown command: /notacommand", result)
+        self.assertIn("/help", result)
+
+    def test_dispatch_question_mark(self) -> None:
+        result = dispatch("?")
+        self.assertIsNotNone(result)
+        self.assertIn("/todoist", result)
+        self.assertIn("/help", result)
+
+    @mock.patch("tars.commands._dispatch_stats", return_value="db: 1 MB")
+    def test_dispatch_stats(self, mock_stats) -> None:
+        result = dispatch("/stats")
+        self.assertEqual(result, "db: 1 MB")
+
+    def test_dispatch_model_with_config(self) -> None:
+        from tars.config import ModelConfig
+        config = ModelConfig(
+            primary_provider="claude",
+            primary_model="sonnet",
+            remote_provider=None,
+            remote_model=None,
+        )
+        result = dispatch("/model", context={"channel": "cli", "config": config})
+        self.assertIn("primary: claude:sonnet", result)
+        self.assertIn("remote: none", result)
+
+    def test_dispatch_model_no_config(self) -> None:
+        result = dispatch("/model", context={"channel": "cli"})
+        self.assertIn("no model config", result)
+
+    @mock.patch("tars.commands._dispatch_search", return_value="1. result")
+    def test_dispatch_sgrep(self, mock_search) -> None:
+        result = dispatch("/sgrep test query")
+        self.assertEqual(result, "1. result")
+        mock_search.assert_called_once_with("test query", mode="fts")
+
+    @mock.patch("tars.commands._dispatch_search", return_value="1. result")
+    def test_dispatch_svec(self, mock_search) -> None:
+        result = dispatch("/svec test query")
+        self.assertEqual(result, "1. result")
+        mock_search.assert_called_once_with("test query", mode="vec")
+
+    def test_dispatch_sgrep_no_query(self) -> None:
+        result = dispatch("/sgrep")
+        self.assertIn("Usage", result)
+
+    def test_dispatch_svec_no_query(self) -> None:
+        result = dispatch("/svec")
+        self.assertIn("Usage", result)
+
+    def test_dispatch_help(self) -> None:
+        result = dispatch("/help")
+        self.assertIn("/todoist", result)
+        self.assertIn("/weather", result)
+        self.assertIn("/search", result)
+        self.assertIn("/help", result)
+
+    def test_dispatch_clear(self) -> None:
+        result = dispatch("/clear")
+        self.assertEqual(result, "__clear__")
+
+    @mock.patch("tars.commands._dispatch_session_search", return_value="1. session result")
+    def test_dispatch_session_search(self, mock_search) -> None:
+        result = dispatch("/session test")
+        self.assertEqual(result, "1. session result")
+
+    def test_dispatch_session_no_query(self) -> None:
+        result = dispatch("/session")
+        self.assertIn("Usage", result)
+
+    @mock.patch("tars.commands._dispatch_schedule", return_value="no schedules installed")
+    def test_dispatch_schedule(self, mock_sched) -> None:
+        result = dispatch("/schedule")
+        self.assertEqual(result, "no schedules installed")
+
+    def test_command_names_complete(self) -> None:
+        names = command_names()
+        expected = {
+            "/todoist", "/weather", "/forecast", "/memory", "/remember", "/note",
+            "/read", "/capture", "/brief",
+            "/search", "/sgrep", "/svec", "/find",
+            "/sessions", "/session",
+            "/w", "/r", "/review", "/tidy",
+            "/stats", "/schedule", "/model",
+            "/export", "/help", "/clear",
+        }
+        self.assertEqual(names, expected)
+
+    def test_dispatch_feedback_w(self) -> None:
+        from tars.conversation import Conversation
+        conv = Conversation(id="test", provider="ollama", model="test")
+        conv.messages = [
+            {"role": "user", "content": "hello"},
+            {"role": "assistant", "content": "hi there"},
+        ]
+        with mock.patch("tars.commands.save_correction", return_value="feedback saved") as mock_save:
+            result = dispatch("/w bad answer", conv=conv, context={"channel": "cli"})
+        self.assertEqual(result, "feedback saved")
+        mock_save.assert_called_once_with("hello", "hi there", "bad answer")
+
+    def test_dispatch_feedback_no_messages(self) -> None:
+        from tars.conversation import Conversation
+        conv = Conversation(id="test", provider="ollama", model="test")
+        result = dispatch("/w", conv=conv, context={"channel": "cli"})
+        self.assertIn("nothing to flag", result)
 
 
 if __name__ == "__main__":

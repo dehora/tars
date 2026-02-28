@@ -86,38 +86,6 @@ async def _cmd_start(update, context) -> None:
     )
 
 
-async def _cmd_help(update, context) -> None:
-    """Handle /help — list commands."""
-    help_text = (
-        "/todoist add|today|upcoming|complete\n"
-        "/weather — current conditions\n"
-        "/forecast — hourly forecast\n"
-        "/memory — show persistent memory\n"
-        "/remember <section> <text>\n"
-        "/note <text> — append to daily note\n"
-        "/capture <url> [--raw]\n"
-        "/brief — daily briefing digest\n"
-        "/export — export conversation as markdown\n"
-        "/clear — reset conversation\n"
-        "/help — this message"
-    )
-    await update.message.reply_text(help_text)
-
-
-async def _cmd_clear(update, context) -> None:
-    """Handle /clear — save session and reset conversation."""
-    chat_id = update.effective_chat.id
-    if chat_id in _conversations:
-        conv = _conversations[chat_id]
-        try:
-            save_session(conv, _session_files.get(chat_id))
-        except Exception:
-            pass
-        del _conversations[chat_id]
-        _session_files.pop(chat_id, None)
-    await update.message.reply_text("Conversation cleared.")
-
-
 async def _handle_message(update, context) -> None:
     """Handle text messages — keyboard aliases, slash commands, chat."""
     global _model_config
@@ -145,9 +113,9 @@ async def _handle_message(update, context) -> None:
             rest = text[len(first):]
             text = cmd_stripped + rest
 
-        # Skip /start, /help, /clear — handled by dedicated handlers
+        # Skip /start — handled by dedicated handler
         cmd = text.split()[0]
-        if cmd in ("/start", "/help", "/clear"):
+        if cmd == "/start":
             return
 
         # Get or create conversation for export support
@@ -165,9 +133,21 @@ async def _handle_message(update, context) -> None:
 
         await update.effective_chat.send_action("typing")
         conv = _conversations[chat_id]
-        result = await asyncio.to_thread(dispatch, text, provider, model, conv)
+        ctx = {"channel": "telegram"}
+        result = await asyncio.to_thread(
+            dispatch, text, provider, model, conv=conv, context=ctx,
+        )
         if result is not None:
-            await update.message.reply_text(_truncate(result))
+            if result == "__clear__":
+                try:
+                    save_session(conv, _session_files.get(chat_id))
+                except Exception:
+                    pass
+                del _conversations[chat_id]
+                _session_files.pop(chat_id, None)
+                await update.message.reply_text("Conversation cleared.")
+            else:
+                await update.message.reply_text(_truncate(result))
             return
         # Fall through to chat if not a recognized slash command
 
@@ -246,9 +226,7 @@ def run_telegram(model_config: ModelConfig) -> None:
     app = ApplicationBuilder().token(config["token"]).build()
 
     app.add_handler(CommandHandler("start", _cmd_start, filters=private_filter))
-    app.add_handler(CommandHandler("help", _cmd_help, filters=private_filter))
-    app.add_handler(CommandHandler("clear", _cmd_clear, filters=private_filter))
-    # Catch-all for other slash commands and text messages
+    # All other commands (including /help, /clear) are handled by dispatch
     app.add_handler(
         MessageHandler(filters.TEXT & private_filter, _handle_message)
     )

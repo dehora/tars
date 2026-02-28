@@ -291,16 +291,19 @@ def run_email(model_config: ModelConfig) -> None:
                     print(f"email: [{from_addr}] {subject}")
 
                     # Try slash command: check subject first, then body
+                    email_ctx = {"channel": "email"}
                     slash_reply = dispatch(
                         subject,
                         model_config.primary_provider,
                         model_config.primary_model,
+                        context=email_ctx,
                     )
                     if slash_reply is None and body:
                         slash_reply = dispatch(
                             body,
                             model_config.primary_provider,
                             model_config.primary_model,
+                            context=email_ctx,
                         )
                     if slash_reply is not None:
                         reply_text = slash_reply
