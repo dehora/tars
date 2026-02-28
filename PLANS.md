@@ -7,10 +7,10 @@ The following four plans form a coherent system. Each piece makes the others mor
 ```
 Layer 1 (parallel, no deps)     Layer 2 (depends on L1)
 ┌─────────────────────┐         ┌──────────────────────────┐
-│ ✓ Centralized dispatch│───────▶│ Scheduler                │
-└─────────────────────┘         │ (synthetic commands via   │
-                                │  dispatch, manages daily  │
-┌─────────────────────┐         │  file rotation)           │
+│ ✓ Centralized dispatch│───────▶│ ✓ In-process scheduler   │
+└─────────────────────┘         │ (slash commands via       │
+                                │  dispatch, delivers to    │
+┌─────────────────────┐         │  daily/email/telegram)    │
 │ ✓ Daily memory files │───┬───▶└──────────────────────────┘
 └─────────────────────┘   │
                           │     ┌──────────────────────────┐
@@ -31,7 +31,7 @@ Layer 1 (parallel, no deps)     Layer 2 (depends on L1)
 
 **2a. Memory extraction** — Done (f9a7d8e). `tars/extractor.py` extracts facts after compaction/save via `chat(use_tools=False)`, writes to daily file tagged `[extracted]`. Controlled by `TARS_AUTO_EXTRACT` env var. Caps at 5 facts per extraction, skips trivial conversations (<3 user messages).
 
-**2b. Scheduler** — Depends on daily memory (1b), benefits from centralized dispatch (1a). Background thread fires scheduled tasks as synthetic messages through `process_message()`. Replaces the hardcoded email brief with configuration. Enables morning briefs, end-of-day review, recurring task checks. Estimated scope: ~1-2 sessions.
+**2b. In-process scheduler** — Done. `tars/taskrunner.py` provides a daemon-thread scheduler for long-lived processes (`tars serve`, `tars telegram`, `tars email`). Fires configured tasks as slash commands through `commands.dispatch()`. Delivers results to daily memory, email, or telegram. Configured via `schedules.json` in memory dir or `TARS_SCHEDULES` env var. Complements (does not replace) the OS-level scheduler in `tars/scheduler.py`.
 
 ### Future (Layer 3, independent)
 

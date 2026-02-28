@@ -230,12 +230,19 @@ def run_email(model_config: ModelConfig) -> None:
         )
         return
 
+    from tars.commands import set_task_runner
+    from tars.taskrunner import TaskRunner
+
     summary = model_summary(model_config)
     print(
         f"email: polling {email_config['address']} every {email_config['poll_interval']}s "
         f"[{summary['primary']}]"
     )
     print(f"email: allowed senders: {', '.join(email_config['allow'])}")
+
+    runner = TaskRunner(model_config.primary_provider, model_config.primary_model)
+    runner.start()
+    set_task_runner(runner)
 
     imap: imaplib.IMAP4_SSL | None = None
 
@@ -354,6 +361,8 @@ def run_email(model_config: ModelConfig) -> None:
     except KeyboardInterrupt:
         print("\nemail: shutting down...")
     finally:
+        runner.stop()
+        set_task_runner(None)
         # Save all sessions
         for tid, conv in _conversations.items():
             try:

@@ -70,6 +70,7 @@ Tars is a personal AI assistant with CLI, web, email, and Telegram channels. Rou
 | `TARS_TELEGRAM_TOKEN` | — | Telegram bot API token from BotFather |
 | `TARS_TELEGRAM_ALLOW` | — | Comma-separated Telegram user IDs |
 | `TARS_AUTO_EXTRACT` | `true` | Enable automatic fact extraction on session save/compact |
+| `TARS_SCHEDULES` | — | JSON array of in-process scheduled tasks (alternative to `schedules.json` in memory dir) |
 | `DEFAULT_LAT` / `DEFAULT_LON` | — | Weather location |
 
 ## Git commits

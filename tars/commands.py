@@ -10,6 +10,18 @@ from tars.tools import run_tool
 
 if TYPE_CHECKING:
     from tars.conversation import Conversation
+    from tars.taskrunner import TaskRunner
+
+_task_runner: TaskRunner | None = None
+
+
+def set_task_runner(runner: TaskRunner) -> None:
+    global _task_runner
+    _task_runner = runner
+
+
+def get_task_runner() -> TaskRunner | None:
+    return _task_runner
 
 _FLAGS = {"--due", "--project", "--priority"}
 
@@ -490,18 +502,37 @@ def _dispatch_stats() -> str:
 def _dispatch_schedule() -> str:
     from tars.scheduler import schedule_list
 
-    schedules = schedule_list()
-    if not schedules:
-        return "no schedules installed"
-    lines = [f"{'name':<20} {'trigger':<25} {'last run':<40} {'log'}"]
-    from pathlib import Path
+    lines: list[str] = []
 
-    for s in schedules:
-        name = s.get("name", "")
-        trigger = s.get("trigger", "")
-        last_run = s.get("last_run", "")
-        log = s.get("log", "").replace(str(Path.home()), "~")
-        lines.append(f"{name:<20} {trigger:<25} {last_run:<40} {log}")
+    # OS-level schedules
+    schedules = schedule_list()
+    if schedules:
+        lines.append("os schedules:")
+        lines.append(f"  {'name':<20} {'trigger':<25} {'last run':<40} {'log'}")
+        from pathlib import Path
+
+        for s in schedules:
+            name = s.get("name", "")
+            trigger = s.get("trigger", "")
+            last_run = s.get("last_run", "")
+            log = s.get("log", "").replace(str(Path.home()), "~")
+            lines.append(f"  {name:<20} {trigger:<25} {last_run:<40} {log}")
+
+    # In-process schedules
+    runner = get_task_runner()
+    if runner is not None:
+        tasks = runner.list_tasks()
+        if tasks:
+            if lines:
+                lines.append("")
+            lines.append("in-process schedules:")
+            lines.append(f"  {'name':<20} {'schedule':<12} {'action':<20} {'deliver':<10} {'last run'}")
+            for t in tasks:
+                lr = t.last_run.strftime("%Y-%m-%d %H:%M") if t.last_run else "never"
+                lines.append(f"  {t.name:<20} {t.schedule:<12} {t.action:<20} {t.deliver:<10} {lr}")
+
+    if not lines:
+        return "no schedules installed"
     return "\n".join(lines)
 
 

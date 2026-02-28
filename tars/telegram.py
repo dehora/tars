@@ -213,12 +213,19 @@ def run_telegram(model_config: ModelConfig) -> None:
         )
         return
 
+    from tars.commands import set_task_runner
+    from tars.taskrunner import TaskRunner
+
     global _model_config
     _model_config = model_config
 
     summary = model_summary(model_config)
     print(f"telegram: starting bot [{summary['primary']}]")
     print(f"telegram: allowed users: {config['allow']}")
+
+    runner = TaskRunner(model_config.primary_provider, model_config.primary_model)
+    runner.start()
+    set_task_runner(runner)
 
     user_filter = filters.User(user_id=config["allow"])
     private_filter = filters.ChatType.PRIVATE & user_filter
@@ -232,7 +239,9 @@ def run_telegram(model_config: ModelConfig) -> None:
     )
 
     async def _shutdown(app) -> None:
-        """Save sessions on shutdown."""
+        """Save sessions and stop task runner on shutdown."""
+        runner.stop()
+        set_task_runner(None)
         for chat_id, conv in _conversations.items():
             try:
                 save_session(conv, _session_files.get(chat_id))

@@ -62,6 +62,23 @@ tars has a four-tier memory system. Each tier has different granularity, persist
 
 When `TARS_REMOTE_MODEL` (or legacy `TARS_ESCALATION_MODEL`) is set, tars uses the primary model (from `TARS_DEFAULT_MODEL` or legacy `TARS_MODEL`) for chat and automatically escalates to the remote model when tool use is detected. If the remote model is unavailable (rate limit, outage, transient errors), it falls back to the primary model.
 
+**In-process scheduling:**
+
+Long-lived processes (`tars serve`, `tars telegram`, `tars email`) run an in-process scheduler that fires configured tasks as slash commands through the existing dispatch. Configure via `schedules.json` in the memory dir or the `TARS_SCHEDULES` env var:
+
+```json
+[
+  {"name": "morning_brief", "schedule": "08:00", "action": "/brief", "deliver": "email"},
+  {"name": "todoist_check", "schedule": "*/60", "action": "/todoist today", "deliver": "daily"}
+]
+```
+
+- `schedule`: `"HH:MM"` for daily or `"*/N"` for every N minutes
+- `deliver`: `"daily"` (default, appends to daily memory), `"email"`, or `"telegram"`
+- `/schedule` shows both OS-level and in-process schedules
+
+The in-process scheduler complements the OS-level scheduler (`tars schedule add` → launchd/systemd) — use OS scheduling for external invocations, in-process scheduling for recurring tasks within a running process.
+
 **Feedback loop:**
 - `/w` flags a bad response, `/r` flags a good one
 - `/review` distills corrections into procedural rules
@@ -220,6 +237,7 @@ Slash commands work in the bot chat. A persistent reply keyboard provides one-ta
 | `TARS_TELEGRAM_ALLOW` | — | Comma-separated Telegram user IDs |
 | `TARS_AUTO_EXTRACT` | `true` | Enable automatic fact extraction on session save/compact |
 | `TARS_API_TOKEN` | — | Optional bearer token for API auth |
+| `TARS_SCHEDULES` | — | JSON array of scheduled tasks (alternative to `schedules.json`) |
 | `DEFAULT_LAT` / `DEFAULT_LON` | — | Weather location coordinates |
 
 ## Setup
