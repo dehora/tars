@@ -7,6 +7,7 @@ import anthropic
 
 from tars.config import ModelConfig
 from tars.core import _search_relevant_context, chat, chat_stream
+from tars.extractor import extract_facts
 from tars.memory import append_daily
 from tars.router import route_message
 from tars.sessions import (
@@ -185,6 +186,11 @@ def _maybe_compact(conv: Conversation, session_file: Path | None) -> None:
             append_daily(f"session compacted — {summary[:80]}")
         except Exception:
             pass
+        try:
+            for fact in extract_facts(new_messages, conv.provider, conv.model):
+                append_daily(f"[extracted] {fact}")
+        except Exception:
+            pass
     except Exception as e:
         print(f"  [warning] session compaction failed: {e}", file=sys.stderr)
 
@@ -205,6 +211,11 @@ def save_session(conv: Conversation, session_file: Path | None) -> None:
         _save_session(session_file, conv.cumulative_summary)
         try:
             append_daily(f"session saved — {summary[:80]}")
+        except Exception:
+            pass
+        try:
+            for fact in extract_facts(new_messages, conv.provider, conv.model):
+                append_daily(f"[extracted] {fact}")
         except Exception:
             pass
     except Exception as e:
