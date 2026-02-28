@@ -146,6 +146,36 @@ def _append_to_file(p: Path, content: str) -> None:
     p.write_text(text, encoding="utf-8", errors="replace")
 
 
+def daily_memory_path(date: datetime | None = None) -> Path | None:
+    """Return path to daily memory file (YYYY-MM-DD.md) in memory dir."""
+    d = _memory_dir()
+    if d is None:
+        return None
+    day = date or datetime.now()
+    return d / f"{day.strftime('%Y-%m-%d')}.md"
+
+
+def append_daily(entry: str, date: datetime | None = None) -> None:
+    """Append a timestamped entry to today's daily memory file."""
+    p = daily_memory_path(date)
+    if p is None:
+        return
+    day = date or datetime.now()
+    if not p.exists():
+        p.write_text(f"# {day.strftime('%Y-%m-%d')}\n\n", encoding="utf-8", errors="replace")
+    ts = (date or datetime.now()).strftime("%H:%M")
+    with open(p, "a", encoding="utf-8", errors="replace") as f:
+        f.write(f"- {ts} {entry}\n")
+
+
+def load_daily(date: datetime | None = None) -> str:
+    """Load daily memory file content. Returns empty string if missing."""
+    p = daily_memory_path(date)
+    if p is None or not p.exists():
+        return ""
+    return p.read_text(encoding="utf-8", errors="replace")
+
+
 def _run_memory_tool(name: str, args: dict) -> str:
     if name == "memory_recall":
         d = _memory_dir()

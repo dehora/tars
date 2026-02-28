@@ -3,6 +3,7 @@ import os
 import sys
 import tempfile
 import unittest
+from datetime import datetime
 from unittest import mock
 from pathlib import Path
 
@@ -258,6 +259,98 @@ class MemoryToolTests(unittest.TestCase):
         self.assertIn("memory_update", tool_names)
         self.assertIn("memory_recall", tool_names)
         self.assertIn("memory_forget", tool_names)
+
+
+class DailyMemoryTests(unittest.TestCase):
+    def test_daily_memory_path_returns_today(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            with mock.patch.dict(os.environ, {"TARS_MEMORY_DIR": tmpdir}, clear=True):
+                p = memory.daily_memory_path()
+        today = datetime.now().strftime("%Y-%m-%d")
+        self.assertIsNotNone(p)
+        self.assertEqual(p.name, f"{today}.md")
+
+    def test_daily_memory_path_specific_date(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            with mock.patch.dict(os.environ, {"TARS_MEMORY_DIR": tmpdir}, clear=True):
+                d = datetime(2026, 1, 15, 10, 30)
+                p = memory.daily_memory_path(d)
+        self.assertEqual(p.name, "2026-01-15.md")
+
+    def test_daily_memory_path_no_memory_dir(self) -> None:
+        with mock.patch.dict(os.environ, {}, clear=True):
+            p = memory.daily_memory_path()
+        self.assertIsNone(p)
+
+    def test_append_daily_creates_file(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            with mock.patch.dict(os.environ, {"TARS_MEMORY_DIR": tmpdir}, clear=True):
+                d = datetime(2026, 3, 1, 14, 30)
+                memory.append_daily("tool:weather_now — sunny", date=d)
+            text = (Path(tmpdir) / "2026-03-01.md").read_text()
+        self.assertIn("# 2026-03-01", text)
+        self.assertIn("- 14:30 tool:weather_now — sunny", text)
+
+    def test_append_daily_appends(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            with mock.patch.dict(os.environ, {"TARS_MEMORY_DIR": tmpdir}, clear=True):
+                d1 = datetime(2026, 3, 1, 9, 0)
+                d2 = datetime(2026, 3, 1, 10, 15)
+                memory.append_daily("first entry", date=d1)
+                memory.append_daily("second entry", date=d2)
+            text = (Path(tmpdir) / "2026-03-01.md").read_text()
+        self.assertIn("- 09:00 first entry", text)
+        self.assertIn("- 10:15 second entry", text)
+        self.assertEqual(text.count("# 2026-03-01"), 1)
+
+    def test_append_daily_no_memory_dir(self) -> None:
+        with mock.patch.dict(os.environ, {}, clear=True):
+            # Should not raise
+            memory.append_daily("ignored entry")
+
+    def test_load_daily_today(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            with mock.patch.dict(os.environ, {"TARS_MEMORY_DIR": tmpdir}, clear=True):
+                d = datetime(2026, 3, 1, 14, 30)
+                memory.append_daily("test entry", date=d)
+                content = memory.load_daily(date=d)
+        self.assertIn("test entry", content)
+
+    def test_load_daily_missing(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            with mock.patch.dict(os.environ, {"TARS_MEMORY_DIR": tmpdir}, clear=True):
+                content = memory.load_daily(date=datetime(2099, 1, 1))
+        self.assertEqual(content, "")
+
+    def test_load_daily_specific_date(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            with mock.patch.dict(os.environ, {"TARS_MEMORY_DIR": tmpdir}, clear=True):
+                d = datetime(2026, 2, 14, 8, 0)
+                memory.append_daily("valentine", date=d)
+                content = memory.load_daily(date=d)
+        self.assertIn("valentine", content)
+        self.assertIn("# 2026-02-14", content)
+
+
+class DailyContextPromptTests(unittest.TestCase):
+    def test_system_prompt_includes_daily_context(self) -> None:
+        with (
+            mock.patch.object(core, "_load_memory", return_value=""),
+            mock.patch.object(core, "_load_procedural", return_value=""),
+            mock.patch("tars.core.load_daily", return_value="# 2026-03-01\n- 09:00 tool:weather"),
+        ):
+            prompt = core._build_system_prompt()
+        self.assertIn("<daily-context>", prompt)
+        self.assertIn("tool:weather", prompt)
+
+    def test_system_prompt_no_daily_when_empty(self) -> None:
+        with (
+            mock.patch.object(core, "_load_memory", return_value=""),
+            mock.patch.object(core, "_load_procedural", return_value=""),
+            mock.patch("tars.core.load_daily", return_value=""),
+        ):
+            prompt = core._build_system_prompt()
+        self.assertNotIn("<daily-context>", prompt)
 
 
 if __name__ == "__main__":

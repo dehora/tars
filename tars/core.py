@@ -4,7 +4,7 @@ from collections.abc import Generator
 import anthropic
 import ollama
 
-from tars.memory import _load_memory, _load_procedural
+from tars.memory import _load_memory, _load_procedural, append_daily, load_daily
 from tars.tools import ANTHROPIC_TOOLS, OLLAMA_TOOLS, run_tool
 
 _MAX_TOKENS = int(os.environ.get("TARS_MAX_TOKENS", "1024"))
@@ -112,6 +112,11 @@ def _build_system_prompt(*, search_context: str = "", tool_hints: list[str] | No
         prompt += f"\n\n<memory>\n{_escape_prompt_block(memory)}\n</memory>"
     if search_context:
         prompt += f"\n\n<relevant-context>\n{_escape_prompt_block(search_context)}\n</relevant-context>"
+    daily = load_daily()
+    if daily:
+        if not has_untrusted:
+            prompt += f"\n\n---\n\n{MEMORY_PROMPT_PREFACE}"
+        prompt += f"\n\n<daily-context>\n{_escape_prompt_block(daily)}\n</daily-context>"
     return prompt
 
 
@@ -153,6 +158,10 @@ def chat_anthropic(
                     "tool_use_id": block.id,
                     "content": result,
                 })
+                try:
+                    append_daily(f"tool:{block.name} — {result[:80]}")
+                except Exception:
+                    pass
         local_messages.append({"role": "user", "content": tool_results})
 
 
@@ -175,11 +184,16 @@ def chat_ollama(
 
         # Execute each tool call and feed results back
         for tool_call in response.message.tool_calls:
-            result = run_tool(tool_call.function.name, tool_call.function.arguments)
+            name = tool_call.function.name
+            result = run_tool(name, tool_call.function.arguments)
             local_messages.append({
                 "role": "tool",
                 "content": result,
             })
+            try:
+                append_daily(f"tool:{name} — {result[:80]}")
+            except Exception:
+                pass
 
 
 def chat(
@@ -251,6 +265,10 @@ def chat_anthropic_stream(
                     "tool_use_id": block.id,
                     "content": result,
                 })
+                try:
+                    append_daily(f"tool:{block.name} — {result[:80]}")
+                except Exception:
+                    pass
         local_messages.append({"role": "user", "content": tool_results})
 
     # Step 2: stream the final response.
@@ -283,8 +301,13 @@ def chat_ollama_stream(
 
         local_messages.append(response.message)
         for tool_call in response.message.tool_calls:
-            result = run_tool(tool_call.function.name, tool_call.function.arguments)
+            name = tool_call.function.name
+            result = run_tool(name, tool_call.function.arguments)
             local_messages.append({"role": "tool", "content": result})
+            try:
+                append_daily(f"tool:{name} — {result[:80]}")
+            except Exception:
+                pass
 
     # Step 2: stream the final response.
     # ollama.chat() with stream=True returns an iterator of response chunks.
