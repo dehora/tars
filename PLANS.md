@@ -7,29 +7,29 @@ The following four plans form a coherent system. Each piece makes the others mor
 ```
 Layer 1 (parallel, no deps)     Layer 2 (depends on L1)
 ┌─────────────────────┐         ┌──────────────────────────┐
-│ Centralized dispatch │────────▶│ Scheduler                │
+│ ✓ Centralized dispatch│───────▶│ Scheduler                │
 └─────────────────────┘         │ (synthetic commands via   │
                                 │  dispatch, manages daily  │
 ┌─────────────────────┐         │  file rotation)           │
-│ Daily memory files   │───┬───▶└──────────────────────────┘
+│ ✓ Daily memory files │───┬───▶└──────────────────────────┘
 └─────────────────────┘   │
                           │     ┌──────────────────────────┐
-                          └────▶│ Memory extraction         │
+                          └────▶│ ✓ Memory extraction       │
                                 │ (writes to daily file,    │
                                 │  /review promotes to      │
                                 │  permanent memory)        │
                                 └──────────────────────────┘
 ```
 
-### Layer 1: Foundation (can be built in parallel)
+### Layer 1: Foundation — DONE
 
-**1a. Centralized dispatch** — Pure refactor, no new features. Collapses the duplicated command handling across cli/email/telegram into a single registry in `commands.py`. Makes every subsequent command addition cheaper and eliminates the silent fall-through bug class. Estimated scope: ~1 session.
+**1a. Centralized dispatch** — Done (33adc69). Collapsed duplicated command handling across cli/email/telegram into a single registry in `commands.py`.
 
-**1b. Daily memory files** — New capability, small surface area. Adds `YYYY-MM-DD.md` daily files to the memory dir with timestamped event logging. Append-only, lightweight. Loads today's file as `<daily-context>` in the system prompt. Estimated scope: ~1 session.
+**1b. Daily memory files** — Done (c850983). `YYYY-MM-DD.md` daily files in memory dir with timestamped event logging. Loads as `<daily-context>` in system prompt.
 
 ### Layer 2: Builds on foundation
 
-**2a. Memory extraction** — Depends on daily memory (1b). After conversation compaction or session save, model extracts discrete facts and appends to the daily file tagged as `[extracted]`. The daily file acts as a buffer — bad extractions age out, good ones get promoted to permanent memory via `/review`. This is the feature that makes tars "remember things unprompted." Estimated scope: ~1 session.
+**2a. Memory extraction** — Done (f9a7d8e). `tars/extractor.py` extracts facts after compaction/save via `chat(use_tools=False)`, writes to daily file tagged `[extracted]`. Controlled by `TARS_AUTO_EXTRACT` env var. Caps at 5 facts per extraction, skips trivial conversations (<3 user messages).
 
 **2b. Scheduler** — Depends on daily memory (1b), benefits from centralized dispatch (1a). Background thread fires scheduled tasks as synthetic messages through `process_message()`. Replaces the hardcoded email brief with configuration. Enables morning briefs, end-of-day review, recurring task checks. Estimated scope: ~1-2 sessions.
 
