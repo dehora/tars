@@ -25,7 +25,7 @@ def _escape_prompt_text(text: str) -> str:
     return text.replace("<", "&lt;").replace(">", "&gt;")
 
 
-def _session_path() -> Path | None:
+def _session_path(channel: str = "") -> Path | None:
     """Returns a timestamped session file path, or None if memory not configured."""
     d = _memory_dir()
     if d is None:
@@ -33,7 +33,8 @@ def _session_path() -> Path | None:
     sessions_dir = d / "sessions"
     sessions_dir.mkdir(parents=True, exist_ok=True)
     ts = datetime.now().strftime("%Y-%m-%dT%H-%M-%S")
-    return sessions_dir / f"{ts}.md"
+    suffix = f"-{channel}" if channel else ""
+    return sessions_dir / f"{ts}{suffix}.md"
 
 
 def _summarize_session(
@@ -73,6 +74,7 @@ class SessionInfo:
     date: str       # "2026-02-19 23:10"
     title: str      # extracted topic line
     filename: str   # stem for reference
+    channel: str = ""  # "cli", "web", "email", "telegram"
 
 
 def _extract_title(path: Path) -> str:
@@ -113,6 +115,29 @@ def session_count() -> int:
     return len(list(sessions_dir.glob("*.md")))
 
 
+_KNOWN_CHANNELS = {"cli", "web", "email", "telegram"}
+
+
+def _parse_session_filename(stem: str) -> tuple[str, str]:
+    """Parse date and channel from a session filename stem.
+
+    Filenames: '2026-02-18T22-38-51' or '2026-02-18T22-38-51-cli'.
+    Returns (date_str, channel).
+    """
+    parts = stem.split("T")
+    if len(parts) != 2:
+        return stem, ""
+    time_part = parts[1]
+    # Check for channel suffix: last segment after the time digits
+    segments = time_part.split("-")
+    channel = ""
+    if len(segments) >= 4 and segments[-1] in _KNOWN_CHANNELS:
+        channel = segments[-1]
+        time_part = "-".join(segments[:-1])
+    date_str = f"{parts[0]} {time_part[:5].replace('-', ':')}"
+    return date_str, channel
+
+
 def list_sessions(*, limit: int = 10) -> list[SessionInfo]:
     """List recent sessions with date and topic, newest first."""
     d = _memory_dir()
@@ -124,15 +149,26 @@ def list_sessions(*, limit: int = 10) -> list[SessionInfo]:
     files = sorted(sessions_dir.glob("*.md"), key=lambda p: p.name, reverse=True)
     result = []
     for f in files[:limit]:
-        # Parse date from filename like 2026-02-18T22-38-51
-        parts = f.stem.split("T")
-        if len(parts) == 2:
-            date_str = f"{parts[0]} {parts[1][:5].replace('-', ':')}"
-        else:
-            date_str = f.stem
+        date_str, channel = _parse_session_filename(f.stem)
         title = _extract_title(f)
-        result.append(SessionInfo(path=f, date=date_str, title=title, filename=f.stem))
+        result.append(SessionInfo(
+            path=f, date=date_str, title=title, filename=f.stem, channel=channel,
+        ))
     return result
+
+
+def load_session(filename: str) -> str | None:
+    """Load a session file's content by filename (stem, no extension)."""
+    d = _memory_dir()
+    if d is None:
+        return None
+    path = d / "sessions" / f"{filename}.md"
+    if not path.is_file():
+        return None
+    try:
+        return path.read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        return None
 
 
 def _save_session(path: Path, summary: str, *, is_compaction: bool = False) -> None:

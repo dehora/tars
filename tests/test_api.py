@@ -104,10 +104,12 @@ class ChatEndpointTests(unittest.TestCase):
         for line in resp.text.strip().split("\n"):
             if line.startswith("data: "):
                 events.append(json.loads(line[6:]))
-        # Should have two delta events and one done event
+        # Should have two delta events, one done event, and one meta event
         self.assertEqual(events[0], {"delta": "hel"})
         self.assertEqual(events[1], {"delta": "lo"})
-        self.assertEqual(events[-1], {"done": True})
+        self.assertEqual(events[2], {"done": True})
+        self.assertIn("meta", events[-1])
+        self.assertIn("model", events[-1]["meta"])
         # Conversation state should be updated
         self.assertIn("stream1", api._conversations)
         self.assertEqual(api._conversations["stream1"].msg_count, 1)

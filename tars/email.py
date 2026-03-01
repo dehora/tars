@@ -349,8 +349,9 @@ def run_email(model_config: ModelConfig) -> None:
                                 remote_provider=model_config.remote_provider,
                                 remote_model=model_config.remote_model,
                                 routing_policy=model_config.routing_policy,
+                                channel="email",
                             )
-                            _session_files[tid] = _session_path()
+                            _session_files[tid] = _session_path(channel="email")
                         conv = _conversations[tid]
 
                         try:

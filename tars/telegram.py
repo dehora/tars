@@ -128,8 +128,9 @@ async def _handle_message(update, context) -> None:
                 remote_provider=_model_config.remote_provider,
                 remote_model=_model_config.remote_model,
                 routing_policy=_model_config.routing_policy,
+                channel="telegram",
             )
-            _session_files[chat_id] = _session_path()
+            _session_files[chat_id] = _session_path(channel="telegram")
 
         await update.effective_chat.send_action("typing")
         conv = _conversations[chat_id]
@@ -161,8 +162,9 @@ async def _handle_message(update, context) -> None:
             remote_provider=_model_config.remote_provider,
             remote_model=_model_config.remote_model,
             routing_policy=_model_config.routing_policy,
+            channel="telegram",
         )
-        _session_files[chat_id] = _session_path()
+        _session_files[chat_id] = _session_path(channel="telegram")
 
     conv = _conversations[chat_id]
     await update.effective_chat.send_action("typing")

@@ -131,8 +131,9 @@ def chat_endpoint(req: ChatRequest) -> ChatResponse:
             remote_provider=_model_config.remote_provider,
             remote_model=_model_config.remote_model,
             routing_policy=_model_config.routing_policy,
+            channel="web",
         )
-        _session_files[conv_id] = _session_path()
+        _session_files[conv_id] = _session_path(channel="web")
     conv = _conversations[conv_id]
     session_file = _session_files.get(conv_id)
     reply = process_message(conv, req.message, session_file)
@@ -189,8 +190,9 @@ def chat_stream_endpoint(req: ChatRequest):
             remote_provider=_model_config.remote_provider,
             remote_model=_model_config.remote_model,
             routing_policy=_model_config.routing_policy,
+            channel="web",
         )
-        _session_files[conv_id] = _session_path()
+        _session_files[conv_id] = _session_path(channel="web")
     conv = _conversations[conv_id]
     session_file = _session_files.get(conv_id)
 
@@ -198,6 +200,7 @@ def chat_stream_endpoint(req: ChatRequest):
         for delta in process_message_stream(conv, req.message, session_file):
             yield f"data: {json.dumps({'delta': delta})}\n\n"
         yield f"data: {json.dumps({'done': True})}\n\n"
+        yield f"data: {json.dumps({'meta': {'model': f'{_provider}:{_model}'}})}\n\n"
 
     return StreamingResponse(event_stream(), media_type="text/event-stream")
 
@@ -279,12 +282,28 @@ def model_endpoint() -> dict:
     return model_summary(_model_config)
 
 
+@app.get("/conversations/{conversation_id}/messages")
+def conversation_messages_endpoint(conversation_id: str) -> dict:
+    conv = _conversations.get(conversation_id)
+    if conv is None:
+        raise HTTPException(status_code=404, detail="Conversation not found")
+    return {
+        "messages": [
+            {"role": m.get("role", "unknown"), "content": m.get("content", "")}
+            for m in conv.messages
+        ]
+    }
+
+
 @app.get("/sessions")
 def sessions_endpoint(limit: int = 10) -> dict:
     sessions = list_sessions(limit=limit)
     return {
         "sessions": [
-            {"date": s.date, "title": s.title, "filename": s.filename}
+            {
+                "date": s.date, "title": s.title,
+                "filename": s.filename, "channel": s.channel,
+            }
             for s in sessions
         ]
     }
@@ -309,6 +328,15 @@ def session_search_endpoint(q: str = "", limit: int = 10) -> dict:
             for r in episodic
         ]
     }
+
+
+@app.get("/sessions/{filename}")
+def session_content_endpoint(filename: str) -> dict:
+    from tars.sessions import load_session
+    content = load_session(filename)
+    if content is None:
+        raise HTTPException(status_code=404, detail="Session not found")
+    return {"filename": filename, "content": content}
 
 
 @app.post("/index")

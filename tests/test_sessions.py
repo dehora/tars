@@ -262,6 +262,28 @@ class ListSessionsTests(unittest.TestCase):
             self.assertEqual(result[1].filename, "2026-01-02T10-00-00")
             self.assertEqual(result[0].title, "Third topic")
             self.assertIn("2026-01-03", result[0].date)
+            self.assertEqual(result[0].channel, "")
+
+    def test_list_sessions_with_channel(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            sessions_dir = Path(tmpdir) / "sessions"
+            sessions_dir.mkdir()
+            (sessions_dir / "2026-01-01T10-00-00-cli.md").write_text(
+                "# Session\n\n**Topics Discussed:**\n- CLI topic\n"
+            )
+            (sessions_dir / "2026-01-02T10-00-00-web.md").write_text(
+                "# Session\n\n**Topics Discussed:**\n- Web topic\n"
+            )
+            (sessions_dir / "2026-01-03T10-00-00-telegram.md").write_text(
+                "# Session\n\n**Topics Discussed:**\n- Telegram topic\n"
+            )
+            with mock.patch.dict("os.environ", {"TARS_MEMORY_DIR": tmpdir}):
+                result = sessions.list_sessions(limit=3)
+            self.assertEqual(len(result), 3)
+            self.assertEqual(result[0].channel, "telegram")
+            self.assertEqual(result[1].channel, "web")
+            self.assertEqual(result[2].channel, "cli")
+            self.assertIn("2026-01-03", result[0].date)
 
     def test_list_sessions_empty(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -297,6 +319,55 @@ class ListSessionsTests(unittest.TestCase):
             p.write_text("# Session\n\n**Topic Discussed:**\n- Dog info lookup\n")
             title = sessions._extract_title(p)
         self.assertEqual(title, "Dog info lookup")
+
+
+class SessionPathTests(unittest.TestCase):
+    def test_session_path_no_channel(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            with mock.patch.dict("os.environ", {"TARS_MEMORY_DIR": tmpdir}):
+                path = sessions._session_path()
+            self.assertIsNotNone(path)
+            # No channel suffix — filename is just timestamp
+            self.assertNotIn("-cli", path.stem)
+            self.assertNotIn("-web", path.stem)
+
+    def test_session_path_with_channel(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            with mock.patch.dict("os.environ", {"TARS_MEMORY_DIR": tmpdir}):
+                path = sessions._session_path(channel="cli")
+            self.assertIsNotNone(path)
+            self.assertTrue(path.stem.endswith("-cli"))
+
+    def test_session_path_email_channel(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            with mock.patch.dict("os.environ", {"TARS_MEMORY_DIR": tmpdir}):
+                path = sessions._session_path(channel="email")
+            self.assertTrue(path.stem.endswith("-email"))
+
+
+class LoadSessionTests(unittest.TestCase):
+    def test_load_session_exists(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            sessions_dir = Path(tmpdir) / "sessions"
+            sessions_dir.mkdir()
+            (sessions_dir / "2026-01-01T10-00-00-cli.md").write_text("# Session\nContent here")
+            with mock.patch.dict("os.environ", {"TARS_MEMORY_DIR": tmpdir}):
+                content = sessions.load_session("2026-01-01T10-00-00-cli")
+            self.assertIn("Content here", content)
+
+    def test_load_session_missing(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            sessions_dir = Path(tmpdir) / "sessions"
+            sessions_dir.mkdir()
+            with mock.patch.dict("os.environ", {"TARS_MEMORY_DIR": tmpdir}):
+                content = sessions.load_session("nonexistent")
+            self.assertIsNone(content)
+
+    def test_load_session_no_memory_dir(self) -> None:
+        with mock.patch.dict("os.environ", {}, clear=True):
+            with mock.patch.object(sessions, "_memory_dir", return_value=None):
+                content = sessions.load_session("anything")
+            self.assertIsNone(content)
 
 
 class SessionCountTests(unittest.TestCase):

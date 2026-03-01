@@ -2,22 +2,7 @@
 
 ## Next
 
-### 30. QoL: CLI
-
-- Tab completion for slash commands
-- Inline help for tool arguments (e.g. `/capture` shows usage on empty args)
-- Friendlier error messages (model errors, network failures, missing config)
-
-### 31. QoL: Web UI
-
-- Conversation history browser (list past conversations, click to view)
-- Model indicator (which model handled each message)
-- Streaming progress indicator
-
-### 33. QoL: Cross-channel visibility
-
-- Shared view of conversations and state across channels (CLI, web, email, Telegram)
-- Currently each channel feels isolated — no way to see what happened in another
+(empty — QoL items moved to Done)
 
 ## Fixes
 
@@ -134,5 +119,17 @@ Processing failures now retry instead of immediately sending error replies. Slas
 ### 23. Capture enrichment
 
 Enhance `/capture` with metadata extraction: author, publish date, tags, reading time. Store in YAML frontmatter. Could also extract and save key quotes or generate a TL;DR alongside the full summary. Makes captures more useful as Obsidian notes.
+
+### 30. QoL: CLI
+
+Tab completion for slash commands, inline help for tool arguments, friendlier error messages (`_format_error()` classifies network, auth, config errors instead of raw "Tool error:" prefix).
+
+### 31. QoL: Web UI
+
+Conversation history sidebar (active conversations + session history, click to view/load). Model indicator on streamed responses (meta SSE event after done). New API endpoints: `GET /conversations/{id}/messages`, `GET /sessions/{filename}`.
+
+### 33. QoL: Cross-channel visibility
+
+`channel` field on Conversation dataclass. Session filenames include channel suffix (`2026-03-01T10-00-00-cli.md`). `SessionInfo.channel` parsed from filename. Daily memory entries tagged with channel (`[cli] session saved — ...`). `/sessions` output shows channel tags.
 
 </details>

@@ -6,7 +6,28 @@
 <title>tars</title>
 <style>
   * { box-sizing: border-box; margin: 0; padding: 0; }
-  body { font-family: system-ui, -apple-system, sans-serif; background: #1a1a1a; color: #e0e0e0; height: 100dvh; display: flex; flex-direction: column; }
+  body { font-family: system-ui, -apple-system, sans-serif; background: #1a1a1a; color: #e0e0e0; height: 100dvh; display: flex; flex-direction: row; }
+
+  /* --- Sidebar --- */
+  #sidebar { width: 260px; background: #161616; border-right: 1px solid #333; display: flex; flex-direction: column; flex-shrink: 0; overflow: hidden; transition: margin-left 0.2s; }
+  #sidebar.collapsed { margin-left: -260px; }
+  #sidebar-header { padding: 0.75rem; border-bottom: 1px solid #333; display: flex; justify-content: space-between; align-items: center; }
+  #sidebar-header h2 { font-size: 0.85rem; font-weight: 600; color: #888; text-transform: uppercase; letter-spacing: 0.05em; }
+  #sidebar-toggle { background: none; border: none; color: #888; cursor: pointer; font-size: 1.1rem; padding: 0.25rem; }
+  #sidebar-toggle:hover { color: #e0e0e0; }
+  .sidebar-section { padding: 0.5rem 0; }
+  .sidebar-section-title { font-size: 0.7rem; color: #666; text-transform: uppercase; letter-spacing: 0.05em; padding: 0.25rem 0.75rem; }
+  .sidebar-list { list-style: none; overflow-y: auto; max-height: 40vh; }
+  .sidebar-item { padding: 0.4rem 0.75rem; cursor: pointer; font-size: 0.85rem; color: #aaa; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; border-left: 3px solid transparent; }
+  .sidebar-item:hover { background: #222; color: #e0e0e0; }
+  .sidebar-item.active { border-left-color: #2563eb; color: #e0e0e0; background: #1e1e1e; }
+  .sidebar-channel { font-size: 0.7rem; color: #666; margin-left: 0.25rem; }
+  #sidebar-toggle-btn { position: fixed; top: 0.5rem; left: 0.5rem; z-index: 10; background: #222; border: 1px solid #333; color: #888; cursor: pointer; font-size: 1rem; padding: 0.25rem 0.5rem; border-radius: 0.25rem; display: none; }
+  #sidebar-toggle-btn:hover { color: #e0e0e0; }
+  #sidebar.collapsed ~ #main #sidebar-toggle-btn { display: block; }
+
+  /* --- Main area --- */
+  #main { flex: 1; display: flex; flex-direction: column; min-width: 0; }
   #messages { flex: 1; overflow-y: auto; padding: 1rem; display: flex; flex-direction: column; gap: 0.5rem; }
   .msg { max-width: 80%; padding: 0.5rem 0.75rem; border-radius: 0.5rem; line-height: 1.4; word-wrap: break-word; }
   .msg.user { white-space: pre-wrap; align-self: flex-end; background: #2563eb; color: #fff; }
@@ -30,27 +51,52 @@
   .msg.thinking { align-self: flex-start; background: #2a2a2a; color: #888; }
   @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.4; } }
   .msg.thinking { animation: pulse 1.5s ease-in-out infinite; }
+  .model-tag { font-size: 0.7rem; color: #555; margin-top: 0.15rem; align-self: flex-start; }
   #input-row { display: flex; gap: 0.5rem; padding: 0.75rem 1rem; background: #222; border-top: 1px solid #333; }
   #input { flex: 1; padding: 0.5rem 0.75rem; border: 1px solid #444; border-radius: 0.375rem; background: #2a2a2a; color: #e0e0e0; font-size: 1rem; font-family: inherit; outline: none; }
   #input:focus { border-color: #2563eb; }
   #send { padding: 0.5rem 1rem; border: none; border-radius: 0.375rem; background: #2563eb; color: #fff; font-size: 1rem; cursor: pointer; }
   #send:disabled { opacity: 0.5; cursor: default; }
+
+  /* Session viewer overlay */
+  .session-viewer { white-space: pre-wrap; font-size: 0.85rem; color: #bbb; padding: 1rem; overflow-y: auto; flex: 1; }
+  .session-viewer h1, .session-viewer h2, .session-viewer h3 { color: #e0e0e0; }
 </style>
 </head>
 <body>
-<div id="messages"></div>
-<div id="input-row">
-  <input id="input" type="text" placeholder="message tars..." autocomplete="off">
-  <button id="send">Send</button>
+<div id="sidebar">
+  <div id="sidebar-header">
+    <h2>tars</h2>
+    <button id="sidebar-toggle" title="Hide sidebar">&laquo;</button>
+  </div>
+  <div class="sidebar-section">
+    <div class="sidebar-section-title">Active</div>
+    <ul id="active-list" class="sidebar-list"></ul>
+  </div>
+  <div class="sidebar-section">
+    <div class="sidebar-section-title">History</div>
+    <ul id="history-list" class="sidebar-list"></ul>
+  </div>
+</div>
+<div id="main">
+  <button id="sidebar-toggle-btn" title="Show sidebar">&raquo;</button>
+  <div id="messages"></div>
+  <div id="input-row">
+    <input id="input" type="text" placeholder="message tars..." autocomplete="off">
+    <button id="send">Send</button>
+  </div>
 </div>
 <script src="/marked.min.js"></script>
 <script>
 // Configure marked for GitHub-Flavored Markdown.
 marked.use({gfm: true, breaks: true});
 
-const messages = document.getElementById("messages");
-const input = document.getElementById("input");
-const send = document.getElementById("send");
+const messagesEl = document.getElementById("messages");
+const inputEl = document.getElementById("input");
+const sendBtn = document.getElementById("send");
+const sidebar = document.getElementById("sidebar");
+const activeList = document.getElementById("active-list");
+const historyList = document.getElementById("history-list");
 
 // Persist conversation ID in localStorage so the same server-side
 // conversation is resumed after a page reload.
@@ -73,7 +119,7 @@ const authHeaders = (extra = {}) => {
 };
 
 // --- localStorage history ---
-// Store as a JSON array of {role, text} objects. Capped to avoid
+// Store as a JSON array of {role, text, model?} objects. Capped to avoid
 // localStorage bloat (5MB limit shared with the whole origin).
 const MAX_HISTORY = 200;
 
@@ -86,10 +132,9 @@ function loadHistory() {
 
 function saveHistory(history) {
   try {
-    // Keep only the most recent messages if we're over the cap.
     const trimmed = history.slice(-MAX_HISTORY);
     localStorage.setItem(STORAGE_KEY, JSON.stringify(trimmed));
-  } catch { /* localStorage full or unavailable — ignore */ }
+  } catch { /* localStorage full or unavailable */ }
 }
 
 function clearConversation() {
@@ -97,29 +142,148 @@ function clearConversation() {
   localStorage.removeItem("tars_convId");
   convId = "web-" + Math.random().toString(36).slice(2, 10);
   localStorage.setItem("tars_convId", convId);
-  messages.innerHTML = "";
+  messagesEl.innerHTML = "";
   history = [];
 }
 
 let history = loadHistory();
 
-function addMsg(role, text) {
+function addMsg(role, text, model) {
   const div = document.createElement("div");
   div.className = "msg " + role;
-  // Render assistant messages as GFM markdown; everything else as plain text.
   if (role === "assistant") {
     div.innerHTML = marked.parse(text);
   } else {
     div.textContent = text;
   }
-  messages.appendChild(div);
-  messages.scrollTop = messages.scrollHeight;
+  messagesEl.appendChild(div);
+  if (model && role === "assistant") {
+    const tag = document.createElement("div");
+    tag.className = "model-tag";
+    tag.textContent = model;
+    messagesEl.appendChild(tag);
+  }
+  messagesEl.scrollTop = messagesEl.scrollHeight;
   return div;
+}
+
+function addModelTag(model) {
+  const tag = document.createElement("div");
+  tag.className = "model-tag";
+  tag.textContent = model;
+  messagesEl.appendChild(tag);
+  messagesEl.scrollTop = messagesEl.scrollHeight;
 }
 
 // Restore previous messages on page load.
 for (const entry of history) {
-  addMsg(entry.role, entry.text);
+  addMsg(entry.role, entry.text, entry.model);
+}
+
+// --- Sidebar ---
+document.getElementById("sidebar-toggle").addEventListener("click", () => {
+  sidebar.classList.add("collapsed");
+});
+document.getElementById("sidebar-toggle-btn").addEventListener("click", () => {
+  sidebar.classList.remove("collapsed");
+});
+
+let viewingSession = false;
+
+async function loadSidebar() {
+  // Active conversations
+  try {
+    const resp = await fetch("/conversations", {headers: authHeaders()});
+    const data = await resp.json();
+    activeList.innerHTML = "";
+    for (const c of data.conversations) {
+      const li = document.createElement("li");
+      li.className = "sidebar-item" + (c.id === convId ? " active" : "");
+      li.textContent = c.id;
+      li.title = `${c.message_count} messages`;
+      li.addEventListener("click", () => loadConversation(c.id));
+      activeList.appendChild(li);
+    }
+  } catch {}
+
+  // Session history
+  try {
+    const resp = await fetch("/sessions?limit=20", {headers: authHeaders()});
+    const data = await resp.json();
+    historyList.innerHTML = "";
+    for (const s of data.sessions) {
+      const li = document.createElement("li");
+      li.className = "sidebar-item";
+      const channelSpan = s.channel ? `<span class="sidebar-channel">[${s.channel}]</span>` : "";
+      li.innerHTML = `${s.title} ${channelSpan}`;
+      li.title = s.date;
+      li.addEventListener("click", () => viewSession(s.filename, s.title));
+      historyList.appendChild(li);
+    }
+  } catch {}
+}
+
+async function loadConversation(id) {
+  if (viewingSession) {
+    // Restore chat view
+    messagesEl.innerHTML = "";
+    viewingSession = false;
+    document.getElementById("input-row").style.display = "";
+  }
+  try {
+    const resp = await fetch(`/conversations/${id}/messages`, {headers: authHeaders()});
+    const data = await resp.json();
+    messagesEl.innerHTML = "";
+    for (const m of data.messages) {
+      addMsg(m.role, m.content);
+    }
+    convId = id;
+    localStorage.setItem("tars_convId", convId);
+    // Clear local history and replace with server messages
+    history = data.messages.map(m => ({role: m.role, text: m.content}));
+    saveHistory(history);
+  } catch (e) {
+    addMsg("error", "Failed to load conversation: " + e.message);
+  }
+  loadSidebar();
+}
+
+async function viewSession(filename, title) {
+  try {
+    const resp = await fetch(`/sessions/${encodeURIComponent(filename)}`, {headers: authHeaders()});
+    if (!resp.ok) { addMsg("error", "Session not found"); return; }
+    const data = await resp.json();
+    messagesEl.innerHTML = "";
+    viewingSession = true;
+    document.getElementById("input-row").style.display = "none";
+    const viewer = document.createElement("div");
+    viewer.className = "session-viewer";
+    viewer.innerHTML = marked.parse(data.content);
+    messagesEl.appendChild(viewer);
+    // Highlight in sidebar
+    historyList.querySelectorAll(".sidebar-item").forEach(el => el.classList.remove("active"));
+    const items = historyList.querySelectorAll(".sidebar-item");
+    for (const item of items) {
+      if (item.title === title || item.textContent.includes(title)) {
+        item.classList.add("active");
+        break;
+      }
+    }
+  } catch (e) {
+    addMsg("error", "Failed to load session: " + e.message);
+  }
+}
+
+// Return to chat from session view
+function returnToChat() {
+  if (!viewingSession) return;
+  viewingSession = false;
+  document.getElementById("input-row").style.display = "";
+  messagesEl.innerHTML = "";
+  for (const entry of history) {
+    addMsg(entry.role, entry.text, entry.model);
+  }
+  loadSidebar();
 }
 
 function parseToolCommand(text) {
@@ -159,20 +323,24 @@ function parseToolCommand(text) {
 }
 
 async function sendMessage() {
-  const text = input.value.trim();
+  const text = inputEl.value.trim();
   if (!text) return;
+
+  // Return to chat if viewing a session
+  if (viewingSession) returnToChat();
 
   // /clear command — reset conversation locally and on server.
   if (text === "/clear") {
-    input.value = "";
+    inputEl.value = "";
     try { fetch("/conversations/" + convId, {method: "DELETE", headers: authHeaders()}); } catch {}
     clearConversation();
+    loadSidebar();
     return;
   }
 
   // /help — show available commands.
   if (text === "/help") {
-    input.value = "";
+    inputEl.value = "";
     addMsg("assistant", [
       "**tools:**",
       "`/todoist add <text> [--due D] [--project P] [--priority N]`",
@@ -205,7 +373,7 @@ async function sendMessage() {
 
   // CLI-only interactive commands.
   if (text === "/review" || text === "/tidy" || text.startsWith("/capture")) {
-    input.value = "";
+    inputEl.value = "";
     addMsg("assistant", `\`${text}\` is only available in the CLI`);
     return;
   }
@@ -213,7 +381,7 @@ async function sendMessage() {
   // /w [note] — flag last response as wrong; /r [note] — flag as good.
   const fbMatch = text.match(/^\/([wr])(?:\s(.*))?$/);
   if (fbMatch) {
-    input.value = "";
+    inputEl.value = "";
     const kind = fbMatch[1] === "r" ? "reward" : "correction";
     const note = (fbMatch[2] || "").trim();
     try {
@@ -232,7 +400,7 @@ async function sendMessage() {
 
   // /brief — compound command, uses dedicated endpoint.
   if (text === "/brief") {
-    input.value = "";
+    inputEl.value = "";
     addMsg("user", text);
     try {
       const resp = await fetch("/brief", {headers: authHeaders()});
@@ -251,7 +419,7 @@ async function sendMessage() {
 
   // /stats — system health.
   if (text === "/stats") {
-    input.value = "";
+    inputEl.value = "";
     addMsg("user", text);
     try {
       const resp = await fetch("/stats", {headers: authHeaders()});
@@ -274,7 +442,7 @@ async function sendMessage() {
 
   // /model — model configuration.
   if (text === "/model") {
-    input.value = "";
+    inputEl.value = "";
     addMsg("user", text);
     try {
       const resp = await fetch("/model", {headers: authHeaders()});
@@ -297,7 +465,7 @@ async function sendMessage() {
 
   // /sessions — list recent sessions.
   if (text === "/sessions") {
-    input.value = "";
+    inputEl.value = "";
     addMsg("user", text);
     try {
       const resp = await fetch("/sessions", {headers: authHeaders()});
@@ -305,7 +473,10 @@ async function sendMessage() {
       if (!data.sessions.length) {
         addMsg("assistant", "no sessions found");
       } else {
-        const lines = data.sessions.map(s => `\`${s.date}\`  ${s.title}`);
+        const lines = data.sessions.map(s => {
+          const ch = s.channel ? ` [${s.channel}]` : "";
+          return `\`${s.date}\`${ch}  ${s.title}`;
+        });
         addMsg("assistant", lines.join("\n"));
       }
     } catch (e) {
@@ -316,7 +487,7 @@ async function sendMessage() {
 
   // /session (bare) — show usage hint.
   if (text === "/session") {
-    input.value = "";
+    inputEl.value = "";
     addMsg("assistant", "usage: `/session <query>`");
     return;
   }
@@ -324,8 +495,8 @@ async function sendMessage() {
   // /session <query> — search session logs.
   if (text.startsWith("/session ")) {
     const query = text.slice(9).trim();
-    if (!query) { addMsg("assistant", "usage: /session <query>"); input.value = ""; return; }
-    input.value = "";
+    if (!query) { addMsg("assistant", "usage: /session <query>"); inputEl.value = ""; return; }
+    inputEl.value = "";
     addMsg("user", text);
     try {
       const resp = await fetch(
@@ -352,8 +523,8 @@ async function sendMessage() {
   if (searchMatch) {
     const mode = {search: "hybrid", sgrep: "fts", svec: "vec"}[searchMatch[1]];
     const query = (searchMatch[2] || "").trim();
-    if (!query) { addMsg("assistant", `usage: /${searchMatch[1]} <query>`); input.value = ""; return; }
-    input.value = "";
+    if (!query) { addMsg("assistant", `usage: /${searchMatch[1]} <query>`); inputEl.value = ""; return; }
+    inputEl.value = "";
     addMsg("user", text);
     try {
       const resp = await fetch(
@@ -379,12 +550,12 @@ async function sendMessage() {
   // Direct tool commands — bypass the model entirely.
   const toolCmd = parseToolCommand(text);
   if (toolCmd === "usage") {
-    input.value = "";
+    inputEl.value = "";
     addMsg("assistant", "usage: `/note <text>`");
     return;
   }
   if (toolCmd) {
-    input.value = "";
+    inputEl.value = "";
     addMsg("user", text);
     try {
       const resp = await fetch("/tool", {
@@ -400,12 +571,12 @@ async function sendMessage() {
     return;
   }
 
-  input.value = "";
+  inputEl.value = "";
   addMsg("user", text);
   history.push({role: "user", text});
   saveHistory(history);
-  send.disabled = true;
-  input.disabled = true;
+  sendBtn.disabled = true;
+  inputEl.disabled = true;
 
   try {
     const resp = await fetch("/chat/stream", {
@@ -424,7 +595,8 @@ async function sendMessage() {
     const div = addMsg("assistant", "");
     div.style.display = "none";
     let firstToken = true;
-    let rawText = "";  // accumulate raw markdown source
+    let rawText = "";
+    let modelName = "";
 
     const reader = resp.body.getReader();
     const decoder = new TextDecoder();
@@ -448,28 +620,36 @@ async function sendMessage() {
           }
           rawText += data.delta;
           div.innerHTML = marked.parse(rawText);
-          messages.scrollTop = messages.scrollHeight;
+          messagesEl.scrollTop = messagesEl.scrollHeight;
+        }
+        if (data.meta && data.meta.model) {
+          modelName = data.meta.model;
         }
       }
     }
 
-    // Save the raw markdown source so history restores render correctly.
+    if (modelName) {
+      addModelTag(modelName);
+    }
+
     if (rawText) {
-      history.push({role: "assistant", text: rawText});
+      history.push({role: "assistant", text: rawText, model: modelName || undefined});
       saveHistory(history);
     }
+
+    loadSidebar();
   } catch (e) {
     if (typeof thinking !== "undefined" && document.contains(thinking)) thinking.remove();
     addMsg("error", "connection failed: " + e.message);
   } finally {
-    send.disabled = false;
-    input.disabled = false;
-    input.focus();
+    sendBtn.disabled = false;
+    inputEl.disabled = false;
+    inputEl.focus();
   }
 }
 
-send.addEventListener("click", sendMessage);
-input.addEventListener("keydown", (e) => {
+sendBtn.addEventListener("click", sendMessage);
+inputEl.addEventListener("keydown", (e) => {
   if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendMessage(); }
 });
 // Save session on tab close / navigation. sendBeacon is fire-and-forget,
@@ -480,7 +660,8 @@ window.addEventListener("beforeunload", () => {
       new Blob([JSON.stringify({})], {type: "application/json"}),
     );
 });
-input.focus();
+inputEl.focus();
+loadSidebar();
 </script>
 </body>
 </html>

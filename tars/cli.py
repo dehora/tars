@@ -234,8 +234,9 @@ def repl(config):
         remote_provider=config.remote_provider,
         remote_model=config.remote_model,
         routing_policy=config.routing_policy,
+        channel="cli",
     )
-    session_file = _session_path()
+    session_file = _session_path(channel="cli")
     history_file = Path.home() / ".tars_history"
     try:
         readline.read_history_file(history_file)
@@ -298,7 +299,7 @@ def repl(config):
                     conv.last_compaction_index = 0
                     conv.cumulative_summary = ""
                     conv.search_context = ""
-                    session_file = _session_path()
+                    session_file = _session_path(channel="cli")
                     print("  conversation cleared")
                 else:
                     for line in result.splitlines():
@@ -551,9 +552,10 @@ def main():
                 remote_provider=config.remote_provider,
                 remote_model=config.remote_model,
                 routing_policy=config.routing_policy,
+                channel="cli",
             )
             conv.search_context = "[one-shot message, no follow-up possible — act immediately on any tool requests]"
-            session_file = _session_path()
+            session_file = _session_path(channel="cli")
             reply = process_message(conv, message, session_file)
             print(reply)
         else:

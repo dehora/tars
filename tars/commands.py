@@ -157,6 +157,21 @@ _SHORTCUTS_TEXT = """\
 /w /r      feedback      /help       full help"""
 
 
+def _format_error(exc: Exception) -> str:
+    """Classify exceptions into user-friendly error messages."""
+    if isinstance(exc, (ConnectionError, TimeoutError)):
+        return "Network error — could not reach service"
+    if isinstance(exc, OSError) and not isinstance(exc, (FileNotFoundError, PermissionError)):
+        return "Network error — could not reach service"
+    msg = str(exc)
+    msg_lower = msg.lower()
+    if "api_key" in msg_lower or "api key" in msg_lower:
+        return "Auth error — API key not set or invalid"
+    if "TARS_MEMORY_DIR" in msg:
+        return "Memory not configured — set TARS_MEMORY_DIR"
+    return f"Error: {msg}"
+
+
 def dispatch(
     text: str,
     provider: str = "",
@@ -260,7 +275,7 @@ def dispatch(
         if cmd == "/model":
             return _dispatch_model(context)
     except Exception as e:
-        return f"Tool error: {e}"
+        return _format_error(e)
 
     return f"Unknown command: {cmd}. Type /help for available commands."
 
@@ -352,7 +367,10 @@ def _dispatch_sessions() -> str:
     sessions = list_sessions(limit=10)
     if not sessions:
         return "No sessions found."
-    lines = [f"{s.date}  {s.title}" for s in sessions]
+    lines = []
+    for s in sessions:
+        channel_tag = f"  [{s.channel}]" if s.channel else ""
+        lines.append(f"{s.date}{channel_tag}  {s.title}")
     return "\n".join(lines)
 
 

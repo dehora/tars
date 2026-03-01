@@ -25,6 +25,7 @@ class Conversation:
     remote_provider: str | None = None
     remote_model: str | None = None
     routing_policy: str = "tool"
+    channel: str = ""
     messages: list[dict] = field(default_factory=list)
     search_context: str = ""
     msg_count: int = 0
@@ -183,12 +184,14 @@ def _maybe_compact(conv: Conversation, session_file: Path | None) -> None:
         conv.last_compaction = conv.msg_count
         conv.last_compaction_index = len(conv.messages)
         try:
-            append_daily(f"session compacted — {summary[:80]}")
+            tag = f"[{conv.channel}] " if conv.channel else ""
+            append_daily(f"{tag}session compacted — {summary[:80]}")
         except Exception:
             pass
         try:
+            tag = f"[{conv.channel}] " if conv.channel else ""
             for fact in extract_facts(new_messages, conv.provider, conv.model):
-                append_daily(f"[extracted] {fact}")
+                append_daily(f"{tag}[extracted] {fact}")
         except Exception:
             pass
     except Exception as e:
@@ -210,12 +213,14 @@ def save_session(conv: Conversation, session_file: Path | None) -> None:
         conv.cumulative_summary = _merge_summary(conv.cumulative_summary, summary)
         _save_session(session_file, conv.cumulative_summary)
         try:
-            append_daily(f"session saved — {summary[:80]}")
+            tag = f"[{conv.channel}] " if conv.channel else ""
+            append_daily(f"{tag}session saved — {summary[:80]}")
         except Exception:
             pass
         try:
+            tag = f"[{conv.channel}] " if conv.channel else ""
             for fact in extract_facts(new_messages, conv.provider, conv.model):
-                append_daily(f"[extracted] {fact}")
+                append_daily(f"{tag}[extracted] {fact}")
         except Exception:
             pass
     except Exception as e:

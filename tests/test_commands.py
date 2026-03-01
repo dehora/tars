@@ -8,7 +8,7 @@ sys.modules.setdefault("anthropic", mock.Mock())
 sys.modules.setdefault("ollama", mock.Mock())
 sys.modules.setdefault("dotenv", mock.Mock(load_dotenv=lambda: None))
 
-from tars.commands import _export_conversation, _parse_todoist_add, command_names, dispatch
+from tars.commands import _export_conversation, _format_error, _parse_todoist_add, command_names, dispatch
 
 
 class ParseTodoistAddTests(unittest.TestCase):
@@ -236,8 +236,8 @@ class DispatchTests(unittest.TestCase):
     @mock.patch("tars.commands.run_tool", side_effect=Exception("boom"))
     def test_tool_error(self, mock_run) -> None:
         result = dispatch("/weather")
-        self.assertIn("Tool error", result)
-        self.assertIn("boom", result)
+        self.assertIn("Error: boom", result)
+        self.assertNotIn("Tool error", result)
 
 
 class ExportTests(unittest.TestCase):
@@ -385,6 +385,83 @@ class CentralizedDispatchTests(unittest.TestCase):
         conv = Conversation(id="test", provider="ollama", model="test")
         result = dispatch("/w", conv=conv, context={"channel": "cli"})
         self.assertIn("nothing to flag", result)
+
+
+class FormatErrorTests(unittest.TestCase):
+    def test_connection_error(self) -> None:
+        result = _format_error(ConnectionError("refused"))
+        self.assertIn("Network error", result)
+
+    def test_timeout_error(self) -> None:
+        result = _format_error(TimeoutError("timed out"))
+        self.assertIn("Network error", result)
+
+    def test_os_error_network(self) -> None:
+        result = _format_error(OSError("network unreachable"))
+        self.assertIn("Network error", result)
+
+    def test_file_not_found_not_network(self) -> None:
+        result = _format_error(FileNotFoundError("missing.txt"))
+        self.assertNotIn("Network error", result)
+        self.assertIn("Error:", result)
+
+    def test_api_key_error(self) -> None:
+        result = _format_error(Exception("ANTHROPIC_API_KEY not set"))
+        self.assertIn("Auth error", result)
+
+    def test_api_key_error_lowercase(self) -> None:
+        result = _format_error(Exception("Invalid api key provided"))
+        self.assertIn("Auth error", result)
+
+    def test_memory_dir_error(self) -> None:
+        result = _format_error(Exception("TARS_MEMORY_DIR not configured"))
+        self.assertIn("Memory not configured", result)
+
+    def test_generic_error(self) -> None:
+        result = _format_error(Exception("something broke"))
+        self.assertEqual(result, "Error: something broke")
+
+
+class SessionsDisplayTests(unittest.TestCase):
+    def test_sessions_with_channel(self) -> None:
+        from tars.sessions import SessionInfo
+        from pathlib import Path
+
+        mock_sessions = [
+            SessionInfo(
+                path=Path("/tmp/s1.md"), date="2026-03-01 10:00",
+                title="Weather talk", filename="2026-03-01T10-00-00-cli",
+                channel="cli",
+            ),
+            SessionInfo(
+                path=Path("/tmp/s2.md"), date="2026-02-28 15:00",
+                title="Web chat", filename="2026-02-28T15-00-00-web",
+                channel="web",
+            ),
+        ]
+        with mock.patch("tars.sessions.list_sessions", return_value=mock_sessions):
+            from tars.commands import _dispatch_sessions
+            result = _dispatch_sessions()
+        self.assertIn("[cli]", result)
+        self.assertIn("[web]", result)
+        self.assertIn("Weather talk", result)
+
+    def test_sessions_without_channel(self) -> None:
+        from tars.sessions import SessionInfo
+        from pathlib import Path
+
+        mock_sessions = [
+            SessionInfo(
+                path=Path("/tmp/s1.md"), date="2026-03-01 10:00",
+                title="Old session", filename="2026-03-01T10-00-00",
+                channel="",
+            ),
+        ]
+        with mock.patch("tars.sessions.list_sessions", return_value=mock_sessions):
+            from tars.commands import _dispatch_sessions
+            result = _dispatch_sessions()
+        self.assertNotIn("[", result)
+        self.assertIn("Old session", result)
 
 
 if __name__ == "__main__":
