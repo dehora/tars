@@ -242,6 +242,12 @@ def get_all_tools(mcp_client: MCPClient | None = None) -> tuple[list, list]:
     return anthropic, ollama
 
 
+_TOOL_REQUIRED: dict[str, list[str]] = {
+    t["name"]: t["input_schema"].get("required", [])
+    for t in ANTHROPIC_TOOLS
+}
+
+
 def _clean_args(args: dict) -> dict:
     """Strip empty-string and None optional params that models fill in needlessly."""
     return {k: v for k, v in args.items() if v is not None and v != ""}
@@ -279,6 +285,9 @@ def _resolve_td() -> str | None:
 
 def run_tool(name: str, args: dict, *, quiet: bool = False) -> str:
     args = _clean_args(args)
+    missing = [f for f in _TOOL_REQUIRED.get(name, []) if f not in args]
+    if missing:
+        return json.dumps({"error": f"missing required field(s) for {name}: {', '.join(missing)}"})
     if not quiet:
         print(f"  [tool] {name}({args})", file=sys.stderr)
     try:

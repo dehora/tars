@@ -1,4 +1,5 @@
 import json
+import logging
 import sys
 import unittest
 from unittest import mock
@@ -363,6 +364,37 @@ class ChatEndpointTests(unittest.TestCase):
     def test_export_nonexistent_conversation(self) -> None:
         resp = self.client.get("/conversations/nope/export")
         self.assertEqual(resp.status_code, 404)
+
+
+class AuthWarningTests(unittest.TestCase):
+    def test_lifespan_warns_when_no_token(self) -> None:
+        original = api._API_TOKEN
+        try:
+            api._API_TOKEN = ""
+            with self.assertLogs("uvicorn", level="WARNING") as cm:
+                client = TestClient(api.app)
+                with client:
+                    pass
+            self.assertTrue(
+                any("TARS_API_TOKEN is not set" in m for m in cm.output),
+                f"Expected auth warning in logs, got: {cm.output}",
+            )
+        finally:
+            api._API_TOKEN = original
+
+    def test_lifespan_no_warning_when_token_set(self) -> None:
+        original = api._API_TOKEN
+        try:
+            api._API_TOKEN = "test-secret"
+            logger = logging.getLogger("uvicorn")
+            with mock.patch.object(logger, "warning") as mock_warn:
+                client = TestClient(api.app)
+                with client:
+                    pass
+            for call in mock_warn.call_args_list:
+                self.assertNotIn("TARS_API_TOKEN", str(call))
+        finally:
+            api._API_TOKEN = original
 
 
 if __name__ == "__main__":

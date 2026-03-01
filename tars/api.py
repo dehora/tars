@@ -54,6 +54,10 @@ async def lifespan(app: FastAPI):
     logging.getLogger("uvicorn").info(
         f"tars [{_provider}:{_model}] remote={model_summary(_model_config)['remote']}"
     )
+    if not _API_TOKEN:
+        logging.getLogger("uvicorn").warning(
+            "TARS_API_TOKEN is not set — all API endpoints are unauthenticated"
+        )
     try:
         build_index()
     except Exception as e:

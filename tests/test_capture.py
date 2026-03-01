@@ -255,6 +255,48 @@ class CaptureTests(unittest.TestCase):
                 self.assertFalse(kwargs["use_tools"])
 
 
+class CaptureCollisionTests(unittest.TestCase):
+    def _capture_with_preexisting(self, existing_files: list[str]) -> str:
+        """Helper: create files, run capture, return the resulting path."""
+        web_result = json.dumps({"url": "https://dehora.net/tars-test/post", "content": "text", "truncated": False})
+        with tempfile.TemporaryDirectory() as tmpdir:
+            captures_dir = Path(tmpdir) / "17 tars captures"
+            captures_dir.mkdir(parents=True)
+            for f in existing_files:
+                (captures_dir / f).write_text("existing", encoding="utf-8")
+            with (
+                mock.patch.dict(os.environ, {"TARS_NOTES_DIR": tmpdir}),
+                mock.patch("tars.capture._run_web_tool", return_value=web_result),
+                mock.patch("tars.capture._fetch_html", return_value=(None, "skip")),
+                mock.patch(
+                    "tars.capture.chat",
+                    side_effect=[
+                        '{"title":"Great Post","author":"","created":"","description":"d"}',
+                        "# Great Post\n\nBody",
+                    ],
+                ),
+                mock.patch("tars.capture.datetime") as mock_dt,
+            ):
+                mock_dt.now.return_value.strftime.return_value = "2026-03-01"
+                result = json.loads(capture("https://dehora.net/tars-test/post", "ollama", "fake"))
+            self.assertTrue(result["ok"])
+            original = captures_dir / existing_files[0] if existing_files else None
+            if original and original.exists():
+                self.assertEqual(original.read_text(encoding="utf-8"), "existing")
+            return result["path"]
+
+    def test_collision_gets_suffix_2(self) -> None:
+        path = self._capture_with_preexisting(["Great Post (2026-03-01).md"])
+        self.assertTrue(path.endswith("Great Post (2026-03-01) 2.md"))
+
+    def test_collision_skips_to_3(self) -> None:
+        path = self._capture_with_preexisting([
+            "Great Post (2026-03-01).md",
+            "Great Post (2026-03-01) 2.md",
+        ])
+        self.assertTrue(path.endswith("Great Post (2026-03-01) 3.md"))
+
+
 class ConversationContextTests(unittest.TestCase):
     def test_extracts_recent_messages(self) -> None:
         conv = mock.Mock()

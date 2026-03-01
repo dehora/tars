@@ -1,4 +1,6 @@
 import argparse
+import logging
+import os
 import readline
 import sys
 import threading
@@ -468,6 +470,12 @@ def main():
     if args.command == "serve":
         import uvicorn
 
+        if not os.environ.get("TARS_API_TOKEN", ""):
+            if args.host not in ("127.0.0.1", "::1", "localhost"):
+                logging.getLogger("tars").error(
+                    "TARS_API_TOKEN is not set and server is binding to %s "
+                    "— all endpoints are publicly accessible", args.host
+                )
         uvicorn.run("tars.api:app", host=args.host, port=args.port)
         return
 

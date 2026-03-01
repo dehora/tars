@@ -316,6 +316,13 @@ def capture(url: str, provider: str, model: str, *, raw: bool = False, context: 
     captures_dir = notes / _CAPTURES_DIR
     captures_dir.mkdir(parents=True, exist_ok=True)
     path = captures_dir / f"{filename} ({today}).md"
+    if path.exists():
+        counter = 2
+        while True:
+            path = captures_dir / f"{filename} ({today}) {counter}.md"
+            if not path.exists():
+                break
+            counter += 1
 
     # YAML frontmatter + content
     frontmatter = (

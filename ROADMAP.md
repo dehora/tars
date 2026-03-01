@@ -2,18 +2,14 @@
 
 ## Next
 
-(empty — QoL items moved to Done)
+(empty)
 
 ## Fixes
 
-- tars/tools.py _clean_args strips all empty strings. Suggested fix: Consider tool-specific sanitization or only stripping empty strings for parameters.
+(empty)
 
 <details>
 <summary>Parked</summary>
-
-### 16. Conversation export
-
-Dump a conversation or search results as markdown.
 
 ### 19. Proactive nudges
 
@@ -131,5 +127,17 @@ Conversation history sidebar (active conversations + session history, click to v
 ### 33. QoL: Cross-channel visibility
 
 `channel` field on Conversation dataclass. Session filenames include channel suffix (`2026-03-01T10-00-00-cli.md`). `SessionInfo.channel` parsed from filename. Daily memory entries tagged with channel (`[cli] session saved — ...`). `/sessions` output shows channel tags.
+
+### 16. Conversation export (`/export`)
+
+`/export` formats conversation messages as markdown. Available in CLI, web, Telegram, and email via shared `commands.dispatch()`. Web UI has dedicated `GET /conversations/{id}/export` endpoint.
+
+### 34. Web UI command parity
+
+Wired up all slash commands missing from the web UI: `/find`, `/read`, `/mcp`, `/schedule`, `/export`. Added API endpoints for `/find` (notes search), `/mcp` (server list), `/schedule` (OS + in-process), and `/export`. Updated web `/help` text to match CLI.
+
+### 35. Security hardening and bug fixes
+
+API auth warning: `lifespan()` warns when `TARS_API_TOKEN` is unset; `cli.py` logs ERROR when binding to non-localhost without a token. Capture filename collision: counter suffix avoids silent overwrites (`Article (date) 2.md`). `_clean_args` required field validation: `run_tool()` checks required fields from schema before dispatch, returns clear error for missing fields.
 
 </details>
