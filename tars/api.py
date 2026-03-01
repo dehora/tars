@@ -17,7 +17,7 @@ from tars.conversation import Conversation, process_message, process_message_str
 from tars.format import format_tool_result
 from tars.indexer import build_index
 from tars.memory import save_correction, save_reward
-from tars.search import search as memory_search
+from tars.search import search as memory_search, search_notes
 from tars.sessions import _session_path, list_sessions
 from tars.tools import run_tool
 
@@ -256,6 +256,27 @@ def search_endpoint(q: str = "", mode: str = "hybrid", limit: int = 10) -> dict:
     }
 
 
+@app.get("/find")
+def find_endpoint(q: str = "", limit: int = 10) -> dict:
+    if not q.strip():
+        raise HTTPException(status_code=400, detail="Missing query parameter 'q'")
+    results = search_notes(q, limit=limit)
+    return {
+        "results": [
+            {
+                "content": r.content,
+                "score": r.score,
+                "file_path": r.file_path,
+                "file_title": r.file_title,
+                "memory_type": r.memory_type,
+                "start_line": r.start_line,
+                "end_line": r.end_line,
+            }
+            for r in results
+        ]
+    }
+
+
 @app.get("/brief")
 def brief_endpoint() -> dict:
     sections = {}
@@ -343,6 +364,48 @@ def session_content_endpoint(filename: str) -> dict:
 def index_endpoint() -> dict:
     stats = build_index()
     return stats
+
+
+@app.get("/mcp")
+def mcp_endpoint() -> dict:
+    from tars.tools import get_mcp_client
+
+    client = get_mcp_client()
+    if client is None:
+        return {"servers": []}
+    return {"servers": client.list_servers()}
+
+
+@app.get("/schedule")
+def schedule_endpoint() -> dict:
+    from tars.commands import get_task_runner
+    from tars.scheduler import schedule_list
+
+    os_schedules = schedule_list()
+    in_process = []
+    runner = get_task_runner()
+    if runner is not None:
+        in_process = [
+            {
+                "name": t.name,
+                "schedule": t.schedule,
+                "action": t.action,
+                "deliver": t.deliver,
+                "last_run": t.last_run.strftime("%Y-%m-%d %H:%M") if t.last_run else None,
+            }
+            for t in runner.list_tasks()
+        ]
+    return {"os": os_schedules, "in_process": in_process}
+
+
+@app.get("/conversations/{conversation_id}/export")
+def export_conversation_endpoint(conversation_id: str) -> dict:
+    conv = _conversations.get(conversation_id)
+    if conv is None:
+        raise HTTPException(status_code=404, detail="Conversation not found")
+    from tars.commands import _export_conversation
+
+    return {"markdown": _export_conversation(conv)}
 
 
 _static_dir = Path(__file__).parent / "static"

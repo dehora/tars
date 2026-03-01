@@ -319,6 +319,8 @@ function parseToolCommand(text) {
   if (cmd === "/remember" && parts.length >= 3) return {name: "memory_remember", args: {section: parts[1], content: parts.slice(2).join(" ")}};
   if (cmd === "/note" && parts.length >= 2) return {name: "note_daily", args: {content: parts.slice(1).join(" ")}};
   if (cmd === "/note") return "usage";
+  if (cmd === "/read" && parts.length >= 2) return {name: "web_read", args: {url: parts[1]}};
+  if (cmd === "/read") return "usage_read";
   return null;
 }
 
@@ -350,10 +352,12 @@ async function sendMessage() {
       "`/memory` — show persistent memory",
       "`/remember <semantic|procedural> <text>`",
       "`/note <text>` — append to today's daily note",
+      "`/read <url>` — fetch and display a web page",
       "**search:**",
       "`/search <query>` — hybrid keyword + semantic",
       "`/sgrep <query>` — keyword (FTS5/BM25)",
       "`/svec <query>` — semantic (vector KNN)",
+      "`/find <query>` — search personal notes vault",
       "**sessions:**",
       "`/sessions` — list recent sessions",
       "`/session <query>` — search session logs",
@@ -362,7 +366,11 @@ async function sendMessage() {
       "`/r [note]` — flag last response as good",
       "**daily:**",
       "`/brief` — todoist + weather digest",
+      "**export:**",
+      "`/export` — export conversation as markdown",
       "**system:**",
+      "`/mcp` — show connected MCP servers",
+      "`/schedule` — show installed schedules",
       "`/stats` — memory and index health",
       "`/model` — show active model configuration",
       "`/clear` — reset conversation",
@@ -375,6 +383,71 @@ async function sendMessage() {
   if (text === "/review" || text === "/tidy" || text.startsWith("/capture")) {
     inputEl.value = "";
     addMsg("assistant", `\`${text}\` is only available in the CLI`);
+    return;
+  }
+
+  // /mcp — show connected MCP servers.
+  if (text === "/mcp") {
+    inputEl.value = "";
+    addMsg("user", text);
+    try {
+      const resp = await fetch("/mcp", {headers: authHeaders()});
+      const data = await resp.json();
+      if (!data.servers.length) {
+        addMsg("assistant", "no MCP servers connected");
+      } else {
+        const lines = data.servers.map(s => {
+          const tools = s.tools && s.tools.length ? s.tools.join(", ") : "none";
+          return `**${s.name}** (${s.tool_count} tools): ${tools}`;
+        });
+        addMsg("assistant", lines.join("\n"));
+      }
+    } catch (e) {
+      addMsg("error", "mcp failed: " + e.message);
+    }
+    return;
+  }
+
+  // /schedule — show installed schedules.
+  if (text === "/schedule") {
+    inputEl.value = "";
+    addMsg("user", text);
+    try {
+      const resp = await fetch("/schedule", {headers: authHeaders()});
+      const data = await resp.json();
+      const lines = [];
+      if (data.os && data.os.length) {
+        lines.push("**os schedules:**");
+        for (const s of data.os) {
+          lines.push(`\`${s.name}\` — ${s.trigger} (last: ${s.last_run || "never"})`);
+        }
+      }
+      if (data.in_process && data.in_process.length) {
+        if (lines.length) lines.push("");
+        lines.push("**in-process schedules:**");
+        for (const s of data.in_process) {
+          lines.push(`\`${s.name}\` — ${s.schedule} → ${s.action} (last: ${s.last_run || "never"})`);
+        }
+      }
+      addMsg("assistant", lines.length ? lines.join("\n") : "no schedules installed");
+    } catch (e) {
+      addMsg("error", "schedule failed: " + e.message);
+    }
+    return;
+  }
+
+  // /export — export conversation as markdown.
+  if (text === "/export") {
+    inputEl.value = "";
+    addMsg("user", text);
+    try {
+      const resp = await fetch(`/conversations/${convId}/export`, {headers: authHeaders()});
+      const data = await resp.json();
+      if (!resp.ok) { addMsg("error", data.detail || "export failed"); return; }
+      addMsg("assistant", data.markdown);
+    } catch (e) {
+      addMsg("error", "export failed: " + e.message);
+    }
     return;
   }
 
@@ -518,23 +591,24 @@ async function sendMessage() {
     return;
   }
 
-  // /search, /sgrep, /svec — memory search commands.
-  const searchMatch = text.match(/^\/(search|sgrep|svec)(?:\s(.*))?$/);
+  // /search, /sgrep, /svec — memory search commands; /find — notes vault search.
+  const searchMatch = text.match(/^\/(search|sgrep|svec|find)(?:\s(.*))?$/);
   if (searchMatch) {
-    const mode = {search: "hybrid", sgrep: "fts", svec: "vec"}[searchMatch[1]];
+    const cmd = searchMatch[1];
+    const mode = {search: "hybrid", sgrep: "fts", svec: "vec"}[cmd];
     const query = (searchMatch[2] || "").trim();
-    if (!query) { addMsg("assistant", `usage: /${searchMatch[1]} <query>`); inputEl.value = ""; return; }
+    if (!query) { addMsg("assistant", `usage: /${cmd} <query>`); inputEl.value = ""; return; }
     inputEl.value = "";
     addMsg("user", text);
     try {
-      const resp = await fetch(
-        `/search?q=${encodeURIComponent(query)}&mode=${mode}`,
-        {headers: authHeaders()},
-      );
+      const endpoint = cmd === "find"
+        ? `/find?q=${encodeURIComponent(query)}`
+        : `/search?q=${encodeURIComponent(query)}&mode=${mode}`;
+      const resp = await fetch(endpoint, {headers: authHeaders()});
       const data = await resp.json();
       if (!resp.ok) { addMsg("error", data.detail || "search failed"); return; }
       if (!data.results.length) {
-        addMsg("assistant", `no results (${mode})`);
+        addMsg("assistant", cmd === "find" ? "no results (notes)" : `no results (${mode})`);
       } else {
         const lines = data.results.map((r, i) =>
           `**${i+1}.** [${r.score.toFixed(3)}] ${r.file_title || r.file_path}:${r.start_line}-${r.end_line} (${r.memory_type})\n${r.content.slice(0, 200)}`
@@ -552,6 +626,11 @@ async function sendMessage() {
   if (toolCmd === "usage") {
     inputEl.value = "";
     addMsg("assistant", "usage: `/note <text>`");
+    return;
+  }
+  if (toolCmd === "usage_read") {
+    inputEl.value = "";
+    addMsg("assistant", "usage: `/read <url>`");
     return;
   }
   if (toolCmd) {

@@ -262,6 +262,30 @@ class ChatEndpointTests(unittest.TestCase):
         resp = self.client.get("/sessions/search?q=")
         self.assertEqual(resp.status_code, 400)
 
+    def test_find_endpoint_returns_results(self) -> None:
+        result = SearchResult(
+            content="daily note", score=0.85, file_path="/notes/daily.md",
+            file_title="Daily", memory_type="notes",
+            start_line=1, end_line=3, chunk_rowid=1,
+        )
+        with mock.patch.object(api, "search_notes", return_value=[result]):
+            resp = self.client.get("/find?q=daily")
+        self.assertEqual(resp.status_code, 200)
+        data = resp.json()
+        self.assertEqual(len(data["results"]), 1)
+        self.assertEqual(data["results"][0]["content"], "daily note")
+        self.assertAlmostEqual(data["results"][0]["score"], 0.85)
+
+    def test_find_endpoint_empty_query(self) -> None:
+        resp = self.client.get("/find?q=")
+        self.assertEqual(resp.status_code, 400)
+
+    def test_find_endpoint_no_results(self) -> None:
+        with mock.patch.object(api, "search_notes", return_value=[]):
+            resp = self.client.get("/find?q=nothing")
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(resp.json()["results"], [])
+
     def test_brief_endpoint(self) -> None:
         def fake_run_tool(name, args, *, quiet=False):
             if name == "todoist_today":
@@ -294,6 +318,51 @@ class ChatEndpointTests(unittest.TestCase):
         data = resp.json()
         self.assertIn("unavailable", data["sections"]["todoist_today"])
         self.assertNotIn("unavailable", data["sections"]["weather_now"])
+
+
+    def test_mcp_endpoint_no_client(self) -> None:
+        with mock.patch("tars.tools.get_mcp_client", return_value=None):
+            resp = self.client.get("/mcp")
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(resp.json()["servers"], [])
+
+    def test_mcp_endpoint_with_servers(self) -> None:
+        fake_client = mock.Mock()
+        fake_client.list_servers.return_value = [
+            {"name": "test", "status": "connected", "tool_count": 2, "tools": ["a", "b"]}
+        ]
+        with mock.patch("tars.tools.get_mcp_client", return_value=fake_client):
+            resp = self.client.get("/mcp")
+        self.assertEqual(resp.status_code, 200)
+        servers = resp.json()["servers"]
+        self.assertEqual(len(servers), 1)
+        self.assertEqual(servers[0]["name"], "test")
+
+    def test_schedule_endpoint(self) -> None:
+        with mock.patch("tars.scheduler.schedule_list", return_value=[]):
+            with mock.patch("tars.commands.get_task_runner", return_value=None):
+                resp = self.client.get("/schedule")
+        self.assertEqual(resp.status_code, 200)
+        data = resp.json()
+        self.assertEqual(data["os"], [])
+        self.assertEqual(data["in_process"], [])
+
+    def test_export_conversation(self) -> None:
+        with mock.patch.object(conversation, "chat", return_value="hello back"):
+            self.client.post("/chat", json={
+                "conversation_id": "exp1",
+                "message": "hello",
+            })
+        resp = self.client.get("/conversations/exp1/export")
+        self.assertEqual(resp.status_code, 200)
+        md = resp.json()["markdown"]
+        self.assertIn("# Conversation exp1", md)
+        self.assertIn("hello", md)
+        self.assertIn("hello back", md)
+
+    def test_export_nonexistent_conversation(self) -> None:
+        resp = self.client.get("/conversations/nope/export")
+        self.assertEqual(resp.status_code, 404)
 
 
 if __name__ == "__main__":
