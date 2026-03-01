@@ -5,13 +5,13 @@
 The following four plans form a coherent system. Each piece makes the others more useful. The dependency chain determines the build order.
 
 ```
-Layer 1 (parallel, no deps)     Layer 2 (depends on L1)
-┌─────────────────────┐         ┌──────────────────────────┐
-│ ✓ Centralized dispatch│───────▶│ ✓ In-process scheduler   │
-└─────────────────────┘         │ (slash commands via       │
-                                │  dispatch, delivers to    │
-┌─────────────────────┐         │  daily/email/telegram)    │
-│ ✓ Daily memory files │───┬───▶└──────────────────────────┘
+Layer 1 (parallel, no deps)     Layer 2 (depends on L1)    Layer 3 (independent)
+┌─────────────────────┐         ┌──────────────────────────┐  ┌──────────────────────┐
+│ ✓ Centralized dispatch│───────▶│ ✓ In-process scheduler   │  │ ✓ MCP integration     │
+└─────────────────────┘         │ (slash commands via       │  │ (external tool servers │
+                                │  dispatch, delivers to    │  │  via Model Context    │
+┌─────────────────────┐         │  daily/email/telegram)    │  │  Protocol)            │
+│ ✓ Daily memory files │───┬───▶└──────────────────────────┘  └──────────────────────┘
 └─────────────────────┘   │
                           │     ┌──────────────────────────┐
                           └────▶│ ✓ Memory extraction       │
@@ -33,9 +33,9 @@ Layer 1 (parallel, no deps)     Layer 2 (depends on L1)
 
 **2b. In-process scheduler** — Done. `tars/taskrunner.py` provides a daemon-thread scheduler for long-lived processes (`tars serve`, `tars telegram`, `tars email`). Fires configured tasks as slash commands through `commands.dispatch()`. Delivers results to daily memory, email, or telegram. Configured via `schedules.json` in memory dir or `TARS_SCHEDULES` env var. Complements (does not replace) the OS-level scheduler in `tars/scheduler.py`.
 
-### Future (Layer 3, independent)
+### Layer 3: MCP integration — DONE
 
-**MCP integration** — Independent of the above but benefits from centralized dispatch (MCP tools route through the same dispatcher). Adds config-driven external tool servers. Larger scope, new dependency.
+**MCP integration** — Done. `tars/mcp.py` provides an MCPClient that connects to external MCP servers configured in `mcp_servers.json` (or `TARS_MCP_SERVERS` env var). Discovers tools at startup, merges into tool lists, routes calls through MCP sessions. Tool names prefixed with server name (`fetch.fetch_url`). Async MCP SDK bridged to sync tars code via a background anyio event loop thread. `/mcp` command lists connected servers. All channels (CLI, web, email, Telegram) start/stop MCP client alongside TaskRunner.
 
 ---
 

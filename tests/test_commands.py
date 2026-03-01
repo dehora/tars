@@ -363,7 +363,7 @@ class CentralizedDispatchTests(unittest.TestCase):
             "/search", "/sgrep", "/svec", "/find",
             "/sessions", "/session",
             "/w", "/r", "/review", "/tidy",
-            "/stats", "/schedule", "/model",
+            "/mcp", "/stats", "/schedule", "/model",
             "/export", "/help", "/clear",
         }
         self.assertEqual(names, expected)

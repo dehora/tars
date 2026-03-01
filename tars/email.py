@@ -231,7 +231,9 @@ def run_email(model_config: ModelConfig) -> None:
         return
 
     from tars.commands import set_task_runner
+    from tars.mcp import MCPClient, _load_mcp_config
     from tars.taskrunner import TaskRunner
+    from tars.tools import set_mcp_client
 
     summary = model_summary(model_config)
     print(
@@ -239,6 +241,15 @@ def run_email(model_config: ModelConfig) -> None:
         f"[{summary['primary']}]"
     )
     print(f"email: allowed senders: {', '.join(email_config['allow'])}")
+
+    mcp_client = None
+    mcp_config = _load_mcp_config()
+    if mcp_config:
+        mcp_client = MCPClient(mcp_config)
+        mcp_client.start()
+        set_mcp_client(mcp_client)
+        from tars.router import update_tool_names
+        update_tool_names({t["name"] for t in mcp_client.discover_tools()})
 
     runner = TaskRunner(model_config.primary_provider, model_config.primary_model)
     runner.start()
@@ -363,6 +374,9 @@ def run_email(model_config: ModelConfig) -> None:
     finally:
         runner.stop()
         set_task_runner(None)
+        if mcp_client:
+            mcp_client.stop()
+            set_mcp_client(None)
         # Save all sessions
         for tid, conv in _conversations.items():
             try:

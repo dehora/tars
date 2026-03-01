@@ -22,8 +22,8 @@ Tars is a personal AI assistant with CLI, web, email, and Telegram channels. Rou
 [cli/web/email/telegram] → [conversation.py] → [core.py] → ollama / claude
                                      ↕
                                [tools.py] → todoist, weather, memory, search, web
-                                     ↕
-                          [memory.py] ← obsidian vault (TARS_MEMORY_DIR)
+                                     ↕                              ↕
+                          [memory.py] ← obsidian vault    [mcp.py] → external MCP servers
                           [search.py] ← sqlite-vec + FTS5 (tars.db)
 ```
 
@@ -71,11 +71,17 @@ Tars is a personal AI assistant with CLI, web, email, and Telegram channels. Rou
 | `TARS_TELEGRAM_ALLOW` | — | Comma-separated Telegram user IDs |
 | `TARS_AUTO_EXTRACT` | `true` | Enable automatic fact extraction on session save/compact |
 | `TARS_SCHEDULES` | — | JSON array of in-process scheduled tasks (alternative to `schedules.json` in memory dir) |
+| `TARS_MCP_SERVERS` | — | JSON object of MCP server configs (alternative to `mcp_servers.json` in memory dir) |
 | `DEFAULT_LAT` / `DEFAULT_LON` | — | Weather location |
 
 ## Git commits
 
 Use third-person singular and present tense verbs in commit messages (e.g., "Adds emacs", "Ignores license", "Renames gitconfig template").
+
+### Agent Model Choices
+
+- Use model: sonnet for all spawned subagents and tasks (research, search, exploration, etc) unless instructed otherwise.
+- Use model: haiku for trivial lookups (single file search, simple questions) unless instructed otherwise.
 
 ## Notes
 

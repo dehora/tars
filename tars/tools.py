@@ -1,14 +1,20 @@
+from __future__ import annotations
+
 import json
 import os
 import subprocess
 import sys
 import shutil
+from typing import TYPE_CHECKING
 
 from tars.memory import _run_memory_tool
 from tars.notes import _run_note_tool
 from tars.search import _run_notes_search_tool, _run_search_tool
 from tars.weather import _run_weather_tool
 from tars.web import _run_web_tool
+
+if TYPE_CHECKING:
+    from tars.mcp import MCPClient
 
 ANTHROPIC_TOOLS = [
     {
@@ -203,6 +209,38 @@ OLLAMA_TOOLS = [
     for t in ANTHROPIC_TOOLS
 ]
 
+_mcp_client: MCPClient | None = None
+
+
+def set_mcp_client(client: MCPClient | None) -> None:
+    global _mcp_client
+    _mcp_client = client
+
+
+def get_mcp_client() -> MCPClient | None:
+    return _mcp_client
+
+
+def _to_ollama_format(tool: dict) -> dict:
+    return {
+        "type": "function",
+        "function": {
+            "name": tool["name"],
+            "description": tool["description"],
+            "parameters": tool["input_schema"],
+        },
+    }
+
+
+def get_all_tools(mcp_client: MCPClient | None = None) -> tuple[list, list]:
+    """Return (anthropic_tools, ollama_tools) with native + MCP tools merged."""
+    client = mcp_client or _mcp_client
+    anthropic = list(ANTHROPIC_TOOLS)
+    if client:
+        anthropic.extend(client.discover_tools())
+    ollama = [_to_ollama_format(t) for t in anthropic]
+    return anthropic, ollama
+
 
 def _clean_args(args: dict) -> dict:
     """Strip empty-string and None optional params that models fill in needlessly."""
@@ -276,6 +314,8 @@ def run_tool(name: str, args: dict, *, quiet: bool = False) -> str:
         elif name == "todoist_complete_task":
             cmd = [td_bin, "task", "complete", args["ref"]]
         else:
+            if _mcp_client and "." in name:
+                return _mcp_client.call_tool(name, args)
             return json.dumps({"error": f"Unknown tool: {name}"})
 
         result = subprocess.run(cmd, capture_output=True, text=True, timeout=30)

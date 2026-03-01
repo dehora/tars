@@ -5,7 +5,7 @@ import anthropic
 import ollama
 
 from tars.memory import _load_memory, _load_procedural, append_daily, load_daily
-from tars.tools import ANTHROPIC_TOOLS, OLLAMA_TOOLS, run_tool
+from tars.tools import ANTHROPIC_TOOLS, OLLAMA_TOOLS, get_all_tools, run_tool
 
 _MAX_TOKENS = int(os.environ.get("TARS_MAX_TOKENS", "1024"))
 CLAUDE_MODELS = {
@@ -120,6 +120,12 @@ def _build_system_prompt(*, search_context: str = "", tool_hints: list[str] | No
     return prompt
 
 
+def _get_tools(fmt: str) -> list:
+    """Return the current merged tool list (native + MCP) for the given format."""
+    anthropic_tools, ollama_tools = get_all_tools()
+    return anthropic_tools if fmt == "anthropic" else ollama_tools
+
+
 def chat_anthropic(
     messages: list[dict], model: str, *,
     search_context: str = "", use_tools: bool = True, tool_hints: list[str] | None = None,
@@ -127,7 +133,7 @@ def chat_anthropic(
     resolved = CLAUDE_MODELS.get(model, model)
     client = anthropic.Anthropic()
     local_messages = [m.copy() for m in messages]
-    tools = ANTHROPIC_TOOLS if use_tools else []
+    tools = _get_tools("anthropic") if use_tools else []
 
     while True:
         kwargs: dict = dict(
@@ -171,7 +177,7 @@ def chat_ollama(
 ) -> str:
     local_messages = [{"role": "system", "content": _build_system_prompt(search_context=search_context, tool_hints=tool_hints)}]
     local_messages.extend(m.copy() for m in messages)
-    tools = OLLAMA_TOOLS if use_tools else []
+    tools = _get_tools("ollama") if use_tools else []
 
     while True:
         response = ollama.chat(model=model, messages=local_messages, tools=tools or None)
@@ -241,12 +247,14 @@ def chat_anthropic_stream(
     local_messages = [m.copy() for m in messages]
     system = _build_system_prompt(search_context=search_context, tool_hints=tool_hints)
 
+    tools = _get_tools("anthropic")
+
     # Step 1: tool-calling loop (non-streamed).
     # Keep going until the model stops requesting tools.
     while True:
         response = client.messages.create(
             model=resolved, max_tokens=_MAX_TOKENS,
-            system=system, messages=local_messages, tools=ANTHROPIC_TOOLS,
+            system=system, messages=local_messages, tools=tools,
         )
 
         if response.stop_reason != "tool_use":
@@ -278,7 +286,7 @@ def chat_anthropic_stream(
     # SSE event, so the user sees tokens appear incrementally.
     with client.messages.stream(
         model=resolved, max_tokens=_MAX_TOKENS,
-        system=system, messages=local_messages, tools=ANTHROPIC_TOOLS,
+        system=system, messages=local_messages, tools=tools,
     ) as stream:
         for text in stream.text_stream:
             yield text
@@ -292,9 +300,11 @@ def chat_ollama_stream(
     local_messages = [{"role": "system", "content": _build_system_prompt(search_context=search_context, tool_hints=tool_hints)}]
     local_messages.extend(m.copy() for m in messages)
 
+    tools = _get_tools("ollama")
+
     # Step 1: tool-calling loop (non-streamed), same as chat_ollama.
     while True:
-        response = ollama.chat(model=model, messages=local_messages, tools=OLLAMA_TOOLS)
+        response = ollama.chat(model=model, messages=local_messages, tools=tools)
 
         if not response.message.tool_calls:
             break

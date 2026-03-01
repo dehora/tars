@@ -20,6 +20,7 @@ tars is a conversational assistant that remembers things across sessions, manage
 - **Search** — hybrid keyword + semantic search across all memory types
 - **Web read** — fetch and extract text content from web pages for discussion
 - **Capture** — save web pages to your Obsidian vault with AI summarization (context-aware when mid-conversation)
+- **MCP** — extend with external tool servers via the Model Context Protocol (fetch, GitHub, filesystem, etc.)
 
 **Memory architecture:**
 
@@ -79,6 +80,28 @@ Long-lived processes (`tars serve`, `tars telegram`, `tars email`) run an in-pro
 
 The in-process scheduler complements the OS-level scheduler (`tars schedule add` → launchd/systemd) — use OS scheduling for external invocations, in-process scheduling for recurring tasks within a running process.
 
+**MCP integration:**
+
+tars can consume external tool servers via the [Model Context Protocol](https://modelcontextprotocol.io/). MCP servers are configured (not coded) — tars discovers their tools at startup, merges them into the tool list, and routes calls through the MCP client. Native tools stay native; MCP is an extension point.
+
+Configure via `mcp_servers.json` in the memory dir or `TARS_MCP_SERVERS` env var:
+
+```json
+{
+  "fetch": {
+    "command": "uvx",
+    "args": ["mcp-server-fetch"]
+  },
+  "github": {
+    "command": "npx",
+    "args": ["-y", "@modelcontextprotocol/server-github"],
+    "env": {"GITHUB_TOKEN": "..."}
+  }
+}
+```
+
+Format matches Claude Code's `mcpServers` config — keyed by server name, each with `command`, `args`, optional `env`. Tool names are prefixed with server name (e.g. `fetch.fetch`, `github.create_issue`). Use `/mcp` to list connected servers and their tools.
+
 **Feedback loop:**
 - `/w` flags a bad response, `/r` flags a good one
 - `/review` distills corrections into procedural rules
@@ -91,8 +114,8 @@ The in-process scheduler complements the OS-level scheduler (`tars schedule add`
 [CLI / Web / Email / Telegram] → [conversation.py] → [core.py] → ollama / claude
                                                ↕
                                          [tools.py] → todoist, weather, memory, notes, search, web
-                                               ↕
-                              [memory.py] ← obsidian vault (TARS_MEMORY_DIR)
+                                               ↕                                    ↕
+                              [memory.py] ← obsidian vault (TARS_MEMORY_DIR)   [mcp.py] → external MCP servers
                               [notes.py]  ← obsidian vault (TARS_NOTES_DIR)
                               [search.py] ← sqlite-vec + FTS5 (tars.db)
                               [router.py] → multi-model routing + fallback
@@ -172,6 +195,7 @@ tars index
 | `/sessions` | List recent sessions |
 | `/session <query>` | Search session logs |
 | `/brief` | Daily digest (tasks + weather) |
+| `/mcp` | List connected MCP servers and tools |
 | `/stats` | Memory and index health |
 | `/model` | Show active model configuration |
 | `/w [note]` | Flag last response as wrong |
@@ -238,6 +262,7 @@ Slash commands work in the bot chat. A persistent reply keyboard provides one-ta
 | `TARS_AUTO_EXTRACT` | `true` | Enable automatic fact extraction on session save/compact |
 | `TARS_API_TOKEN` | — | Optional bearer token for API auth |
 | `TARS_SCHEDULES` | — | JSON array of scheduled tasks (alternative to `schedules.json`) |
+| `TARS_MCP_SERVERS` | — | JSON object of MCP server configs (alternative to `mcp_servers.json`) |
 | `DEFAULT_LAT` / `DEFAULT_LON` | — | Weather location coordinates |
 
 ## Setup

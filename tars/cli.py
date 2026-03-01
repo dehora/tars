@@ -529,22 +529,39 @@ def main():
 
     _startup_index()
 
-    if args.message:
-        message = " ".join(args.message)
-        conv = Conversation(
-            id="oneshot",
-            provider=provider,
-            model=model,
-            remote_provider=config.remote_provider,
-            remote_model=config.remote_model,
-            routing_policy=config.routing_policy,
-        )
-        conv.search_context = "[one-shot message, no follow-up possible — act immediately on any tool requests]"
-        session_file = _session_path()
-        reply = process_message(conv, message, session_file)
-        print(reply)
-    else:
-        repl(config)
+    from tars.mcp import MCPClient, _load_mcp_config
+    from tars.tools import set_mcp_client
+
+    mcp_client = None
+    mcp_config = _load_mcp_config()
+    if mcp_config:
+        mcp_client = MCPClient(mcp_config)
+        mcp_client.start()
+        set_mcp_client(mcp_client)
+        from tars.router import update_tool_names
+        update_tool_names({t["name"] for t in mcp_client.discover_tools()})
+
+    try:
+        if args.message:
+            message = " ".join(args.message)
+            conv = Conversation(
+                id="oneshot",
+                provider=provider,
+                model=model,
+                remote_provider=config.remote_provider,
+                remote_model=config.remote_model,
+                routing_policy=config.routing_policy,
+            )
+            conv.search_context = "[one-shot message, no follow-up possible — act immediately on any tool requests]"
+            session_file = _session_path()
+            reply = process_message(conv, message, session_file)
+            print(reply)
+        else:
+            repl(config)
+    finally:
+        if mcp_client:
+            mcp_client.stop()
+            set_mcp_client(None)
 
 
 def main_serve():

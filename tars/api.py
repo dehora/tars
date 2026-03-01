@@ -47,7 +47,9 @@ class _AuthMiddleware(BaseHTTPMiddleware):
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     from tars.commands import set_task_runner
+    from tars.mcp import MCPClient, _load_mcp_config
     from tars.taskrunner import TaskRunner
+    from tars.tools import set_mcp_client
 
     logging.getLogger("uvicorn").info(
         f"tars [{_provider}:{_model}] remote={model_summary(_model_config)['remote']}"
@@ -57,6 +59,15 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         print(f"  [warning] index update failed ({type(e).__name__}): {e}", file=sys.stderr)
 
+    mcp_client = None
+    mcp_config = _load_mcp_config()
+    if mcp_config:
+        mcp_client = MCPClient(mcp_config)
+        mcp_client.start()
+        set_mcp_client(mcp_client)
+        from tars.router import update_tool_names
+        update_tool_names({t["name"] for t in mcp_client.discover_tools()})
+
     runner = TaskRunner(_provider, _model)
     runner.start()
     set_task_runner(runner)
@@ -65,6 +76,9 @@ async def lifespan(app: FastAPI):
 
     runner.stop()
     set_task_runner(None)
+    if mcp_client:
+        mcp_client.stop()
+        set_mcp_client(None)
     # Save all active conversations on shutdown.
     for conv_id, conv in _conversations.items():
         session_file = _session_files.get(conv_id)

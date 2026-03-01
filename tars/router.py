@@ -62,6 +62,11 @@ _TOOL_HINT_PATTERNS: list[tuple[str, list[str]]] = [
 _COMPILED_HINT_PATTERNS = [(re.compile(p, re.IGNORECASE), hints) for p, hints in _TOOL_HINT_PATTERNS]
 
 
+def update_tool_names(names: set[str]) -> None:
+    """Add MCP tool names to the set used for tool-intent detection."""
+    _TOOL_NAMES.update(names)
+
+
 def _has_tool_intent(text: str) -> tuple[str | None, list[str]]:
     """Check whether text contains signals suggesting tool use.
 

@@ -144,6 +144,7 @@ daily:
 export:
   /export          export conversation as markdown
 system:
+  /mcp             show connected MCP servers
   /schedule        show installed schedules
   /stats           memory and index health
   /model           show active model configuration
@@ -250,6 +251,8 @@ def dispatch(
             return _dispatch_review(provider, model)
         if cmd == "/tidy":
             return _dispatch_tidy(provider, model)
+        if cmd == "/mcp":
+            return _dispatch_mcp()
         if cmd == "/stats":
             return _dispatch_stats()
         if cmd == "/schedule":
@@ -487,6 +490,24 @@ def _dispatch_tidy(provider: str, model: str) -> str:
     return "\n".join(lines)
 
 
+def _dispatch_mcp() -> str:
+    from tars.tools import get_mcp_client
+
+    client = get_mcp_client()
+    if client is None:
+        return "no MCP servers configured"
+    servers = client.list_servers()
+    if not servers:
+        return "no MCP servers connected"
+    lines = []
+    for s in servers:
+        tools_str = ", ".join(s["tools"]) if s["tools"] else "none"
+        lines.append(f"{s['name']} ({s['tool_count']} tools): {tools_str}")
+        if s["status"] != "connected":
+            lines.append(f"  status: {s['status']}")
+    return "\n".join(lines)
+
+
 def _dispatch_stats() -> str:
     import json as _json
 
@@ -556,6 +577,6 @@ _ALL_COMMANDS = {
     "/search", "/sgrep", "/svec", "/find",
     "/sessions", "/session",
     "/w", "/r", "/review", "/tidy",
-    "/stats", "/schedule", "/model",
+    "/mcp", "/stats", "/schedule", "/model",
     "/export", "/help", "/clear",
 }
