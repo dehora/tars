@@ -216,6 +216,8 @@ _session_files: dict[str, Path | None] = {}
 
 _MAX_RETRIES = 3
 # msg_num → (attempt_count, cached_reply_text_or_None)
+# cached_reply is None when processing itself failed (retry processing);
+# a string when processing succeeded but send failed (retry send only).
 _failed: dict[bytes, tuple[int, str | None]] = {}
 
 
@@ -288,15 +290,20 @@ def run_email(model_config: ModelConfig) -> None:
 
                 if attempts >= _MAX_RETRIES:
                     print(f"email: max retries for [{from_addr}] {subject}", file=sys.stderr)
+                    error_reply = (
+                        "I wasn't able to process or send a reply after "
+                        f"{_MAX_RETRIES} attempts. Please resend your message."
+                    )
                     try:
-                        _send_reply(
-                            email_config, msg,
-                            "I wasn't able to send a reply after multiple attempts. "
-                            "Please resend your message.",
-                        )
+                        _send_reply(email_config, msg, error_reply)
+                        print(f"email: sent max-retry notice to {from_addr}")
+                    except Exception as e:
+                        print(f"email: max-retry notice failed: {e}", file=sys.stderr)
+                    # Mark Seen unconditionally to prevent infinite retry loop
+                    try:
+                        imap.store(msg_num, "+FLAGS", "\\Seen")
                     except Exception:
                         pass
-                    imap.store(msg_num, "+FLAGS", "\\Seen")
                     _failed.pop(msg_num, None)
                     continue
 
@@ -310,26 +317,29 @@ def run_email(model_config: ModelConfig) -> None:
 
                     # Try slash command: check subject first, then body
                     email_ctx = {"channel": "email"}
-                    slash_reply = dispatch(
-                        subject,
-                        model_config.primary_provider,
-                        model_config.primary_model,
-                        context=email_ctx,
-                    )
-                    if slash_reply is None and body:
+                    try:
                         slash_reply = dispatch(
-                            body,
+                            subject,
                             model_config.primary_provider,
                             model_config.primary_model,
                             context=email_ctx,
                         )
+                        if slash_reply is None and body:
+                            slash_reply = dispatch(
+                                body,
+                                model_config.primary_provider,
+                                model_config.primary_model,
+                                context=email_ctx,
+                            )
+                    except Exception as e:
+                        print(f"email: dispatch error: {e}", file=sys.stderr)
+                        slash_reply = None
+
                     if slash_reply is not None:
                         reply_text = slash_reply
                         print(f"email: [slash] {slash_reply[:60]}")
                     elif not body:
-                        imap.store(msg_num, "+FLAGS", "\\Seen")
-                        _failed.pop(msg_num, None)
-                        continue
+                        reply_text = "I received your message but it appears to be empty."
                     else:
                         if tid not in _conversations:
                             _conversations[tid] = Conversation(
@@ -348,10 +358,9 @@ def run_email(model_config: ModelConfig) -> None:
                         except Exception as e:
                             error_type = type(e).__name__
                             print(f"email: process failed: {e}", file=sys.stderr)
-                            reply_text = (
-                                f"I couldn't process your message ({error_type}). "
-                                "Try again later."
-                            )
+                            # Queue for retry — don't generate error reply yet
+                            _failed[msg_num] = (attempts + 1, None)
+                            continue
 
                 try:
                     _send_reply(email_config, msg, reply_text)

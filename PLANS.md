@@ -35,7 +35,7 @@ Layer 1 (parallel, no deps)     Layer 2 (depends on L1)    Layer 3 (independent)
 
 ### Layer 3: MCP integration — DONE
 
-**MCP integration** — Done. `tars/mcp.py` provides an MCPClient that connects to external MCP servers configured in `mcp_servers.json` (or `TARS_MCP_SERVERS` env var). Discovers tools at startup, merges into tool lists, routes calls through MCP sessions. Tool names prefixed with server name (`fetch.fetch_url`). Async MCP SDK bridged to sync tars code via a background anyio event loop thread. `/mcp` command lists connected servers. All channels (CLI, web, email, Telegram) start/stop MCP client alongside TaskRunner.
+**MCP integration** — Done (7c300fb, 3eb2334). `tars/mcp.py` provides an MCPClient that connects to external MCP servers configured in `mcp_servers.json` (or `TARS_MCP_SERVERS` env var). Discovers tools at startup, merges into tool lists, routes calls through MCP sessions. Tool names prefixed with server name (`fetch.fetch`). Async MCP SDK bridged to sync tars code via a dedicated `asyncio.new_event_loop()` in a background thread — `run_coroutine_threadsafe()` schedules coroutines from sync code. `AsyncExitStack` keeps server connections alive across calls. anyio's `BlockingPortal` was tried first but its cancel scope task isolation breaks cross-call context managers. `/mcp` command lists connected servers. All channels (CLI, web, email, Telegram) start/stop MCP client alongside TaskRunner. Tested live with `mcp-server-fetch`.
 
 ---
 
@@ -602,7 +602,10 @@ uv run tars
 
 ---
 
-## Plan: MCP integration
+## Plan: MCP integration — DONE
+
+<details>
+<summary>Completed — see Layer 3 summary above</summary>
 
 ### Context
 
@@ -720,6 +723,8 @@ you> /mcp
 you> list files in /tmp
 # Should route to filesystem MCP server
 ```
+
+</details>
 
 ---
 

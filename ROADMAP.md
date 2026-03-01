@@ -2,12 +2,6 @@
 
 ## Next
 
-### 26. Procedural rule auto-ingest
-
-When `/review` produces new rules, automatically re-index the procedural file so the rules are immediately searchable. Currently requires a manual `tars index` after review.
-
-Why: closes a gap in the feedback loop. Rules should be live the moment they're accepted.
-
 ### 30. QoL: CLI
 
 - Tab completion for slash commands
@@ -19,12 +13,6 @@ Why: closes a gap in the feedback loop. Rules should be live the moment they're 
 - Conversation history browser (list past conversations, click to view)
 - Model indicator (which model handled each message)
 - Streaming progress indicator
-
-### 32. QoL: Email reliability
-
-- Don't mark messages Seen until processing succeeds (currently lost on failure)
-- Retry failed processing before moving on
-- Better error reporting back to sender
 
 ### 33. QoL: Cross-channel visibility
 
@@ -134,6 +122,14 @@ Heading context breadcrumbs on chunks (`H1 > H2 > H3`), reduced chunk size (800 
 ### 7. Context-aware tool suggestions
 
 RouteResult with tool hints and procedural memory injected into system prompt. When Memory.md says "I use Todoist for todos" and the user says "remind me to buy eggs", route confidently to todoist.
+
+### 26. Procedural rule auto-ingest
+
+`_apply_review()` in `cli.py` calls `build_index()` after writing rules to Procedural.md. Incremental indexing detects the changed content_hash and re-indexes only the modified file.
+
+### 32. QoL: Email reliability
+
+Processing failures now retry instead of immediately sending error replies. Slash dispatch wrapped in try/except. Empty body emails get a reply instead of silent Seen flag. Max-retry path logs clearly. BODY.PEEK ensures messages stay unseen until successfully processed and replied to.
 
 ### 23. Capture enrichment
 

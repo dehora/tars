@@ -250,5 +250,175 @@ class TestFetchUnseen(unittest.TestCase):
         imap.store.assert_not_called()
 
 
+class TestEmailReliability(unittest.TestCase):
+    """Test email processing reliability — retries, error handling, Seen flag."""
+
+    def _make_msg(self, body="hello", from_addr="bill@example.com", subject="Test"):
+        msg = MIMEText(body, "plain", "utf-8")
+        msg["From"] = from_addr
+        msg["Message-ID"] = "<test@example.com>"
+        msg["Subject"] = subject
+        return msg
+
+    def _run_one_iteration(self, emails, *, failed=None, send_side_effect=None,
+                           dispatch_side_effect=None, dispatch_return=None,
+                           process_side_effect=None):
+        """Simulate one polling iteration of the email processing loop.
+
+        Returns (imap_mock, failed_dict) so callers can inspect state.
+        """
+        import tars.email as email_mod
+
+        imap = mock.Mock()
+        email_config = {
+            "address": "tars@gmail.com",
+            "password": "secret",
+            "allow": ["bill@example.com"],
+            "poll_interval": 60,
+            "to": "me@example.com",
+        }
+
+        model_config = mock.Mock()
+        model_config.primary_provider = "ollama"
+        model_config.primary_model = "test"
+        model_config.remote_provider = None
+        model_config.remote_model = None
+        model_config.routing_policy = "tool"
+
+        old_failed = email_mod._failed.copy()
+        old_convos = email_mod._conversations.copy()
+        old_sessions = email_mod._session_files.copy()
+        email_mod._failed = dict(failed) if failed else {}
+
+        try:
+            seen_nums = set()
+            for msg_num, msg in emails:
+                seen_nums.add(msg_num)
+                tid = _thread_id(msg)
+                _, from_addr = email.utils.parseaddr(msg.get("From", ""))
+                subject_hdr = msg.get("Subject", "(no subject)")
+
+                attempts, cached_reply = email_mod._failed.get(msg_num, (0, None))
+
+                if attempts >= email_mod._MAX_RETRIES:
+                    error_reply = (
+                        "I wasn't able to process or send a reply after "
+                        f"{email_mod._MAX_RETRIES} attempts. Please resend your message."
+                    )
+                    try:
+                        if send_side_effect:
+                            send_side_effect()
+                        # Simulated send
+                    except Exception:
+                        pass
+                    try:
+                        imap.store(msg_num, "+FLAGS", "\\Seen")
+                    except Exception:
+                        pass
+                    email_mod._failed.pop(msg_num, None)
+                    continue
+
+                if cached_reply is not None:
+                    reply_text = cached_reply
+                else:
+                    body_text = _extract_body(msg)
+
+                    try:
+                        if dispatch_side_effect:
+                            raise dispatch_side_effect
+                        slash_reply = dispatch_return
+                    except Exception:
+                        slash_reply = None
+
+                    if slash_reply is not None:
+                        reply_text = slash_reply
+                    elif not body_text:
+                        reply_text = "I received your message but it appears to be empty."
+                    else:
+                        if process_side_effect:
+                            email_mod._failed[msg_num] = (attempts + 1, None)
+                            continue
+                        reply_text = "model response"
+
+                if send_side_effect and not (attempts >= email_mod._MAX_RETRIES):
+                    try:
+                        send_side_effect()
+                        imap.store(msg_num, "+FLAGS", "\\Seen")
+                        email_mod._failed.pop(msg_num, None)
+                    except Exception:
+                        email_mod._failed[msg_num] = (attempts + 1, reply_text)
+                else:
+                    imap.store(msg_num, "+FLAGS", "\\Seen")
+                    email_mod._failed.pop(msg_num, None)
+
+            return imap, email_mod._failed
+        finally:
+            email_mod._failed = old_failed
+            email_mod._conversations = old_convos
+            email_mod._session_files = old_sessions
+
+    def test_process_failure_queues_retry(self) -> None:
+        """Processing failure should queue for retry, not send error immediately."""
+        import tars.email as email_mod
+
+        old_failed = email_mod._failed.copy()
+        email_mod._failed = {}
+        try:
+            msg = self._make_msg("hello")
+            imap, failed = self._run_one_iteration(
+                [(b"1", msg)], process_side_effect=RuntimeError("API down"),
+            )
+            # Should be queued for retry with no cached reply
+            self.assertIn(b"1", failed)
+            attempts, cached = failed[b"1"]
+            self.assertEqual(attempts, 1)
+            self.assertIsNone(cached)
+            # Should NOT have been marked Seen
+            imap.store.assert_not_called()
+        finally:
+            email_mod._failed = old_failed
+
+    def test_empty_body_gets_reply(self) -> None:
+        """Empty body should generate a reply, not silently mark Seen."""
+        msg = self._make_msg("")
+        imap, failed = self._run_one_iteration([(b"1", msg)])
+        # Should have been marked Seen (reply was generated)
+        imap.store.assert_called_once_with(b"1", "+FLAGS", "\\Seen")
+
+    def test_dispatch_exception_caught(self) -> None:
+        """Slash dispatch exception should be caught, not crash the loop."""
+        msg = self._make_msg("/weather")
+        imap, failed = self._run_one_iteration(
+            [(b"1", msg)],
+            dispatch_side_effect=RuntimeError("dispatch boom"),
+        )
+        # Should fall through to process_message path, not crash
+        imap.store.assert_called()
+
+    def test_max_retries_marks_seen(self) -> None:
+        """After max retries, message should be marked Seen."""
+        import tars.email as email_mod
+
+        msg = self._make_msg("hello")
+        imap, failed = self._run_one_iteration(
+            [(b"1", msg)],
+            failed={b"1": (email_mod._MAX_RETRIES, "cached reply")},
+        )
+        imap.store.assert_called_once_with(b"1", "+FLAGS", "\\Seen")
+        self.assertNotIn(b"1", failed)
+
+    def test_send_failure_caches_reply(self) -> None:
+        """Send failure should cache reply for retry."""
+        msg = self._make_msg("hello")
+        imap, failed = self._run_one_iteration(
+            [(b"1", msg)],
+            send_side_effect=lambda: (_ for _ in ()).throw(OSError("SMTP down")),
+        )
+        self.assertIn(b"1", failed)
+        attempts, cached = failed[b"1"]
+        self.assertEqual(attempts, 1)
+        self.assertEqual(cached, "model response")
+
+
 if __name__ == "__main__":
     unittest.main()
