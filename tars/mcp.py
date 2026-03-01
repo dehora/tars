@@ -5,6 +5,7 @@ TARS_MCP_SERVERS env var. Discovers their tools at startup and routes
 tool calls through the MCP client sessions.
 """
 
+import asyncio
 import atexit
 import json
 import os
@@ -13,7 +14,6 @@ import threading
 from contextlib import AsyncExitStack
 from dataclasses import dataclass, field
 
-import anyio
 from mcp.client.session import ClientSession
 from mcp.client.stdio import StdioServerParameters, stdio_client
 from mcp.types import TextContent
@@ -81,8 +81,8 @@ def _validate_config(config: dict) -> dict:
 class MCPClient:
     """Manages connections to MCP servers and routes tool calls.
 
-    Uses a background thread with an anyio BlockingPortal to bridge
-    sync tars code with the async MCP SDK.
+    Runs a dedicated asyncio event loop in a background thread.
+    Sync code schedules coroutines via asyncio.run_coroutine_threadsafe().
     """
 
     def __init__(self, server_configs: dict) -> None:
@@ -90,18 +90,16 @@ class MCPClient:
         self._servers: dict[str, ServerInfo] = {}
         self._sessions: dict[str, ClientSession] = {}
         self._stacks: dict[str, AsyncExitStack] = {}
-        self._portal: anyio.from_thread.BlockingPortal | None = None
-        self._portal_thread: threading.Thread | None = None
-        self._portal_ready = threading.Event()
-        self._cancel_scope: anyio.CancelScope | None = None
+        self._loop: asyncio.AbstractEventLoop | None = None
+        self._thread: threading.Thread | None = None
 
     def start(self) -> None:
         """Connect to all configured servers, discover their tools."""
-        self._portal_thread = threading.Thread(target=self._run_portal, daemon=True)
-        self._portal_thread.start()
-        if not self._portal_ready.wait(timeout=10):
-            print("  [mcp] event loop failed to start", file=sys.stderr)
-            return
+        self._loop = asyncio.new_event_loop()
+        self._thread = threading.Thread(
+            target=self._loop.run_forever, daemon=True,
+        )
+        self._thread.start()
 
         for name, config in self._configs.items():
             try:
@@ -114,25 +112,12 @@ class MCPClient:
 
         atexit.register(self.stop)
 
-    def _run_portal(self) -> None:
-        """Background thread: runs the anyio event loop."""
-        from anyio.from_thread import BlockingPortal
-
-        with BlockingPortal() as portal:
-            self._portal = portal
-            self._portal_ready.set()
-            portal.call(self._keep_alive)
-
-    async def _keep_alive(self) -> None:
-        self._cancel_scope = anyio.CancelScope()
-        with self._cancel_scope:
-            await anyio.sleep_forever()
-
     def _run_async(self, coro):
-        """Run an async coroutine from sync code via the portal."""
-        if self._portal is None:
+        """Run an async coroutine from sync code in the background loop."""
+        if self._loop is None:
             raise RuntimeError("MCP event loop not running")
-        return self._portal.call(coro)
+        future = asyncio.run_coroutine_threadsafe(coro, self._loop)
+        return future.result(timeout=30)
 
     def _connect_server(self, name: str, config: dict) -> None:
         """Connect to a single MCP server and discover its tools."""
@@ -179,26 +164,24 @@ class MCPClient:
             raise
 
     def stop(self) -> None:
-        """Disconnect from all servers and clean up."""
-        atexit.unregister(self.stop)
-        if self._portal is None:
-            return
+        """Disconnect from all servers and clean up.
 
-        for name in list(self._stacks.keys()):
-            try:
-                self._run_async(self._stacks[name].aclose())
-            except Exception as e:
-                print(f"  [mcp] {name}: cleanup error: {e}", file=sys.stderr)
+        Graceful aclose() of MCP stacks is unreliable because anyio's
+        cancel scopes can't cross task boundaries. Since server processes
+        are children that die with the parent, we just stop the loop.
+        """
+        atexit.unregister(self.stop)
+        if self._loop is None:
+            return
 
         self._sessions.clear()
         self._stacks.clear()
         self._servers.clear()
 
-        # CancelScope.cancel() is sync — calling it causes sleep_forever()
-        # to exit, which unblocks the portal thread and lets it shut down.
-        if self._cancel_scope is not None:
-            self._cancel_scope.cancel()
-        self._portal = None
+        self._loop.call_soon_threadsafe(self._loop.stop)
+        if self._thread is not None:
+            self._thread.join(timeout=5)
+        self._loop = None
 
     def discover_tools(self) -> list[dict]:
         """Return all MCP tools in Anthropic tool schema format."""

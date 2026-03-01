@@ -189,7 +189,7 @@ class ToolCallTests(unittest.TestCase):
     """Test MCP tool call routing."""
 
     def _make_client_with_session(self, server_name):
-        """Create an MCPClient with a mock session."""
+        """Create an MCPClient with a mock session and a fake event loop."""
         from tars.mcp import MCPClient, ServerInfo
 
         client = MCPClient({})
@@ -201,8 +201,8 @@ class ToolCallTests(unittest.TestCase):
                     "input_schema": {}, "_server": server_name, "_tool_name": "test_tool"}],
             status="connected",
         )
-        # Need a portal for _run_async
-        client._portal = mock.Mock()
+        # Stub _loop so _run_async doesn't bail on the None check
+        client._loop = mock.Mock()
         return client, mock_session
 
     def test_call_tool_routes_to_correct_server(self) -> None:
@@ -213,8 +213,9 @@ class ToolCallTests(unittest.TestCase):
             content=[TextContent(type="text", text="page content")],
             isError=False,
         )
-        client._portal.call = mock.Mock(return_value=result_obj)
-        result = client.call_tool("fetch.fetch_url", {"url": "https://example.com"})
+        mock_session.call_tool = mock.Mock(return_value=result_obj)
+        with mock.patch.object(client, "_run_async", side_effect=lambda coro: result_obj):
+            result = client.call_tool("fetch.fetch_url", {"url": "https://example.com"})
         self.assertEqual(result, "page content")
 
     def test_call_tool_strips_prefix(self) -> None:
@@ -225,14 +226,11 @@ class ToolCallTests(unittest.TestCase):
             content=[TextContent(type="text", text="issue created")],
             isError=False,
         )
-        client._portal.call = mock.Mock(return_value=result_obj)
-        client.call_tool("gh.create_issue", {"title": "test"})
-        # The coroutine passed to portal.call should call session.call_tool("create_issue", ...)
-        coro = client._portal.call.call_args[0][0]
-        # The coro is session.call_tool("create_issue", {"title": "test"})
-        # We verify by checking that mock_session.call_tool was called
-        # (portal.call receives the coroutine object from session.call_tool)
-        self.assertTrue(client._portal.call.called)
+        mock_session.call_tool = mock.Mock(return_value=result_obj)
+        with mock.patch.object(client, "_run_async", side_effect=lambda coro: result_obj):
+            client.call_tool("gh.create_issue", {"title": "test"})
+        # Verify session.call_tool was called with stripped name
+        mock_session.call_tool.assert_called_once_with("create_issue", {"title": "test"})
 
     def test_call_tool_server_not_connected(self) -> None:
         from tars.mcp import MCPClient
@@ -250,16 +248,16 @@ class ToolCallTests(unittest.TestCase):
             content=[TextContent(type="text", text="404 not found")],
             isError=True,
         )
-        client._portal.call = mock.Mock(return_value=result_obj)
-        result = client.call_tool("fetch.fetch_url", {"url": "https://bad.example"})
+        with mock.patch.object(client, "_run_async", side_effect=lambda coro: result_obj):
+            result = client.call_tool("fetch.fetch_url", {"url": "https://bad.example"})
         parsed = json.loads(result)
         self.assertIn("error", parsed)
         self.assertIn("404", parsed["error"])
 
     def test_call_tool_exception(self) -> None:
         client, _ = self._make_client_with_session("fetch")
-        client._portal.call = mock.Mock(side_effect=RuntimeError("connection lost"))
-        result = client.call_tool("fetch.fetch_url", {})
+        with mock.patch.object(client, "_run_async", side_effect=RuntimeError("connection lost")):
+            result = client.call_tool("fetch.fetch_url", {})
         parsed = json.loads(result)
         self.assertIn("error", parsed)
         self.assertIn("connection lost", parsed["error"])
