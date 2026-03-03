@@ -139,7 +139,7 @@ class TestGenerateSystemd(unittest.TestCase):
         self.assertIn("Type=oneshot", content)
         self.assertIn("WorkingDirectory=/repo", content)
         self.assertIn("uv run tars email-brief", content)
-        self.assertIn("Environment=TARS_MEMORY_DIR=/mem", content)
+        self.assertIn('Environment="TARS_MEMORY_DIR=/mem"', content)
 
     def test_timer_content(self):
         entry = self._make_entry()
@@ -261,6 +261,83 @@ class TestPlatformDetection(unittest.TestCase):
         with mock.patch("tars.scheduler.platform.system", return_value="Linux"):
             self.assertFalse(_is_macos())
             self.assertTrue(_is_linux())
+
+
+class TestSystemdEnvEscaping(unittest.TestCase):
+    def _make_entry(self, **kwargs):
+        defaults = dict(name="test", command="email-brief", args=[], hour=8, minute=0, watch_path=None)
+        defaults.update(kwargs)
+        return ScheduleEntry(**defaults)
+
+    def test_values_are_quoted(self):
+        entry = self._make_entry()
+        env = {"KEY": "value"}
+        content = _generate_systemd_service(entry, env, "/usr/bin/uv", Path("/repo"))
+        self.assertIn('Environment="KEY=value"', content)
+
+    def test_newlines_stripped(self):
+        entry = self._make_entry()
+        env = {"KEY": "line1\nline2\rline3"}
+        content = _generate_systemd_service(entry, env, "/usr/bin/uv", Path("/repo"))
+        self.assertNotIn("\nline2", content)
+        self.assertIn("line1 line2 line3", content)
+
+    def test_quotes_escaped(self):
+        entry = self._make_entry()
+        env = {"KEY": 'value with "quotes"'}
+        content = _generate_systemd_service(entry, env, "/usr/bin/uv", Path("/repo"))
+        self.assertIn('\\"quotes\\"', content)
+
+
+class TestFilePermissions(unittest.TestCase):
+    def _make_entry(self, **kwargs):
+        defaults = dict(name="test-perms", command="email-brief", args=[], hour=8, minute=0, watch_path=None)
+        defaults.update(kwargs)
+        return ScheduleEntry(**defaults)
+
+    def test_plist_chmod_600(self):
+        import stat
+        with tempfile.TemporaryDirectory() as tmpdir:
+            tmppath = Path(tmpdir)
+            agents_dir = tmppath / "Library" / "LaunchAgents"
+            agents_dir.mkdir(parents=True)
+            logs_dir = tmppath / "Library" / "Logs"
+            logs_dir.mkdir(parents=True)
+
+            entry = self._make_entry()
+            env = {"TARS_MEMORY_DIR": "/mem"}
+
+            with (
+                mock.patch("tars.scheduler.Path.home", return_value=tmppath),
+                mock.patch("tars.scheduler.subprocess.run"),
+            ):
+                from tars.scheduler import _schedule_add_macos
+                _schedule_add_macos(entry, env, "/usr/bin/uv", Path("/repo"))
+
+            plist_path = agents_dir / f"{LABEL_PREFIX}-test-perms.plist"
+            self.assertTrue(plist_path.exists())
+            mode = plist_path.stat().st_mode & 0o777
+            self.assertEqual(mode, 0o600)
+
+    def test_systemd_service_chmod_600(self):
+        import stat
+        with tempfile.TemporaryDirectory() as tmpdir:
+            entry = self._make_entry()
+            env = {"TARS_MEMORY_DIR": "/mem"}
+
+            with (
+                mock.patch("tars.scheduler._systemd_dir", return_value=Path(tmpdir)),
+                mock.patch("tars.scheduler.subprocess.run"),
+            ):
+                from tars.scheduler import _schedule_add_linux
+                _schedule_add_linux(entry, env, "/usr/bin/uv", Path("/repo"))
+
+            service_path = Path(tmpdir) / "tars-test-perms.service"
+            timer_path = Path(tmpdir) / "tars-test-perms.timer"
+            self.assertTrue(service_path.exists())
+            self.assertEqual(service_path.stat().st_mode & 0o777, 0o600)
+            self.assertTrue(timer_path.exists())
+            self.assertEqual(timer_path.stat().st_mode & 0o777, 0o600)
 
 
 if __name__ == "__main__":

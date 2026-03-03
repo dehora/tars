@@ -159,10 +159,15 @@ def list_sessions(*, limit: int = 10) -> list[SessionInfo]:
 
 def load_session(filename: str) -> str | None:
     """Load a session file's content by filename (stem, no extension)."""
+    if ".." in filename or "/" in filename or "\\" in filename:
+        return None
     d = _memory_dir()
     if d is None:
         return None
-    path = d / "sessions" / f"{filename}.md"
+    sessions_dir = d / "sessions"
+    path = (sessions_dir / f"{filename}.md").resolve()
+    if not path.is_relative_to(sessions_dir.resolve()):
+        return None
     if not path.is_file():
         return None
     try:

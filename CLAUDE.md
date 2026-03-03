@@ -42,11 +42,19 @@ Tars is a personal AI assistant with CLI, web, email, and Telegram channels. Rou
 - When adding a new tool, audit all code paths that call `chat()` — internal paths (summarization, review, tidy) should use `use_tools=False` to prevent tool leakage.
 - When adding a CLI command, check web UI and Telegram parity — unhandled slash commands fall through to chat and get misinterpreted by the model.
 - Slash command dispatch is duplicated across `cli.py`, `email.py`, and `telegram.py` — when adding or modifying a command, update all three (or refactor to shared dispatch).
-- User and external input: don't trust by default, prefer to santise and escape for commands calls and prompts. 
-- Comments: 
-      - Write self-documenting code and prefer clear names over comments. 
-      - Never add comments that restate what code does. 
-      - Only comment in depth for complex algorithms, non-obvious business logic, and 'why' not 'what'. 
+- User and external input: don't trust by default, prefer to sanitise and escape for command calls and prompts.
+- Validate filenames from external input — reject path separators (`..`, `/`, `\`) and use `resolve().is_relative_to()` to prevent traversal.
+- Use `hmac.compare_digest()` for token/secret comparisons — never use `==` which is timing-vulnerable.
+- Clamp user-supplied numeric parameters (limit, offset) to sane ranges — never pass unbounded values to queries.
+- Validate enum-like parameters against an explicit allowlist — never pass user strings directly to mode/type selectors.
+- Bound all tool-calling loops — never use `while True` for model→tool→model cycles; cap iterations and return a fallback.
+- Use `chmod 0o600` on generated config files that contain secrets (plists, systemd units, `.env` copies).
+- Quote and escape values in generated config files (systemd `Environment=`) — strip newlines to prevent injection.
+- Shared startup/teardown lives in `services.py` — use `start_services()`/`stop_services()` instead of inlining MCP + TaskRunner setup.
+- Comments:
+      - Write self-documenting code and prefer clear names over comments.
+      - Never add comments that restate what code does.
+      - Only comment in depth for complex algorithms, non-obvious business logic, and 'why' not 'what'.
 
 ## Configuration
 

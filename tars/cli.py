@@ -538,17 +538,9 @@ def main():
 
     _startup_index()
 
-    from tars.mcp import MCPClient, _load_mcp_config
-    from tars.tools import set_mcp_client
+    from tars.services import start_services, stop_services
 
-    mcp_client = None
-    mcp_config = _load_mcp_config()
-    if mcp_config:
-        mcp_client = MCPClient(mcp_config)
-        mcp_client.start()
-        set_mcp_client(mcp_client)
-        from tars.router import update_tool_names
-        update_tool_names({t["name"] for t in mcp_client.discover_tools()})
+    mcp_client, runner = start_services(provider, model)
 
     try:
         if args.message:
@@ -569,9 +561,7 @@ def main():
         else:
             repl(config)
     finally:
-        if mcp_client:
-            mcp_client.stop()
-            set_mcp_client(None)
+        stop_services(mcp_client, runner)
 
 
 def main_serve():

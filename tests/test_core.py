@@ -158,6 +158,103 @@ class SearchRelevantContextTests(unittest.TestCase):
         self.assertEqual(result, "")
 
 
+class ToolLoopBoundTests(unittest.TestCase):
+    def test_max_tool_rounds_constant(self) -> None:
+        self.assertEqual(core._MAX_TOOL_ROUNDS, 10)
+
+    def test_anthropic_loop_bounded(self) -> None:
+        mock_response = mock.Mock()
+        mock_response.stop_reason = "tool_use"
+        mock_block = mock.Mock()
+        mock_block.type = "tool_use"
+        mock_block.name = "weather_now"
+        mock_block.input = {}
+        mock_block.id = "t1"
+        mock_response.content = [mock_block]
+        mock_client = mock.Mock()
+        mock_client.messages.create.return_value = mock_response
+        with (
+            mock.patch.object(core, "_build_system_prompt", return_value="sys"),
+            mock.patch.object(core, "_get_tools", return_value=[{"name": "weather_now"}]),
+            mock.patch.object(core, "run_tool", return_value="ok"),
+            mock.patch.object(core, "append_daily"),
+            mock.patch("anthropic.Anthropic", return_value=mock_client),
+        ):
+            result = core.chat_anthropic([{"role": "user", "content": "x"}], "sonnet")
+        self.assertIn("maximum number of tool calls", result)
+        self.assertEqual(mock_client.messages.create.call_count, core._MAX_TOOL_ROUNDS)
+
+    def test_ollama_loop_bounded(self) -> None:
+        mock_func = mock.Mock()
+        mock_func.name = "weather_now"
+        mock_func.arguments = {}
+        mock_tool_call = mock.Mock()
+        mock_tool_call.function = mock_func
+        mock_message = mock.Mock()
+        mock_message.tool_calls = [mock_tool_call]
+        mock_message.content = ""
+        mock_response = mock.Mock()
+        mock_response.message = mock_message
+        mock_ollama = mock.Mock()
+        mock_ollama.chat = mock.Mock(return_value=mock_response)
+        with (
+            mock.patch.object(core, "ollama", mock_ollama),
+            mock.patch.object(core, "_build_system_prompt", return_value="sys"),
+            mock.patch.object(core, "_get_tools", return_value=[{"name": "weather_now"}]),
+            mock.patch.object(core, "run_tool", return_value="ok"),
+            mock.patch.object(core, "append_daily"),
+        ):
+            result = core.chat_ollama([{"role": "user", "content": "x"}], "llama3")
+        self.assertIn("maximum number of tool calls", result)
+        self.assertEqual(mock_ollama.chat.call_count, core._MAX_TOOL_ROUNDS)
+
+    def test_anthropic_stream_loop_bounded(self) -> None:
+        mock_response = mock.Mock()
+        mock_response.stop_reason = "tool_use"
+        mock_block = mock.Mock()
+        mock_block.type = "tool_use"
+        mock_block.name = "weather_now"
+        mock_block.input = {}
+        mock_block.id = "t1"
+        mock_response.content = [mock_block]
+        mock_client = mock.Mock()
+        mock_client.messages.create.return_value = mock_response
+        with (
+            mock.patch.object(core, "_build_system_prompt", return_value="sys"),
+            mock.patch.object(core, "_get_tools", return_value=[{"name": "weather_now"}]),
+            mock.patch.object(core, "run_tool", return_value="ok"),
+            mock.patch.object(core, "append_daily"),
+            mock.patch("anthropic.Anthropic", return_value=mock_client),
+        ):
+            result = list(core.chat_anthropic_stream([{"role": "user", "content": "x"}], "sonnet"))
+        self.assertEqual(len(result), 1)
+        self.assertIn("maximum number of tool calls", result[0])
+
+    def test_ollama_stream_loop_bounded(self) -> None:
+        mock_func = mock.Mock()
+        mock_func.name = "weather_now"
+        mock_func.arguments = {}
+        mock_tool_call = mock.Mock()
+        mock_tool_call.function = mock_func
+        mock_message = mock.Mock()
+        mock_message.tool_calls = [mock_tool_call]
+        mock_message.content = ""
+        mock_response = mock.Mock()
+        mock_response.message = mock_message
+        mock_ollama = mock.Mock()
+        mock_ollama.chat = mock.Mock(return_value=mock_response)
+        with (
+            mock.patch.object(core, "ollama", mock_ollama),
+            mock.patch.object(core, "_build_system_prompt", return_value="sys"),
+            mock.patch.object(core, "_get_tools", return_value=[{"name": "weather_now"}]),
+            mock.patch.object(core, "run_tool", return_value="ok"),
+            mock.patch.object(core, "append_daily"),
+        ):
+            result = list(core.chat_ollama_stream([{"role": "user", "content": "x"}], "llama3"))
+        self.assertEqual(len(result), 1)
+        self.assertIn("maximum number of tool calls", result[0])
+
+
 class ParseModelTests(unittest.TestCase):
     def test_valid_format(self) -> None:
         provider, model = core.parse_model("ollama:llama3")

@@ -439,7 +439,7 @@ def _dispatch_review(provider: str, model: str) -> str:
         "5. Skip rules that are too generic to be useful"
     )
     messages = [{"role": "user", "content": prompt}]
-    reply = chat(messages, provider, model)
+    reply = chat(messages, provider, model, use_tools=False)
 
     rules = [line[2:].strip() for line in reply.strip().splitlines() if line.startswith("- ")]
 
@@ -489,7 +489,7 @@ def _dispatch_tidy(provider: str, model: str) -> str:
         "Where section is \"semantic\" or \"procedural\"."
     )
     messages = [{"role": "user", "content": prompt}]
-    reply = chat(messages, provider, model)
+    reply = chat(messages, provider, model, use_tools=False)
 
     removals: list[tuple[str, str]] = []
     for line in reply.strip().splitlines():

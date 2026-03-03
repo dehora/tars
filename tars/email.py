@@ -232,10 +232,7 @@ def run_email(model_config: ModelConfig) -> None:
         )
         return
 
-    from tars.commands import set_task_runner
-    from tars.mcp import MCPClient, _load_mcp_config
-    from tars.taskrunner import TaskRunner
-    from tars.tools import set_mcp_client
+    from tars.services import start_services, stop_services
 
     summary = model_summary(model_config)
     print(
@@ -244,18 +241,9 @@ def run_email(model_config: ModelConfig) -> None:
     )
     print(f"email: allowed senders: {', '.join(email_config['allow'])}")
 
-    mcp_client = None
-    mcp_config = _load_mcp_config()
-    if mcp_config:
-        mcp_client = MCPClient(mcp_config)
-        mcp_client.start()
-        set_mcp_client(mcp_client)
-        from tars.router import update_tool_names
-        update_tool_names({t["name"] for t in mcp_client.discover_tools()})
-
-    runner = TaskRunner(model_config.primary_provider, model_config.primary_model)
-    runner.start()
-    set_task_runner(runner)
+    mcp_client, runner = start_services(
+        model_config.primary_provider, model_config.primary_model,
+    )
 
     imap: imaplib.IMAP4_SSL | None = None
 
@@ -383,11 +371,7 @@ def run_email(model_config: ModelConfig) -> None:
     except KeyboardInterrupt:
         print("\nemail: shutting down...")
     finally:
-        runner.stop()
-        set_task_runner(None)
-        if mcp_client:
-            mcp_client.stop()
-            set_mcp_client(None)
+        stop_services(mcp_client, runner)
         # Save all sessions
         for tid, conv in _conversations.items():
             try:

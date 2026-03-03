@@ -1,7 +1,9 @@
+import hmac
 import json
 import logging
 import sys
 import os
+from collections import OrderedDict
 from contextlib import asynccontextmanager
 from pathlib import Path
 
@@ -39,17 +41,14 @@ class _AuthMiddleware(BaseHTTPMiddleware):
         if request.url.path in _PUBLIC_PATHS:
             return await call_next(request)
         auth = request.headers.get("authorization", "")
-        if auth != f"Bearer {_API_TOKEN}":
+        if not hmac.compare_digest(auth, f"Bearer {_API_TOKEN}"):
             return JSONResponse({"detail": "unauthorized"}, status_code=401)
         return await call_next(request)
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    from tars.commands import set_task_runner
-    from tars.mcp import MCPClient, _load_mcp_config
-    from tars.taskrunner import TaskRunner
-    from tars.tools import set_mcp_client
+    from tars.services import start_services, stop_services
 
     logging.getLogger("uvicorn").info(
         f"tars [{_provider}:{_model}] remote={model_summary(_model_config)['remote']}"
@@ -63,26 +62,11 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         print(f"  [warning] index update failed ({type(e).__name__}): {e}", file=sys.stderr)
 
-    mcp_client = None
-    mcp_config = _load_mcp_config()
-    if mcp_config:
-        mcp_client = MCPClient(mcp_config)
-        mcp_client.start()
-        set_mcp_client(mcp_client)
-        from tars.router import update_tool_names
-        update_tool_names({t["name"] for t in mcp_client.discover_tools()})
-
-    runner = TaskRunner(_provider, _model)
-    runner.start()
-    set_task_runner(runner)
+    mcp_client, runner = start_services(_provider, _model)
 
     yield
 
-    runner.stop()
-    set_task_runner(None)
-    if mcp_client:
-        mcp_client.stop()
-        set_mcp_client(None)
+    stop_services(mcp_client, runner)
     # Save all active conversations on shutdown.
     for conv_id, conv in _conversations.items():
         session_file = _session_files.get(conv_id)
@@ -95,8 +79,22 @@ async def lifespan(app: FastAPI):
 app = FastAPI(title="tars", lifespan=lifespan)
 app.add_middleware(_AuthMiddleware)
 
-_conversations: dict[str, Conversation] = {}
+_MAX_CONVERSATIONS = 50
+
+_conversations: OrderedDict[str, Conversation] = OrderedDict()
 _session_files: dict[str, Path | None] = {}
+
+
+def _touch_conversation(conv_id: str) -> None:
+    """Move conversation to end (most recently used). Evict oldest if over limit."""
+    _conversations.move_to_end(conv_id)
+    while len(_conversations) > _MAX_CONVERSATIONS:
+        oldest_id, oldest_conv = _conversations.popitem(last=False)
+        session_file = _session_files.pop(oldest_id, None)
+        try:
+            save_session(oldest_conv, session_file)
+        except Exception as e:
+            print(f"  [warning] eviction save failed for {oldest_id}: {e}", file=sys.stderr)
 
 _model_config = load_model_config()
 _provider = _model_config.primary_provider
@@ -138,6 +136,7 @@ def chat_endpoint(req: ChatRequest) -> ChatResponse:
             channel="web",
         )
         _session_files[conv_id] = _session_path(channel="web")
+    _touch_conversation(conv_id)
     conv = _conversations[conv_id]
     session_file = _session_files.get(conv_id)
     reply = process_message(conv, req.message, session_file)
@@ -197,6 +196,7 @@ def chat_stream_endpoint(req: ChatRequest):
             channel="web",
         )
         _session_files[conv_id] = _session_path(channel="web")
+    _touch_conversation(conv_id)
     conv = _conversations[conv_id]
     session_file = _session_files.get(conv_id)
 
@@ -240,10 +240,16 @@ def tool_endpoint(req: ToolRequest) -> dict:
     return {"result": formatted}
 
 
+_VALID_SEARCH_MODES = {"hybrid", "fts", "vec"}
+
+
 @app.get("/search")
 def search_endpoint(q: str = "", mode: str = "hybrid", limit: int = 10) -> dict:
     if not q.strip():
         raise HTTPException(status_code=400, detail="Missing query parameter 'q'")
+    if mode not in _VALID_SEARCH_MODES:
+        raise HTTPException(status_code=400, detail=f"Invalid mode: {mode}")
+    limit = min(max(limit, 1), 100)
     results = memory_search(q, mode=mode, limit=limit)
     return {
         "results": [
@@ -265,6 +271,7 @@ def search_endpoint(q: str = "", mode: str = "hybrid", limit: int = 10) -> dict:
 def find_endpoint(q: str = "", limit: int = 10) -> dict:
     if not q.strip():
         raise HTTPException(status_code=400, detail="Missing query parameter 'q'")
+    limit = min(max(limit, 1), 100)
     results = search_notes(q, limit=limit)
     return {
         "results": [
@@ -323,6 +330,7 @@ def conversation_messages_endpoint(conversation_id: str) -> dict:
 
 @app.get("/sessions")
 def sessions_endpoint(limit: int = 10) -> dict:
+    limit = min(max(limit, 1), 100)
     sessions = list_sessions(limit=limit)
     return {
         "sessions": [
@@ -339,6 +347,7 @@ def sessions_endpoint(limit: int = 10) -> dict:
 def session_search_endpoint(q: str = "", limit: int = 10) -> dict:
     if not q.strip():
         raise HTTPException(status_code=400, detail="Missing query parameter 'q'")
+    limit = min(max(limit, 1), 100)
     results = memory_search(q, mode="hybrid", limit=limit)
     episodic = [r for r in results if r.memory_type == "episodic"]
     return {

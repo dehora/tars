@@ -9,6 +9,7 @@ from tars.tools import ANTHROPIC_TOOLS, OLLAMA_TOOLS, get_all_tools, run_tool
 
 _MAX_TOKENS = int(os.environ.get("TARS_MAX_TOKENS", "1024"))
 _MAX_DAILY_LINES = 50
+_MAX_TOOL_ROUNDS = 10
 CLAUDE_MODELS = {
     "sonnet": "claude-sonnet-4-5-20250929",
     "haiku": "claude-haiku-4-5-20251001",
@@ -139,7 +140,7 @@ def chat_anthropic(
     local_messages = [m.copy() for m in messages]
     tools = _get_tools("anthropic") if use_tools else []
 
-    while True:
+    for _round in range(_MAX_TOOL_ROUNDS):
         kwargs: dict = dict(
             model=resolved, max_tokens=_MAX_TOKENS,
             system=_build_system_prompt(search_context=search_context, tool_hints=tool_hints),
@@ -174,6 +175,8 @@ def chat_anthropic(
                     pass
         local_messages.append({"role": "user", "content": tool_results})
 
+    return "I've reached the maximum number of tool calls. Please try again."
+
 
 def chat_ollama(
     messages: list[dict], model: str, *,
@@ -183,7 +186,7 @@ def chat_ollama(
     local_messages.extend(m.copy() for m in messages)
     tools = _get_tools("ollama") if use_tools else []
 
-    while True:
+    for _round in range(_MAX_TOOL_ROUNDS):
         response = ollama.chat(model=model, messages=local_messages, tools=tools or None)
 
         if not response.message.tool_calls:
@@ -204,6 +207,8 @@ def chat_ollama(
                 append_daily(f"tool:{name} — {result[:80]}")
             except Exception:
                 pass
+
+    return "I've reached the maximum number of tool calls. Please try again."
 
 
 def chat(
@@ -255,7 +260,7 @@ def chat_anthropic_stream(
 
     # Step 1: tool-calling loop (non-streamed).
     # Keep going until the model stops requesting tools.
-    while True:
+    for _round in range(_MAX_TOOL_ROUNDS):
         response = client.messages.create(
             model=resolved, max_tokens=_MAX_TOKENS,
             system=system, messages=local_messages, tools=tools,
@@ -282,6 +287,9 @@ def chat_anthropic_stream(
                 except Exception:
                     pass
         local_messages.append({"role": "user", "content": tool_results})
+    else:
+        yield "I've reached the maximum number of tool calls. Please try again."
+        return
 
     # Step 2: stream the final response.
     # client.messages.stream() returns a context manager that yields text
@@ -307,7 +315,7 @@ def chat_ollama_stream(
     tools = _get_tools("ollama")
 
     # Step 1: tool-calling loop (non-streamed), same as chat_ollama.
-    while True:
+    for _round in range(_MAX_TOOL_ROUNDS):
         response = ollama.chat(model=model, messages=local_messages, tools=tools)
 
         if not response.message.tool_calls:
@@ -322,6 +330,9 @@ def chat_ollama_stream(
                 append_daily(f"tool:{name} — {result[:80]}")
             except Exception:
                 pass
+    else:
+        yield "I've reached the maximum number of tool calls. Please try again."
+        return
 
     # Step 2: stream the final response.
     # ollama.chat() with stream=True returns an iterator of response chunks.

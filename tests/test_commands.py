@@ -411,6 +411,24 @@ class CentralizedDispatchTests(unittest.TestCase):
         self.assertIn("nothing to flag", result)
 
 
+class ReviewTidyToolLeakageTests(unittest.TestCase):
+    @mock.patch("tars.core.chat", return_value="- rule one\n- rule two")
+    @mock.patch("tars.memory.load_feedback", return_value=("## 2026 correction", "## 2026 reward"))
+    def test_review_uses_no_tools(self, mock_fb, mock_chat) -> None:
+        dispatch("/review", "claude", "sonnet", context={"channel": "cli"})
+        mock_chat.assert_called_once()
+        _, kwargs = mock_chat.call_args
+        self.assertFalse(kwargs.get("use_tools", True))
+
+    @mock.patch("tars.core.chat", return_value="- [semantic] duplicate entry")
+    @mock.patch("tars.memory.load_memory_files", return_value={"semantic": "- fact", "procedural": ""})
+    def test_tidy_uses_no_tools(self, mock_files, mock_chat) -> None:
+        dispatch("/tidy", "claude", "sonnet", context={"channel": "cli"})
+        mock_chat.assert_called_once()
+        _, kwargs = mock_chat.call_args
+        self.assertFalse(kwargs.get("use_tools", True))
+
+
 class FormatErrorTests(unittest.TestCase):
     def test_connection_error(self) -> None:
         result = _format_error(ConnectionError("refused"))

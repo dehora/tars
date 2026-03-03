@@ -215,10 +215,7 @@ def run_telegram(model_config: ModelConfig) -> None:
         )
         return
 
-    from tars.commands import set_task_runner
-    from tars.mcp import MCPClient, _load_mcp_config
-    from tars.taskrunner import TaskRunner
-    from tars.tools import set_mcp_client
+    from tars.services import start_services, stop_services
 
     global _model_config
     _model_config = model_config
@@ -227,18 +224,9 @@ def run_telegram(model_config: ModelConfig) -> None:
     print(f"telegram: starting bot [{summary['primary']}]")
     print(f"telegram: allowed users: {config['allow']}")
 
-    mcp_client = None
-    mcp_config = _load_mcp_config()
-    if mcp_config:
-        mcp_client = MCPClient(mcp_config)
-        mcp_client.start()
-        set_mcp_client(mcp_client)
-        from tars.router import update_tool_names
-        update_tool_names({t["name"] for t in mcp_client.discover_tools()})
-
-    runner = TaskRunner(model_config.primary_provider, model_config.primary_model)
-    runner.start()
-    set_task_runner(runner)
+    mcp_client, runner = start_services(
+        model_config.primary_provider, model_config.primary_model,
+    )
 
     user_filter = filters.User(user_id=config["allow"])
     private_filter = filters.ChatType.PRIVATE & user_filter
@@ -253,11 +241,7 @@ def run_telegram(model_config: ModelConfig) -> None:
 
     async def _shutdown(app) -> None:
         """Save sessions, stop MCP client, and stop task runner on shutdown."""
-        runner.stop()
-        set_task_runner(None)
-        if mcp_client:
-            mcp_client.stop()
-            set_mcp_client(None)
+        stop_services(mcp_client, runner)
         for chat_id, conv in _conversations.items():
             try:
                 save_session(conv, _session_files.get(chat_id))

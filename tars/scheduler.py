@@ -223,7 +223,8 @@ def _generate_systemd_service(
         f"ExecStart={exec_line}",
     ]
     for key, val in env.items():
-        lines.append(f"Environment={key}={val}")
+        safe_val = val.replace("\n", " ").replace("\r", " ").replace('"', '\\"')
+        lines.append(f'Environment="{key}={safe_val}"')
     return "\n".join(lines) + "\n"
 
 
@@ -297,6 +298,7 @@ def _schedule_add_macos(
 
     with open(plist_path, "wb") as f:
         plistlib.dump(plist, f)
+    os.chmod(plist_path, 0o600)
 
     result = subprocess.run(
         ["launchctl", "load", str(plist_path)],
@@ -328,17 +330,20 @@ def _schedule_add_linux(
     service_content = _generate_systemd_service(entry, env, uv_path, repo_dir)
     service_path = unit_dir / f"{unit_name}.service"
     service_path.write_text(service_content, encoding="utf-8")
+    os.chmod(service_path, 0o600)
 
     if entry.watch_path:
         path_content = _generate_systemd_path(entry)
         path_path = unit_dir / f"{unit_name}.path"
         path_path.write_text(path_content, encoding="utf-8")
+        os.chmod(path_path, 0o600)
         trigger_unit = f"{unit_name}.path"
         trigger_desc = f"watch {entry.watch_path}"
     else:
         timer_content = _generate_systemd_timer(entry)
         timer_path = unit_dir / f"{unit_name}.timer"
         timer_path.write_text(timer_content, encoding="utf-8")
+        os.chmod(timer_path, 0o600)
         trigger_unit = f"{unit_name}.timer"
         h = entry.hour if entry.hour is not None else 0
         m = entry.minute if entry.minute is not None else 0

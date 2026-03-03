@@ -387,6 +387,37 @@ class LoadSessionTests(unittest.TestCase):
             self.assertIsNone(content)
 
 
+class LoadSessionTraversalTests(unittest.TestCase):
+    def test_rejects_dotdot(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            sessions_dir = Path(tmpdir) / "sessions"
+            sessions_dir.mkdir()
+            with mock.patch.dict("os.environ", {"TARS_MEMORY_DIR": tmpdir}):
+                self.assertIsNone(sessions.load_session("../etc/passwd"))
+
+    def test_rejects_forward_slash(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            sessions_dir = Path(tmpdir) / "sessions"
+            sessions_dir.mkdir()
+            with mock.patch.dict("os.environ", {"TARS_MEMORY_DIR": tmpdir}):
+                self.assertIsNone(sessions.load_session("sub/file"))
+
+    def test_rejects_backslash(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            sessions_dir = Path(tmpdir) / "sessions"
+            sessions_dir.mkdir()
+            with mock.patch.dict("os.environ", {"TARS_MEMORY_DIR": tmpdir}):
+                self.assertIsNone(sessions.load_session("sub\\file"))
+
+    def test_valid_session_loads(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            sessions_dir = Path(tmpdir) / "sessions"
+            sessions_dir.mkdir()
+            (sessions_dir / "safe-name.md").write_text("content")
+            with mock.patch.dict("os.environ", {"TARS_MEMORY_DIR": tmpdir}):
+                self.assertEqual(sessions.load_session("safe-name"), "content")
+
+
 class SessionCountTests(unittest.TestCase):
     def test_counts_sessions(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:

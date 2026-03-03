@@ -366,6 +366,158 @@ class ChatEndpointTests(unittest.TestCase):
         self.assertEqual(resp.status_code, 404)
 
 
+class TimingSafeAuthTests(unittest.TestCase):
+    def setUp(self) -> None:
+        api._conversations.clear()
+        api._session_files.clear()
+        self.original_token = api._API_TOKEN
+
+    def tearDown(self) -> None:
+        api._API_TOKEN = self.original_token
+
+    def test_valid_token_accepted(self) -> None:
+        api._API_TOKEN = "test-secret"
+        client = TestClient(api.app)
+        resp = client.get("/conversations", headers={"Authorization": "Bearer test-secret"})
+        self.assertEqual(resp.status_code, 200)
+
+    def test_invalid_token_rejected(self) -> None:
+        api._API_TOKEN = "test-secret"
+        client = TestClient(api.app)
+        resp = client.get("/conversations", headers={"Authorization": "Bearer wrong"})
+        self.assertEqual(resp.status_code, 401)
+
+    def test_no_token_when_required(self) -> None:
+        api._API_TOKEN = "test-secret"
+        client = TestClient(api.app)
+        resp = client.get("/conversations")
+        self.assertEqual(resp.status_code, 401)
+
+    def test_no_auth_when_token_empty(self) -> None:
+        api._API_TOKEN = ""
+        client = TestClient(api.app)
+        resp = client.get("/conversations")
+        self.assertEqual(resp.status_code, 200)
+
+
+class LimitClampingTests(unittest.TestCase):
+    def setUp(self) -> None:
+        api._conversations.clear()
+        api._session_files.clear()
+        self.client = TestClient(api.app)
+
+    def test_search_limit_clamped_high(self) -> None:
+        with mock.patch.object(api, "memory_search", return_value=[]) as m:
+            self.client.get("/search?q=test&limit=999")
+        _, kwargs = m.call_args
+        self.assertLessEqual(kwargs.get("limit", m.call_args[1].get("limit")), 100)
+
+    def test_search_limit_clamped_low(self) -> None:
+        with mock.patch.object(api, "memory_search", return_value=[]) as m:
+            self.client.get("/search?q=test&limit=-5")
+        _, kwargs = m.call_args
+        self.assertGreaterEqual(kwargs.get("limit", m.call_args[1].get("limit")), 1)
+
+    def test_find_limit_clamped(self) -> None:
+        with mock.patch.object(api, "search_notes", return_value=[]) as m:
+            self.client.get("/find?q=test&limit=500")
+        _, kwargs = m.call_args
+        self.assertLessEqual(kwargs.get("limit", m.call_args[1].get("limit")), 100)
+
+    def test_sessions_limit_clamped(self) -> None:
+        with mock.patch.object(api, "list_sessions", return_value=[]) as m:
+            self.client.get("/sessions?limit=500")
+        _, kwargs = m.call_args
+        self.assertLessEqual(kwargs.get("limit", m.call_args[1].get("limit")), 100)
+
+    def test_session_search_limit_clamped(self) -> None:
+        with mock.patch.object(api, "memory_search", return_value=[]) as m:
+            self.client.get("/sessions/search?q=test&limit=500")
+        _, kwargs = m.call_args
+        self.assertLessEqual(kwargs.get("limit", m.call_args[1].get("limit")), 100)
+
+
+class SearchModeValidationTests(unittest.TestCase):
+    def setUp(self) -> None:
+        api._conversations.clear()
+        api._session_files.clear()
+        self.client = TestClient(api.app)
+
+    def test_valid_modes_accepted(self) -> None:
+        for mode in ("hybrid", "fts", "vec"):
+            with mock.patch.object(api, "memory_search", return_value=[]):
+                resp = self.client.get(f"/search?q=test&mode={mode}")
+            self.assertEqual(resp.status_code, 200, f"mode={mode} should be accepted")
+
+    def test_invalid_mode_rejected(self) -> None:
+        resp = self.client.get("/search?q=test&mode=evil")
+        self.assertEqual(resp.status_code, 400)
+        self.assertIn("Invalid mode", resp.json()["detail"])
+
+
+class LRUEvictionTests(unittest.TestCase):
+    def setUp(self) -> None:
+        api._conversations.clear()
+        api._session_files.clear()
+        self.client = TestClient(api.app)
+
+    def test_eviction_at_limit(self) -> None:
+        original_max = api._MAX_CONVERSATIONS
+        try:
+            api._MAX_CONVERSATIONS = 3
+            with mock.patch.object(conversation, "chat", return_value="ok"):
+                for i in range(4):
+                    self.client.post("/chat", json={
+                        "conversation_id": f"c{i}",
+                        "message": "hi",
+                    })
+            self.assertEqual(len(api._conversations), 3)
+            self.assertNotIn("c0", api._conversations)
+            self.assertIn("c3", api._conversations)
+        finally:
+            api._MAX_CONVERSATIONS = original_max
+
+    def test_touch_refreshes_order(self) -> None:
+        original_max = api._MAX_CONVERSATIONS
+        try:
+            api._MAX_CONVERSATIONS = 3
+            with mock.patch.object(conversation, "chat", return_value="ok"):
+                for i in range(3):
+                    self.client.post("/chat", json={
+                        "conversation_id": f"c{i}",
+                        "message": "hi",
+                    })
+                # Touch c0 to refresh it
+                self.client.post("/chat", json={
+                    "conversation_id": "c0",
+                    "message": "hello again",
+                })
+                # Add c3 — should evict c1 (oldest untouched), not c0
+                self.client.post("/chat", json={
+                    "conversation_id": "c3",
+                    "message": "hi",
+                })
+            self.assertIn("c0", api._conversations)
+            self.assertNotIn("c1", api._conversations)
+        finally:
+            api._MAX_CONVERSATIONS = original_max
+
+    def test_eviction_saves_session(self) -> None:
+        original_max = api._MAX_CONVERSATIONS
+        try:
+            api._MAX_CONVERSATIONS = 2
+            with (
+                mock.patch.object(conversation, "chat", return_value="ok"),
+                mock.patch.object(api, "save_session") as save,
+            ):
+                self.client.post("/chat", json={"conversation_id": "c0", "message": "hi"})
+                self.client.post("/chat", json={"conversation_id": "c1", "message": "hi"})
+                self.client.post("/chat", json={"conversation_id": "c2", "message": "hi"})
+            self.assertTrue(save.called)
+        finally:
+            api._MAX_CONVERSATIONS = original_max
+
+
 class AuthWarningTests(unittest.TestCase):
     def test_lifespan_warns_when_no_token(self) -> None:
         original = api._API_TOKEN
