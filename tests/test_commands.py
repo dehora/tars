@@ -310,6 +310,30 @@ class CentralizedDispatchTests(unittest.TestCase):
         result = dispatch("/model", context={"channel": "cli"})
         self.assertIn("no model config", result)
 
+    def test_dispatch_model_from_telegram(self) -> None:
+        from tars.config import ModelConfig
+        config = ModelConfig(
+            primary_provider="claude",
+            primary_model="sonnet",
+            remote_provider="claude",
+            remote_model="opus",
+        )
+        result = dispatch("/model", context={"channel": "telegram", "config": config})
+        self.assertIn("primary: claude:sonnet", result)
+        self.assertIn("remote: claude:opus", result)
+
+    def test_dispatch_model_from_email(self) -> None:
+        from tars.config import ModelConfig
+        config = ModelConfig(
+            primary_provider="ollama",
+            primary_model="llama3.1:8b",
+            remote_provider=None,
+            remote_model=None,
+        )
+        result = dispatch("/model", context={"channel": "email", "config": config})
+        self.assertIn("primary: ollama:llama3.1:8b", result)
+        self.assertIn("remote: none", result)
+
     @mock.patch("tars.commands._dispatch_search", return_value="1. result")
     def test_dispatch_sgrep(self, mock_search) -> None:
         result = dispatch("/sgrep test query")

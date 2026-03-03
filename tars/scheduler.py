@@ -68,9 +68,10 @@ def _build_path() -> str:
     """Build a PATH for scheduled environments.
 
     launchd/systemd run with minimal PATH that lacks tool directories
-    (e.g. fnm-managed node). Resolve stable paths for known dependencies.
+    (e.g. fnm-managed node). Prepend resolved tool paths to the existing
+    PATH so user/system entries are preserved.
     """
-    dirs: list[str] = []
+    prepend: list[str] = []
     # fnm stable node bin (needed by node-based CLIs like td)
     fnm_base = Path.home() / ".local" / "share" / "fnm" / "node-versions"
     if fnm_base.is_dir():
@@ -78,12 +79,14 @@ def _build_path() -> str:
             for ver in sorted(os.listdir(fnm_base), reverse=True):
                 bin_dir = fnm_base / ver / "installation" / "bin"
                 if (bin_dir / "node").is_file():
-                    dirs.append(str(bin_dir))
+                    prepend.append(str(bin_dir))
                     break
         except OSError:
             pass
-    dirs.extend(["/usr/local/bin", "/usr/bin", "/bin"])
-    return ":".join(dirs)
+    base = os.environ.get("PATH", "/usr/local/bin:/usr/bin:/bin")
+    if prepend:
+        return ":".join(prepend) + ":" + base
+    return base
 
 
 def _capture_env() -> dict[str, str]:

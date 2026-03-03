@@ -321,6 +321,23 @@ class ListSessionsTests(unittest.TestCase):
         self.assertEqual(title, "Dog info lookup")
 
 
+class SaveSessionTests(unittest.TestCase):
+    def test_save_session_channel_suffix_not_in_header(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path = Path(tmpdir) / "2026-03-01T10-00-00-cli.md"
+            sessions._save_session(path, "test summary")
+            content = path.read_text()
+        self.assertIn("# Session 2026-03-01 10:00", content)
+        self.assertNotIn(":cli", content)
+
+    def test_save_session_plain_timestamp(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path = Path(tmpdir) / "2026-03-01T10-00-00.md"
+            sessions._save_session(path, "test summary")
+            content = path.read_text()
+        self.assertIn("# Session 2026-03-01 10:00", content)
+
+
 class SessionPathTests(unittest.TestCase):
     def test_session_path_no_channel(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:

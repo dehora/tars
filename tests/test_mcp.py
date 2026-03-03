@@ -4,6 +4,7 @@ import json
 import os
 import sys
 import tempfile
+import threading
 import unittest
 from pathlib import Path
 from unittest import mock
@@ -114,6 +115,49 @@ class ConfigTests(unittest.TestCase):
         result = _validate_config(config)
         self.assertEqual(len(result), 1)
         self.assertIn("good", result)
+
+
+class RunAsyncTests(unittest.TestCase):
+    """Test MCPClient._run_async timeout cancellation."""
+
+    def test_cancels_future_on_timeout(self) -> None:
+        import asyncio
+        from tars.mcp import MCPClient
+
+        client = MCPClient({})
+        client._loop = asyncio.new_event_loop()
+        thread = threading.Thread(target=client._loop.run_forever, daemon=True)
+        thread.start()
+
+        try:
+            future = mock.Mock()
+            future.result.side_effect = TimeoutError("timed out")
+            with mock.patch("asyncio.run_coroutine_threadsafe", return_value=future):
+                with self.assertRaises(TimeoutError):
+                    client._run_async(mock.Mock())
+            future.cancel.assert_called_once()
+        finally:
+            client._loop.call_soon_threadsafe(client._loop.stop)
+            thread.join(timeout=2)
+
+
+class ValidationDotsTests(unittest.TestCase):
+    """Test that dots in server names are rejected."""
+
+    def test_rejects_dots_in_name(self) -> None:
+        from tars.mcp import _validate_config
+
+        config = {"my.server": {"command": "uvx", "args": []}}
+        result = _validate_config(config)
+        self.assertEqual(result, {})
+
+    def test_valid_name_without_dots(self) -> None:
+        from tars.mcp import _validate_config
+
+        config = {"myserver": {"command": "uvx", "args": []}}
+        result = _validate_config(config)
+        self.assertEqual(len(result), 1)
+        self.assertIn("myserver", result)
 
 
 class ToolDiscoveryTests(unittest.TestCase):

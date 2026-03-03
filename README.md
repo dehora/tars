@@ -111,6 +111,7 @@ Format matches Claude Code's `mcpServers` config — keyed by server name, each 
 ## How it works
 
 ```
+
 [CLI / Web / Email / Telegram] → [conversation.py] → [core.py] → ollama / claude
                                                ↕
                                          [tools.py] → todoist, weather, memory, notes, search, web
@@ -119,6 +120,7 @@ Format matches Claude Code's `mcpServers` config — keyed by server name, each 
                               [notes.py]  ← obsidian vault (TARS_NOTES_DIR)
                               [search.py] ← sqlite-vec + FTS5 (tars.db)
                               [router.py] → multi-model routing + fallback
+
 ```
 
 - **Providers**: Claude (Anthropic API) or ollama (local models). Set via `TARS_DEFAULT_MODEL` (or legacy `TARS_MODEL`).

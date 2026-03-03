@@ -134,7 +134,7 @@ async def _handle_message(update, context) -> None:
 
         await update.effective_chat.send_action("typing")
         conv = _conversations[chat_id]
-        ctx = {"channel": "telegram"}
+        ctx = {"channel": "telegram", "config": _model_config}
         result = await asyncio.to_thread(
             dispatch, text, provider, model, conv=conv, context=ctx,
         )

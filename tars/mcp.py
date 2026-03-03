@@ -68,6 +68,9 @@ def _validate_config(config: dict) -> dict:
         if not isinstance(entry, dict):
             print(f"  [mcp] skipping {name}: not a dict", file=sys.stderr)
             continue
+        if "." in name:
+            print(f"  [mcp] skipping {name}: dots not allowed in server names", file=sys.stderr)
+            continue
         if "command" not in entry:
             print(f"  [mcp] skipping {name}: missing 'command'", file=sys.stderr)
             continue
@@ -117,7 +120,11 @@ class MCPClient:
         if self._loop is None:
             raise RuntimeError("MCP event loop not running")
         future = asyncio.run_coroutine_threadsafe(coro, self._loop)
-        return future.result(timeout=30)
+        try:
+            return future.result(timeout=30)
+        except TimeoutError:
+            future.cancel()
+            raise
 
     def _connect_server(self, name: str, config: dict) -> None:
         """Connect to a single MCP server and discover its tools."""

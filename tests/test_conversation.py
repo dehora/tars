@@ -72,6 +72,50 @@ class ProcessMessageTests(unittest.TestCase):
             self.assertTrue(save.call_args.kwargs.get("is_compaction"))
 
 
+class LastModelTrackingTests(unittest.TestCase):
+    def test_process_message_sets_last_provider_model(self) -> None:
+        conv = Conversation(id="test", provider="ollama", model="llama3.1:8b")
+        with (
+            mock.patch.object(conversation, "route_message", return_value=RouteResult("claude", "sonnet")),
+            mock.patch.object(conversation, "chat", return_value="ok"),
+        ):
+            process_message(conv, "hello")
+        self.assertEqual(conv.last_provider, "claude")
+        self.assertEqual(conv.last_model, "sonnet")
+
+    def test_process_message_fallback_sets_default_model(self) -> None:
+        _anthropic = sys.modules["anthropic"]
+        conv = Conversation(id="test", provider="ollama", model="llama3.1:8b")
+        err = _anthropic.RateLimitError("error")
+        with (
+            mock.patch.object(conversation, "route_message", return_value=RouteResult("claude", "sonnet")),
+            mock.patch.object(conversation, "chat", side_effect=[err, "fallback"]),
+        ):
+            process_message(conv, "hello")
+        self.assertEqual(conv.last_provider, "ollama")
+        self.assertEqual(conv.last_model, "llama3.1:8b")
+
+    def test_process_message_stream_sets_last_provider_model(self) -> None:
+        conv = Conversation(id="test", provider="ollama", model="llama3.1:8b")
+        with (
+            mock.patch.object(conversation, "route_message", return_value=RouteResult("ollama", "llama3.1:8b")),
+            mock.patch.object(conversation, "chat_stream", return_value=iter(["ok"])),
+        ):
+            list(process_message_stream(conv, "hello"))
+        self.assertEqual(conv.last_provider, "ollama")
+        self.assertEqual(conv.last_model, "llama3.1:8b")
+
+    def test_stream_escalated_sets_provider_model(self) -> None:
+        conv = Conversation(id="test", provider="ollama", model="llama3.1:8b")
+        with (
+            mock.patch.object(conversation, "route_message", return_value=RouteResult("claude", "sonnet")),
+            mock.patch.object(conversation, "chat", return_value="buffered"),
+        ):
+            list(process_message_stream(conv, "hello"))
+        self.assertEqual(conv.last_provider, "claude")
+        self.assertEqual(conv.last_model, "sonnet")
+
+
 class ProcessMessageStreamTests(unittest.TestCase):
     def test_yields_deltas(self) -> None:
         conv = Conversation(id="test", provider="ollama", model="fake")
@@ -212,6 +256,37 @@ class EscalationFallbackTests(unittest.TestCase):
             _anthropic = sys.modules["anthropic"]
             with self.assertRaises(_anthropic.APIStatusError):
                 list(process_message_stream(conv, "what's the weather"))
+
+
+class SanitizeFactTests(unittest.TestCase):
+    def test_strips_newlines(self) -> None:
+        result = conversation._sanitize_fact("line one\nline two\nline three")
+        self.assertNotIn("\n", result)
+        self.assertIn("line one line two line three", result)
+
+    def test_strips_carriage_returns(self) -> None:
+        result = conversation._sanitize_fact("line\rone\r\ntwo")
+        self.assertNotIn("\r", result)
+
+    def test_strips_html_comments(self) -> None:
+        result = conversation._sanitize_fact("fact <!-- injected --> content")
+        self.assertNotIn("<!--", result)
+        self.assertNotIn("-->", result)
+        self.assertIn("fact", result)
+        self.assertIn("content", result)
+
+    def test_truncates_long_facts(self) -> None:
+        long_fact = "x" * 300
+        result = conversation._sanitize_fact(long_fact)
+        self.assertEqual(len(result), conversation._MAX_FACT_LENGTH)
+
+    def test_empty_input(self) -> None:
+        self.assertEqual(conversation._sanitize_fact(""), "")
+        self.assertEqual(conversation._sanitize_fact("   "), "")
+
+    def test_normal_fact_unchanged(self) -> None:
+        result = conversation._sanitize_fact("user prefers dark mode")
+        self.assertEqual(result, "user prefers dark mode")
 
 
 class SaveSessionTests(unittest.TestCase):

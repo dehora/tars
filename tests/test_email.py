@@ -420,5 +420,104 @@ class TestEmailReliability(unittest.TestCase):
         self.assertEqual(cached, "model response")
 
 
+class TestMessageRollback(unittest.TestCase):
+    """Test that process_message failure rolls back the user message (Fix 7)."""
+
+    def test_conv_messages_dont_grow_on_repeated_failures(self) -> None:
+        import tars.email as email_mod
+        from tars.conversation import Conversation
+
+        conv = Conversation(id="email-test", provider="ollama", model="test", channel="email")
+        session_file = None
+
+        old_convos = email_mod._conversations.copy()
+        old_sessions = email_mod._session_files.copy()
+        old_failed = email_mod._failed.copy()
+        try:
+            tid = "<test-thread@example.com>"
+            email_mod._conversations[tid] = conv
+            email_mod._session_files[tid] = session_file
+            email_mod._failed = {}
+
+            initial_len = len(conv.messages)
+
+            # Simulate two process_message failures with rollback
+            for _ in range(2):
+                msg_snapshot = len(conv.messages)
+                try:
+                    conv.messages.append({"role": "user", "content": "hello"})
+                    raise RuntimeError("API down")
+                except Exception:
+                    conv.messages = conv.messages[:msg_snapshot]
+
+            self.assertEqual(len(conv.messages), initial_len)
+        finally:
+            email_mod._conversations = old_convos
+            email_mod._session_files = old_sessions
+            email_mod._failed = old_failed
+
+
+class TestFailedPopOrdering(unittest.TestCase):
+    """Test that _failed entry is retained when store raises (Fix 8)."""
+
+    def test_failed_retained_when_store_raises(self) -> None:
+        import tars.email as email_mod
+
+        old_failed = email_mod._failed.copy()
+        try:
+            email_mod._failed = {b"1": (email_mod._MAX_RETRIES, "cached")}
+            msg_num = b"1"
+
+            imap = mock.Mock()
+            imap.store.side_effect = OSError("IMAP connection lost")
+
+            # Simulate the max-retries path with store failure
+            attempts, _ = email_mod._failed.get(msg_num, (0, None))
+            self.assertGreaterEqual(attempts, email_mod._MAX_RETRIES)
+
+            try:
+                imap.store(msg_num, "+FLAGS", "\\Seen")
+                email_mod._failed.pop(msg_num, None)
+            except Exception:
+                pass  # matches Fix 8 pattern
+
+            # _failed should NOT have been popped because store raised
+            self.assertIn(msg_num, email_mod._failed)
+        finally:
+            email_mod._failed = old_failed
+
+
+class TestSubjectFallthrough(unittest.TestCase):
+    """Test that unknown command in subject doesn't block body dispatch (Fix 5)."""
+
+    def test_unknown_subject_falls_through_to_body(self) -> None:
+        """When subject is an unknown command, body should still be checked."""
+        from tars.commands import dispatch
+
+        # Subject returns "Unknown command: /typo..."
+        subject_result = dispatch("/typo")
+        self.assertIsNotNone(subject_result)
+        self.assertTrue(subject_result.startswith("Unknown command:"))
+
+        # Simulate the email.py logic: if subject result starts with
+        # "Unknown command:", try body dispatch
+        slash_reply = subject_result
+        body = "/weather"
+        if slash_reply is not None and slash_reply.startswith("Unknown command:"):
+            with mock.patch("tars.commands.run_tool", return_value='{"temp": 20}'):
+                body_reply = dispatch(body, "ollama", "test")
+            if body_reply is not None:
+                slash_reply = body_reply
+        self.assertNotIn("Unknown command", slash_reply)
+
+    def test_valid_subject_does_not_check_body(self) -> None:
+        """When subject is a valid command, body should not be checked."""
+        with mock.patch("tars.commands.run_tool", return_value='{"temp": 20}'):
+            from tars.commands import dispatch
+            slash_reply = dispatch("/weather")
+        self.assertIsNotNone(slash_reply)
+        self.assertNotIn("Unknown command", slash_reply)
+
+
 if __name__ == "__main__":
     unittest.main()

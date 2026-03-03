@@ -179,12 +179,8 @@ def _save_session(path: Path, summary: str, *, is_compaction: bool = False) -> N
         label = "Compaction" if is_compaction else "Final"
         text = f"{existing}\n## {label} {ts}\n\n{summary}\n"
     else:
-        parts = path.stem.split("T")
-        if len(parts) == 2:
-            ts = f"{parts[0]} {parts[1].replace('-', ':')}"
-        else:
-            ts = path.stem
-        text = f"# Session {ts}\n\n{summary}\n"
+        date_str, _ = _parse_session_filename(path.stem)
+        text = f"# Session {date_str}\n\n{summary}\n"
     path.write_text(text, encoding="utf-8", errors="replace")
 
 

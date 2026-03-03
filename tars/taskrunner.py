@@ -151,7 +151,7 @@ def _is_due(task: ScheduledTask, now: datetime) -> bool:
 def _deliver(result: str, target: str, task_name: str) -> None:
     """Deliver a scheduled task result to the configured target."""
     tag = f"[scheduled:{task_name}]"
-    truncated = result[:200] if result else "(no output)"
+    truncated = (result[:200] if result else "(no output)").replace("\n", " ")
 
     if target == "daily":
         try:
@@ -223,6 +223,7 @@ class TaskRunner:
         self._model = model
         self._tick = tick if tick is not None else _TICK_SECONDS
         self._running = False
+        self._stop_event = threading.Event()
         self._thread: threading.Thread | None = None
         self._tasks: list[ScheduledTask] = []
 
@@ -232,6 +233,7 @@ class TaskRunner:
             logger.info("taskrunner: no scheduled tasks configured")
             return
         self._running = True
+        self._stop_event.clear()
         self._thread = threading.Thread(target=self._loop, daemon=True, name="taskrunner")
         self._thread.start()
         names = ", ".join(t.name for t in self._tasks)
@@ -239,6 +241,7 @@ class TaskRunner:
 
     def stop(self) -> None:
         self._running = False
+        self._stop_event.set()
         if self._thread is not None:
             self._thread.join(timeout=5)
             self._thread = None
@@ -249,8 +252,8 @@ class TaskRunner:
 
     def _loop(self) -> None:
         while self._running:
-            now = datetime.now()
             for task in self._tasks:
+                now = datetime.now()
                 if _is_due(task, now):
                     if not task._lock.acquire(blocking=False):
                         logger.info("taskrunner: skipping %s (still running)", task.name)
@@ -259,7 +262,7 @@ class TaskRunner:
                         self._execute(task, now)
                     finally:
                         task._lock.release()
-            time.sleep(self._tick)
+            self._stop_event.wait(timeout=self._tick)
 
     def _execute(self, task: ScheduledTask, now: datetime) -> None:
         from tars.commands import dispatch

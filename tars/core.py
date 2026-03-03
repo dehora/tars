@@ -8,6 +8,7 @@ from tars.memory import _load_memory, _load_procedural, append_daily, load_daily
 from tars.tools import ANTHROPIC_TOOLS, OLLAMA_TOOLS, get_all_tools, run_tool
 
 _MAX_TOKENS = int(os.environ.get("TARS_MAX_TOKENS", "1024"))
+_MAX_DAILY_LINES = 50
 CLAUDE_MODELS = {
     "sonnet": "claude-sonnet-4-5-20250929",
     "haiku": "claude-haiku-4-5-20251001",
@@ -114,6 +115,9 @@ def _build_system_prompt(*, search_context: str = "", tool_hints: list[str] | No
         prompt += f"\n\n<relevant-context>\n{_escape_prompt_block(search_context)}\n</relevant-context>"
     daily = load_daily()
     if daily:
+        lines = daily.splitlines()
+        if len(lines) > _MAX_DAILY_LINES:
+            daily = "\n".join(lines[-_MAX_DAILY_LINES:])
         if not has_untrusted:
             prompt += f"\n\n---\n\n{MEMORY_PROMPT_PREFACE}"
         prompt += f"\n\n<daily-context>\n{_escape_prompt_block(daily)}\n</daily-context>"

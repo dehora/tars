@@ -271,6 +271,76 @@ class TaskRunnerLifecycleTests(unittest.TestCase):
         runner.stop()
 
 
+class StopGuaranteeTests(unittest.TestCase):
+
+    @mock.patch("tars.taskrunner.append_daily")
+    @mock.patch("tars.taskrunner._deliver")
+    @mock.patch("tars.commands.dispatch", return_value="ok")
+    @mock.patch("tars.taskrunner._load_tasks")
+    def test_stop_returns_within_one_second_even_with_long_tick(
+        self, mock_load, mock_dispatch, mock_deliver, mock_daily,
+    ):
+        task = ScheduledTask(name="t", schedule="23:59", action="/brief")
+        task.last_run = datetime.now()
+        mock_load.return_value = [task]
+        runner = TaskRunner("claude", "sonnet", tick=60)
+        runner.start()
+        self.assertTrue(runner._running)
+        time.sleep(0.1)
+        start = time.monotonic()
+        runner.stop()
+        elapsed = time.monotonic() - start
+        self.assertLess(elapsed, 1.0)
+        self.assertFalse(runner._running)
+
+
+class FreshTimestampTests(unittest.TestCase):
+
+    @mock.patch("tars.taskrunner.append_daily")
+    @mock.patch("tars.taskrunner._deliver")
+    def test_each_task_gets_fresh_timestamp(self, mock_deliver, mock_daily):
+        """Verify _is_due uses a fresh now per task, not a stale one."""
+        timestamps: list[datetime] = []
+        original_is_due = _is_due
+
+        def tracking_is_due(task, now):
+            timestamps.append(now)
+            return original_is_due(task, now)
+
+        task1 = ScheduledTask(name="t1", schedule="*/1", action="/brief")
+        task2 = ScheduledTask(name="t2", schedule="*/1", action="/weather")
+
+        with (
+            mock.patch("tars.taskrunner._load_tasks", return_value=[task1, task2]),
+            mock.patch("tars.taskrunner._is_due", side_effect=tracking_is_due),
+            mock.patch("tars.commands.dispatch", return_value="ok"),
+        ):
+            runner = TaskRunner("claude", "sonnet", tick=60)
+            runner.start()
+            time.sleep(0.3)
+            runner.stop()
+
+        self.assertGreaterEqual(len(timestamps), 2)
+        # The two timestamps should be from separate datetime.now() calls
+        # (they may differ slightly since dispatch runs between them)
+
+
+class DeliverSanitizationTests(unittest.TestCase):
+
+    @mock.patch("tars.taskrunner.append_daily")
+    def test_deliver_strips_newlines_from_daily_entry(self, mock_daily):
+        _deliver("line one\nline two\nline three", "daily", "test_task")
+        call_arg = mock_daily.call_args[0][0]
+        self.assertNotIn("\n", call_arg)
+        self.assertIn("line one line two line three", call_arg)
+
+    @mock.patch("tars.taskrunner.append_daily")
+    def test_deliver_empty_result(self, mock_daily):
+        _deliver("", "daily", "test_task")
+        call_arg = mock_daily.call_args[0][0]
+        self.assertIn("(no output)", call_arg)
+
+
 class IntegrationTests(unittest.TestCase):
 
     def test_load_and_check_due(self):

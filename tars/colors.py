@@ -53,8 +53,15 @@ def blue(s: str) -> str:
     return f"{_BLUE}{s}{RESET}" if _ENABLED else s
 
 
+import re
+
+_CONTROL_RE = re.compile(r"[\x00-\x1f\x7f-\x9f]")
+
+
 def link(url: str, text: str) -> str:
     """Wrap text in an OSC 8 terminal hyperlink."""
     if not _ENABLED:
         return text
+    url = _CONTROL_RE.sub("", url)
+    text = _CONTROL_RE.sub("", text)
     return f"\033]8;;{url}\033\\{text}\033]8;;\033\\"

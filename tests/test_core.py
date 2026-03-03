@@ -123,6 +123,34 @@ class BuildSystemPromptTests(unittest.TestCase):
         self.assertLess(hints_pos, preface_pos)
 
 
+class DailyContextCapTests(unittest.TestCase):
+    def test_daily_context_capped(self) -> None:
+        lines = [f"- {i:02d}:00 tool:weather — ok" for i in range(100)]
+        big_daily = "\n".join(lines)
+        with (
+            mock.patch.object(core, "_load_memory", return_value=""),
+            mock.patch.object(core, "_load_procedural", return_value=""),
+            mock.patch.object(core, "load_daily", return_value=big_daily),
+        ):
+            prompt = core._build_system_prompt()
+        self.assertIn("<daily-context>", prompt)
+        # Should only contain the last _MAX_DAILY_LINES lines
+        daily_section = prompt.split("<daily-context>")[1].split("</daily-context>")[0]
+        daily_lines = [l for l in daily_section.strip().splitlines() if l.strip()]
+        self.assertLessEqual(len(daily_lines), core._MAX_DAILY_LINES)
+
+    def test_short_daily_not_truncated(self) -> None:
+        daily = "- 08:00 tool:weather — sunny\n- 09:00 session compacted"
+        with (
+            mock.patch.object(core, "_load_memory", return_value=""),
+            mock.patch.object(core, "_load_procedural", return_value=""),
+            mock.patch.object(core, "load_daily", return_value=daily),
+        ):
+            prompt = core._build_system_prompt()
+        self.assertIn("tool:weather", prompt)
+        self.assertIn("session compacted", prompt)
+
+
 class SearchRelevantContextTests(unittest.TestCase):
     def test_empty_results(self) -> None:
         with mock.patch("tars.search.search", return_value=[]):

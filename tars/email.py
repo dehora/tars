@@ -299,12 +299,11 @@ def run_email(model_config: ModelConfig) -> None:
                         print(f"email: sent max-retry notice to {from_addr}")
                     except Exception as e:
                         print(f"email: max-retry notice failed: {e}", file=sys.stderr)
-                    # Mark Seen unconditionally to prevent infinite retry loop
                     try:
                         imap.store(msg_num, "+FLAGS", "\\Seen")
+                        _failed.pop(msg_num, None)
                     except Exception:
-                        pass
-                    _failed.pop(msg_num, None)
+                        pass  # will retry next poll
                     continue
 
                 # Use cached reply from a previous send failure
@@ -316,7 +315,7 @@ def run_email(model_config: ModelConfig) -> None:
                     print(f"email: [{from_addr}] {subject}")
 
                     # Try slash command: check subject first, then body
-                    email_ctx = {"channel": "email"}
+                    email_ctx = {"channel": "email", "config": model_config}
                     try:
                         slash_reply = dispatch(
                             subject,
@@ -324,13 +323,15 @@ def run_email(model_config: ModelConfig) -> None:
                             model_config.primary_model,
                             context=email_ctx,
                         )
-                        if slash_reply is None and body:
-                            slash_reply = dispatch(
+                        if (slash_reply is None or slash_reply.startswith("Unknown command:")) and body:
+                            body_reply = dispatch(
                                 body,
                                 model_config.primary_provider,
                                 model_config.primary_model,
                                 context=email_ctx,
                             )
+                            if body_reply is not None:
+                                slash_reply = body_reply
                     except Exception as e:
                         print(f"email: dispatch error: {e}", file=sys.stderr)
                         slash_reply = None
@@ -354,12 +355,12 @@ def run_email(model_config: ModelConfig) -> None:
                             _session_files[tid] = _session_path(channel="email")
                         conv = _conversations[tid]
 
+                        msg_snapshot = len(conv.messages)
                         try:
                             reply_text = process_message(conv, body, _session_files[tid])
                         except Exception as e:
-                            error_type = type(e).__name__
+                            conv.messages = conv.messages[:msg_snapshot]
                             print(f"email: process failed: {e}", file=sys.stderr)
-                            # Queue for retry — don't generate error reply yet
                             _failed[msg_num] = (attempts + 1, None)
                             continue
 

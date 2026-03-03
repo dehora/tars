@@ -32,6 +32,8 @@ class Conversation:
     last_compaction: int = 0
     last_compaction_index: int = 0
     cumulative_summary: str = ""
+    last_provider: str = ""
+    last_model: str = ""
 
 
 def _merge_summary(existing: str, new: str) -> str:
@@ -50,6 +52,16 @@ def _model_config_for(conv: Conversation) -> ModelConfig:
         remote_model=conv.remote_model,
         routing_policy=conv.routing_policy,
     )
+
+
+_MAX_FACT_LENGTH = 200
+
+
+def _sanitize_fact(fact: str) -> str:
+    """Normalize a model-generated fact to a safe single-line string."""
+    line = fact.replace("\n", " ").replace("\r", " ").strip()
+    line = line.replace("<!--", "").replace("-->", "")
+    return line[:_MAX_FACT_LENGTH] if line else ""
 
 
 _FALLBACK_STATUS_CODES = {408, 409, 429, 529}
@@ -92,6 +104,8 @@ def process_message(
             conv.messages, provider, model,
             search_context=conv.search_context, tool_hints=route.tool_hints,
         )
+        conv.last_provider = provider
+        conv.last_model = model
     except (anthropic.APIStatusError, anthropic.APIConnectionError, anthropic.APITimeoutError) as exc:
         if not escalated or not _should_fallback(exc):
             raise
@@ -101,6 +115,8 @@ def process_message(
             conv.messages, conv.provider, conv.model,
             search_context=conv.search_context, tool_hints=route.tool_hints,
         )
+        conv.last_provider = conv.provider
+        conv.last_model = conv.model
     conv.messages.append({"role": "assistant", "content": reply})
     conv.msg_count += 1
 
@@ -138,6 +154,8 @@ def process_message_stream(
                 conv.messages, provider, model,
                 search_context=conv.search_context, tool_hints=route.tool_hints,
             )
+            conv.last_provider = provider
+            conv.last_model = model
             full_reply = [reply]
             yield reply
         except (anthropic.APIStatusError, anthropic.APIConnectionError, anthropic.APITimeoutError) as exc:
@@ -145,6 +163,8 @@ def process_message_stream(
                 raise
             status = getattr(exc, "status_code", "connection")
             print(f"  [router] escalation failed ({status}), falling back to {conv.provider}:{conv.model}", file=sys.stderr)
+            conv.last_provider = conv.provider
+            conv.last_model = conv.model
             for delta in chat_stream(
                 conv.messages, conv.provider, conv.model,
                 search_context=conv.search_context, tool_hints=route.tool_hints,
@@ -152,6 +172,8 @@ def process_message_stream(
                 full_reply.append(delta)
                 yield delta
     else:
+        conv.last_provider = provider
+        conv.last_model = model
         for delta in chat_stream(
             conv.messages, provider, model,
             search_context=conv.search_context, tool_hints=route.tool_hints,
@@ -191,7 +213,9 @@ def _maybe_compact(conv: Conversation, session_file: Path | None) -> None:
         try:
             tag = f"[{conv.channel}] " if conv.channel else ""
             for fact in extract_facts(new_messages, conv.provider, conv.model):
-                append_daily(f"{tag}[extracted] {fact}")
+                clean = _sanitize_fact(fact)
+                if clean:
+                    append_daily(f"{tag}[extracted] {clean}")
         except Exception:
             pass
     except Exception as e:
@@ -220,7 +244,9 @@ def save_session(conv: Conversation, session_file: Path | None) -> None:
         try:
             tag = f"[{conv.channel}] " if conv.channel else ""
             for fact in extract_facts(new_messages, conv.provider, conv.model):
-                append_daily(f"{tag}[extracted] {fact}")
+                clean = _sanitize_fact(fact)
+                if clean:
+                    append_daily(f"{tag}[extracted] {clean}")
         except Exception:
             pass
     except Exception as e:

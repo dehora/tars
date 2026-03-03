@@ -187,6 +187,23 @@ class TestReadLastLogLine(unittest.TestCase):
             os.unlink(f.name)
 
 
+class TestBuildPath(unittest.TestCase):
+    def test_preserves_existing_path(self):
+        from tars.scheduler import _build_path
+        original_path = "/custom/bin:/another/bin"
+        with mock.patch.dict(os.environ, {"PATH": original_path}):
+            result = _build_path()
+            self.assertIn("/custom/bin", result)
+            self.assertIn("/another/bin", result)
+
+    def test_uses_fallback_when_no_path(self):
+        from tars.scheduler import _build_path
+        with mock.patch.dict(os.environ, {}, clear=True):
+            result = _build_path()
+            self.assertIn("/usr/local/bin", result)
+            self.assertIn("/usr/bin", result)
+
+
 class TestScheduleListEmpty(unittest.TestCase):
     def test_empty_list_macos(self):
         with mock.patch("tars.scheduler._is_macos", return_value=True):

@@ -86,10 +86,12 @@
     <button id="send">Send</button>
   </div>
 </div>
+<script src="/dompurify.min.js"></script>
 <script src="/marked.min.js"></script>
 <script>
 // Configure marked for GitHub-Flavored Markdown.
 marked.use({gfm: true, breaks: true});
+function safeMarkdown(text) { return DOMPurify.sanitize(marked.parse(text)); }
 
 const messagesEl = document.getElementById("messages");
 const inputEl = document.getElementById("input");
@@ -152,7 +154,7 @@ function addMsg(role, text, model) {
   const div = document.createElement("div");
   div.className = "msg " + role;
   if (role === "assistant") {
-    div.innerHTML = marked.parse(text);
+    div.innerHTML = safeMarkdown(text);
   } else {
     div.textContent = text;
   }
@@ -214,8 +216,13 @@ async function loadSidebar() {
     for (const s of data.sessions) {
       const li = document.createElement("li");
       li.className = "sidebar-item";
-      const channelSpan = s.channel ? `<span class="sidebar-channel">[${s.channel}]</span>` : "";
-      li.innerHTML = `${s.title} ${channelSpan}`;
+      li.textContent = s.title;
+      if (s.channel) {
+        const badge = document.createElement("span");
+        badge.className = "sidebar-channel";
+        badge.textContent = ` [${s.channel}]`;
+        li.appendChild(badge);
+      }
       li.title = s.date;
       li.addEventListener("click", () => viewSession(s.filename, s.title));
       historyList.appendChild(li);
@@ -258,7 +265,7 @@ async function viewSession(filename, title) {
     document.getElementById("input-row").style.display = "none";
     const viewer = document.createElement("div");
     viewer.className = "session-viewer";
-    viewer.innerHTML = marked.parse(data.content);
+    viewer.innerHTML = safeMarkdown(data.content);
     messagesEl.appendChild(viewer);
     // Highlight in sidebar
     historyList.querySelectorAll(".sidebar-item").forEach(el => el.classList.remove("active"));
@@ -393,6 +400,7 @@ async function sendMessage() {
     try {
       const resp = await fetch("/mcp", {headers: authHeaders()});
       const data = await resp.json();
+      if (!resp.ok) { addMsg("error", data.detail || "mcp failed"); return; }
       if (!data.servers.length) {
         addMsg("assistant", "no MCP servers connected");
       } else {
@@ -415,6 +423,7 @@ async function sendMessage() {
     try {
       const resp = await fetch("/schedule", {headers: authHeaders()});
       const data = await resp.json();
+      if (!resp.ok) { addMsg("error", data.detail || "schedule failed"); return; }
       const lines = [];
       if (data.os && data.os.length) {
         lines.push("**os schedules:**");
@@ -698,7 +707,7 @@ async function sendMessage() {
             firstToken = false;
           }
           rawText += data.delta;
-          div.innerHTML = marked.parse(rawText);
+          div.innerHTML = safeMarkdown(rawText);
           messagesEl.scrollTop = messagesEl.scrollHeight;
         }
         if (data.meta && data.meta.model) {

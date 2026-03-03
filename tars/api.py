@@ -26,7 +26,7 @@ load_dotenv()
 _API_TOKEN = os.environ.get("TARS_API_TOKEN", "")
 
 # Paths that don't require auth (static files served via mount).
-_PUBLIC_PATHS = {"/", "/index.html", "/marked.min.js"}
+_PUBLIC_PATHS = {"/", "/index.html", "/dompurify.min.js", "/marked.min.js"}
 
 
 class _AuthMiddleware(BaseHTTPMiddleware):
@@ -204,7 +204,8 @@ def chat_stream_endpoint(req: ChatRequest):
         for delta in process_message_stream(conv, req.message, session_file):
             yield f"data: {json.dumps({'delta': delta})}\n\n"
         yield f"data: {json.dumps({'done': True})}\n\n"
-        yield f"data: {json.dumps({'meta': {'model': f'{_provider}:{_model}'}})}\n\n"
+        actual = f"{conv.last_provider}:{conv.last_model}" if conv.last_provider else f"{_provider}:{_model}"
+        yield f"data: {json.dumps({'meta': {'model': actual}})}\n\n"
 
     return StreamingResponse(event_stream(), media_type="text/event-stream")
 
