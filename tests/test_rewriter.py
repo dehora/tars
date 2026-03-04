@@ -142,5 +142,35 @@ class GenerateHydeTests(unittest.TestCase):
         self.assertIn("&lt;/untrusted-user-query>", msg)
 
 
+class RetrievalModelEnvTests(unittest.TestCase):
+    def test_default_when_unset(self) -> None:
+        with mock.patch.dict("os.environ", {}, clear=True):
+            import importlib
+            importlib.reload(rewriter)
+        self.assertEqual(rewriter.RETRIEVAL_MODEL, "gemma3:4b")
+        rewriter.ollama = _mock_ollama
+
+    def test_default_when_empty(self) -> None:
+        with mock.patch.dict("os.environ", {"TARS_RETRIEVAL_MODEL": ""}, clear=True):
+            import importlib
+            importlib.reload(rewriter)
+        self.assertEqual(rewriter.RETRIEVAL_MODEL, "gemma3:4b")
+        rewriter.ollama = _mock_ollama
+
+    def test_default_when_whitespace(self) -> None:
+        with mock.patch.dict("os.environ", {"TARS_RETRIEVAL_MODEL": "  "}, clear=True):
+            import importlib
+            importlib.reload(rewriter)
+        self.assertEqual(rewriter.RETRIEVAL_MODEL, "gemma3:4b")
+        rewriter.ollama = _mock_ollama
+
+    def test_explicit_override(self) -> None:
+        with mock.patch.dict("os.environ", {"TARS_RETRIEVAL_MODEL": "llama3:8b"}, clear=True):
+            import importlib
+            importlib.reload(rewriter)
+        self.assertEqual(rewriter.RETRIEVAL_MODEL, "llama3:8b")
+        rewriter.ollama = _mock_ollama
+
+
 if __name__ == "__main__":
     unittest.main()

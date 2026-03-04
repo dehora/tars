@@ -27,7 +27,7 @@ def _email_config() -> dict | None:
     to_addr = os.environ.get("TARS_EMAIL_TO")
     if not address or not password or not allow or not to_addr:
         return None
-    interval = os.environ.get("TARS_EMAIL_POLL_INTERVAL", "60")
+    interval = os.environ.get("TARS_EMAIL_POLL_INTERVAL", "").strip() or "60"
     try:
         interval_sec = int(interval)
     except ValueError:

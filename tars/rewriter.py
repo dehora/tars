@@ -4,7 +4,7 @@ import os
 
 import ollama
 
-RETRIEVAL_MODEL = os.environ.get("TARS_RETRIEVAL_MODEL", "gemma3:4b")
+RETRIEVAL_MODEL = os.environ.get("TARS_RETRIEVAL_MODEL", "").strip() or "gemma3:4b"
 
 _MIN_HYDE_WORDS = 5
 _MAX_REWRITES = 4

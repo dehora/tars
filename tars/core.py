@@ -7,7 +7,7 @@ import ollama
 from tars.memory import _load_memory, _load_procedural, append_daily, load_daily
 from tars.tools import ANTHROPIC_TOOLS, OLLAMA_TOOLS, get_all_tools, run_tool
 
-_MAX_TOKENS = int(os.environ.get("TARS_MAX_TOKENS", "1024"))
+_MAX_TOKENS = int(os.environ.get("TARS_MAX_TOKENS", "").strip() or "1024")
 _MAX_DAILY_LINES = 50
 _MAX_TOOL_ROUNDS = 10
 CLAUDE_MODELS = {
