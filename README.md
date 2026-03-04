@@ -17,7 +17,7 @@ tars is a conversational assistant that remembers things across sessions, manage
 - **Weather** — current conditions and hourly forecasts (Open-Meteo)
 - **Memory** — persistent facts and preferences in an Obsidian vault
 - **Daily notes** — append thoughts to today's Obsidian journal entry
-- **Search** — hybrid keyword + semantic search across all memory types
+- **Search** — hybrid keyword + semantic search across all memory types, with windowed context retrieval
 - **Web read** — fetch and extract text content from web pages for discussion
 - **Capture** — save web pages to your Obsidian vault with AI summarization (context-aware when mid-conversation)
 - **MCP** — extend with external tool servers via the Model Context Protocol (fetch, GitHub, filesystem, etc.)
@@ -57,7 +57,7 @@ tars has a four-tier memory system. Each tier has different granularity, persist
 - `Memory.md` and `Procedural.md` are always loaded (small, high-signal)
 - Today's daily file loads as `<daily-context>` (cross-session awareness within the day)
 - Recent session logs load as `<recent-sessions>` on first message
-- Hybrid search (FTS5 + vector KNN) retrieves relevant chunks from all indexed files on first message
+- Hybrid search (FTS5 + vector KNN) auto-retrieves relevant context on first message using two-pass packing — anchors for breadth, then windowed expansion for depth, under a token budget
 
 **Multi-model routing:**
 
@@ -125,8 +125,8 @@ Format matches Claude Code's `mcpServers` config — keyed by server name, each 
 
 - **Providers**: Claude (Anthropic API) or ollama (local models). Set via `TARS_DEFAULT_MODEL` (or legacy `TARS_MODEL`).
 - **Routing**: keyword-based pre-routing detects tool intent and escalates to a remote model when configured. Falls back on transient API errors.
-- **Search**: markdown-aware chunking → ollama embeddings → sqlite-vec for KNN, FTS5 for keyword, fused with Reciprocal Rank Fusion.
-- **Indexing**: incremental via content hash — only re-indexes changed files.
+- **Search**: markdown-aware chunking → ollama embeddings → sqlite-vec for KNN, FTS5 for keyword, fused with Reciprocal Rank Fusion. Tool calls use windowed retrieval (neighboring chunks for context). Auto-search uses two-pass packing (anchor breadth + selective expansion under a token budget).
+- **Indexing**: incremental via content hash — only re-indexes changed files. Batched embedding with retry. Savepoint atomicity preserves old chunks on failure.
 - **Streaming**: CLI and web UI stream responses token-by-token.
 - **Sessions**: conversations are summarised and logged to the vault. Compaction keeps context manageable during long sessions.
 
