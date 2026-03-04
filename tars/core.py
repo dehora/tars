@@ -77,18 +77,78 @@ def parse_model(model_str: str) -> tuple[str, str]:
     return provider, model
 
 
-def _search_relevant_context(opening_message: str, limit: int = 5) -> str:
-    """Search memory for context relevant to the opening message."""
-    from tars.search import search
+_MAX_SEARCH_CONTEXT_TOKENS = 3000
+_ANCHOR_BUDGET_RATIO = 0.5
+_TOP_N_CANDIDATES = 20
+_EXPAND_WINDOW = 1
 
-    results = search(opening_message, limit=limit, min_score=0.25)
-    if not results:
-        return ""
+
+def _estimate_tokens(text: str) -> int:
+    return max(len(text) // 4, int(len(text.split()) * 1.1))
+
+
+def _format_results(results: list) -> str:
     parts = []
     for r in results:
         label = f"[{r.memory_type}:{r.file_title}:{r.start_line}-{r.end_line}]"
         parts.append(f"{label}\n{r.content}")
     return "\n\n".join(parts)
+
+
+def _search_relevant_context(opening_message: str, limit: int = 5) -> str:
+    """Two-pass context packing: anchor breadth first, then expand best hits."""
+    from tars.search import expand_results, search
+
+    anchors = search(
+        opening_message, limit=_TOP_N_CANDIDATES, min_score=0.25, window=0,
+    )
+    if not anchors:
+        return ""
+
+    # Dedupe to best-per-file for breadth
+    best_per_file: dict[int, object] = {}
+    for r in anchors:
+        prev = best_per_file.get(r.file_id)
+        if prev is None or r.score > prev.score:
+            best_per_file[r.file_id] = r
+    deduped = sorted(best_per_file.values(), key=lambda r: r.score, reverse=True)
+
+    # Pass 1: pack anchors under budget
+    anchor_budget = int(_MAX_SEARCH_CONTEXT_TOKENS * _ANCHOR_BUDGET_RATIO)
+    packed = []
+    used_tokens = 0
+    for r in deduped:
+        cost = _estimate_tokens(r.content)
+        if packed and used_tokens + cost > anchor_budget:
+            break
+        packed.append(r)
+        used_tokens += cost
+
+    if not packed:
+        return ""
+
+    # Pass 2: expand top anchors within remaining budget
+    remaining = _MAX_SEARCH_CONTEXT_TOKENS - used_tokens
+    expanded_map: dict[int, object] = {}
+    try:
+        expanded_list = expand_results(packed, window=_EXPAND_WINDOW)
+        for er in expanded_list:
+            expanded_map[er.file_id] = er
+    except Exception:
+        pass
+
+    final = []
+    for r in packed:
+        expanded = expanded_map.get(r.file_id)
+        if expanded is not None and expanded.content != r.content:
+            expansion_cost = _estimate_tokens(expanded.content) - _estimate_tokens(r.content)
+            if expansion_cost <= remaining:
+                final.append(expanded)
+                remaining -= expansion_cost
+                continue
+        final.append(r)
+
+    return _format_results(final)
 
 
 def _build_system_prompt(*, search_context: str = "", tool_hints: list[str] | None = None) -> str:

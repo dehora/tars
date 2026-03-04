@@ -7,6 +7,7 @@ sys.modules.setdefault("ollama", mock.Mock())
 sys.modules.setdefault("dotenv", mock.Mock(load_dotenv=lambda: None))
 
 from tars import core
+from tars.search import SearchResult
 
 
 class ChatRoutingTests(unittest.TestCase):
@@ -156,6 +157,86 @@ class SearchRelevantContextTests(unittest.TestCase):
         with mock.patch("tars.search.search", return_value=[]):
             result = core._search_relevant_context("hello")
         self.assertEqual(result, "")
+
+
+def _make_result(file_id, seq, score, content="short content"):
+    return SearchResult(
+        content=content, score=score,
+        file_path=f"/memory/file{file_id}.md", file_title=f"file{file_id}",
+        memory_type="semantic", start_line=seq * 10 + 1, end_line=(seq + 1) * 10,
+        chunk_rowid=file_id * 100 + seq, file_id=file_id, chunk_sequence=seq,
+    )
+
+
+class TwoPassPackingTests(unittest.TestCase):
+    def test_dedupes_to_best_per_file(self) -> None:
+        anchors = [
+            _make_result(1, 0, 0.9),
+            _make_result(1, 1, 0.5),
+            _make_result(2, 0, 0.7),
+        ]
+        with (
+            mock.patch("tars.search.search", return_value=anchors),
+            mock.patch("tars.search.expand_results", return_value=[]),
+        ):
+            result = core._search_relevant_context("test")
+        # file1 appears once (best score 0.9), file2 appears once
+        self.assertEqual(result.count("file1"), 1)
+        self.assertEqual(result.count("file2"), 1)
+
+    def test_anchor_budget_caps_breadth(self) -> None:
+        big = "x" * 6000  # ~1500 tokens each, budget is 1500 (50% of 3000)
+        anchors = [
+            _make_result(i, 0, 0.9 - i * 0.1, content=big)
+            for i in range(5)
+        ]
+        with (
+            mock.patch("tars.search.search", return_value=anchors),
+            mock.patch("tars.search.expand_results", return_value=[]),
+        ):
+            result = core._search_relevant_context("test")
+        # Should only fit ~1 result at 1500 tokens each with 1500 budget
+        file_count = sum(1 for i in range(5) if f"file{i}" in result)
+        self.assertLessEqual(file_count, 2)
+        self.assertGreater(file_count, 0)
+
+    def test_expansion_replaces_anchor(self) -> None:
+        anchor = _make_result(1, 2, 0.9, content="anchor text")
+        expanded = _make_result(1, 1, 0.9, content="neighbor anchor text neighbor")
+        with (
+            mock.patch("tars.search.search", return_value=[anchor]),
+            mock.patch("tars.search.expand_results", return_value=[expanded]),
+        ):
+            result = core._search_relevant_context("test")
+        self.assertIn("neighbor anchor text neighbor", result)
+        self.assertNotIn("[semantic:file1:21-30]\nanchor text", result)
+
+    def test_expansion_respects_budget(self) -> None:
+        anchor = _make_result(1, 0, 0.9, content="tiny")
+        huge_expansion = _make_result(1, 0, 0.9, content="x" * 50000)
+        with (
+            mock.patch("tars.search.search", return_value=[anchor]),
+            mock.patch("tars.search.expand_results", return_value=[huge_expansion]),
+        ):
+            result = core._search_relevant_context("test")
+        # Should keep thin anchor since expansion blows the budget
+        self.assertIn("tiny", result)
+        self.assertNotIn("x" * 100, result)
+
+    def test_thin_and_thick_mix(self) -> None:
+        anchors = [
+            _make_result(1, 0, 0.9, content="best hit"),
+            _make_result(2, 0, 0.7, content="secondary hit"),
+        ]
+        expanded_1 = _make_result(1, 0, 0.9, content="expanded best hit with neighbors")
+        with (
+            mock.patch("tars.search.search", return_value=anchors),
+            mock.patch("tars.search.expand_results", return_value=[expanded_1]),
+        ):
+            result = core._search_relevant_context("test")
+        # Best hit should be expanded, secondary stays thin
+        self.assertIn("expanded best hit with neighbors", result)
+        self.assertIn("secondary hit", result)
 
 
 class ToolLoopBoundTests(unittest.TestCase):

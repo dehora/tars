@@ -20,10 +20,15 @@ from tars import db, embeddings
 from tars.chunker import Chunk
 from tars.search import (
     SearchResult,
+    _apply_char_cap,
+    _expand_windows,
+    _fetch_window_chunks,
+    _merge_intervals,
     _reciprocal_rank_fusion,
     _run_notes_search_tool,
     _run_search_tool,
     _sanitize_fts_query,
+    expand_results,
     search,
     search_fts,
     search_notes,
@@ -476,7 +481,40 @@ class NotesSearchToolTests(unittest.TestCase):
     def test_limit_passed(self) -> None:
         with mock.patch("tars.search.search_notes", return_value=[]) as mock_search:
             _run_notes_search_tool("notes_search", {"query": "test", "limit": 3})
-            mock_search.assert_called_once_with("test", limit=3)
+            mock_search.assert_called_once_with("test", limit=3, window=2, max_context_chars=12000)
+
+
+_CHUNK_KEYWORDS = ["alpha", "beta", "gamma", "delta", "epsilon"]
+
+
+def _setup_db_with_many_chunks(tmpdir):
+    """Create a DB with 1 file and 5 sequential chunks for window testing."""
+    conn = db.init_db(dim=_DIM)
+    cid = db.ensure_collection(conn)
+
+    fid, _ = db.upsert_file(
+        conn,
+        collection_id=cid,
+        path="/memory/Guide.md",
+        title="Guide",
+        memory_type="semantic",
+        content_hash="mmm",
+        mtime=1.0,
+        size=500,
+    )
+    chunks = [
+        Chunk(content=f"chunk-{i} {_CHUNK_KEYWORDS[i]} content here\n", sequence=i,
+              start_line=i * 10 + 1, end_line=(i + 1) * 10,
+              content_hash=f"m{i}")
+        for i in range(5)
+    ]
+    embs = [
+        [0.1 * (i + 1), 0.2 * (i + 1), 0.3 * (i + 1), 0.4 * (i + 1)]
+        for i in range(5)
+    ]
+    db.insert_chunks(conn, fid, chunks, embs)
+    conn.commit()
+    return conn, cid, fid
 
 
 class SearchLimitValidationTests(unittest.TestCase):
@@ -499,6 +537,227 @@ class SearchLimitValidationTests(unittest.TestCase):
         with mock.patch("tars.search._db_path", return_value=None):
             results = search("test", limit=9999)
         self.assertEqual(results, [])
+
+
+@unittest.skipUnless(_HAS_SQLITE_VEC, "sqlite-vec not installed")
+class WindowedRetrievalTests(unittest.TestCase):
+    def setUp(self) -> None:
+        self._patcher = mock.patch.object(embeddings, "ollama")
+        self._mock_ollama = self._patcher.start()
+        self._mock_ollama.embed.side_effect = _fake_embed
+
+    def tearDown(self) -> None:
+        self._patcher.stop()
+
+    def test_window_0_returns_single_chunk(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            with mock.patch.dict(os.environ, {"TARS_MEMORY_DIR": tmpdir}, clear=True):
+                conn, *_ = _setup_db_with_many_chunks(tmpdir)
+                conn.close()
+                results = search("chunk-2", model="test-model", limit=1, window=0)
+                self.assertGreater(len(results), 0)
+                self.assertNotIn("chunk-2 content here\nchunk-3", results[0].content)
+
+    def test_window_1_expands_result(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            with mock.patch.dict(os.environ, {"TARS_MEMORY_DIR": tmpdir}, clear=True):
+                conn, *_ = _setup_db_with_many_chunks(tmpdir)
+                conn.close()
+                # Use FTS to target chunk-2 via its unique keyword "gamma"
+                results = search("gamma", model="test-model", limit=1, window=1, mode="fts")
+                self.assertGreater(len(results), 0)
+                content = results[0].content
+                self.assertIn("beta", content)    # chunk-1 (neighbor before)
+                self.assertIn("gamma", content)   # chunk-2 (matched)
+                self.assertIn("delta", content)   # chunk-3 (neighbor after)
+
+    def test_window_clamps_at_file_boundary(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            with mock.patch.dict(os.environ, {"TARS_MEMORY_DIR": tmpdir}, clear=True):
+                conn, *_ = _setup_db_with_many_chunks(tmpdir)
+                conn.close()
+                # Use FTS to target chunk-0 via its unique keyword "alpha"
+                results = search("alpha", model="test-model", limit=1, window=2, mode="fts")
+                self.assertGreater(len(results), 0)
+                content = results[0].content
+                self.assertIn("alpha", content)    # chunk-0
+                self.assertIn("beta", content)     # chunk-1
+                self.assertIn("gamma", content)    # chunk-2
+                self.assertNotIn("delta", content) # chunk-3 outside window
+
+    def test_overlapping_windows_merged(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            with mock.patch.dict(os.environ, {"TARS_MEMORY_DIR": tmpdir}, clear=True):
+                conn, *_ = _setup_db_with_many_chunks(tmpdir)
+                conn.close()
+                # Matching both chunk-1 and chunk-2 with window=1 → ranges [0,2] and [1,3] merge
+                results = search("chunk", model="test-model", limit=2, window=1, mode="fts")
+                # All should merge into a single expanded result per file
+                file_results = [r for r in results if "Guide" in (r.file_title or "")]
+                self.assertEqual(len(file_results), 1)
+
+    def test_distant_chunks_not_merged(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            with mock.patch.dict(os.environ, {"TARS_MEMORY_DIR": tmpdir}, clear=True):
+                conn = db.init_db(dim=_DIM)
+                cid = db.ensure_collection(conn)
+                fid, _ = db.upsert_file(
+                    conn, collection_id=cid, path="/memory/Wide.md",
+                    title="Wide", memory_type="semantic",
+                    content_hash="www", mtime=1.0, size=500,
+                )
+                # Chunks at seq 0 and 4 — with window=1, ranges [0,1] and [3,5] don't overlap
+                chunks = [
+                    Chunk(content="zephyr\n", sequence=0, start_line=1, end_line=5, content_hash="w0"),
+                    Chunk(content="beta\n", sequence=1, start_line=6, end_line=10, content_hash="w1"),
+                    Chunk(content="gamma\n", sequence=2, start_line=11, end_line=15, content_hash="w2"),
+                    Chunk(content="delta\n", sequence=3, start_line=16, end_line=20, content_hash="w3"),
+                    Chunk(content="xylophone\n", sequence=4, start_line=21, end_line=25, content_hash="w4"),
+                ]
+                embs = [[float(i + 1)] * _DIM for i in range(5)]
+                db.insert_chunks(conn, fid, chunks, embs)
+                conn.commit()
+                conn.close()
+
+                # Search for each unique keyword separately via FTS, verify they stay separate
+                r_zephyr = search("zephyr", model="test-model", limit=1, window=1, mode="fts")
+                r_xylo = search("xylophone", model="test-model", limit=1, window=1, mode="fts")
+                self.assertEqual(len(r_zephyr), 1)
+                self.assertEqual(len(r_xylo), 1)
+                # zephyr at seq 0, window=1 → [0,1]: should NOT contain delta/xylophone
+                self.assertIn("zephyr", r_zephyr[0].content)
+                self.assertNotIn("xylophone", r_zephyr[0].content)
+                # xylophone at seq 4, window=1 → [3,5]: should NOT contain zephyr/beta
+                self.assertIn("xylophone", r_xylo[0].content)
+                self.assertNotIn("zephyr", r_xylo[0].content)
+
+    def test_max_context_chars_cap(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            with mock.patch.dict(os.environ, {"TARS_MEMORY_DIR": tmpdir}, clear=True):
+                conn, *_ = _setup_db_with_many_chunks(tmpdir)
+                conn.close()
+                uncapped = search("chunk", model="test-model", limit=5, window=0)
+                total_chars = sum(len(r.content) for r in uncapped)
+                # Cap at half the total chars — should return fewer results
+                capped = search("chunk", model="test-model", limit=5, window=0,
+                                max_context_chars=total_chars // 2)
+                capped_chars = sum(len(r.content) for r in capped)
+                self.assertLess(capped_chars, total_chars)
+                self.assertGreater(len(capped), 0)
+
+    def test_tool_handler_default_window(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            with mock.patch.dict(os.environ, {"TARS_MEMORY_DIR": tmpdir}, clear=True):
+                conn, *_ = _setup_db_with_many_chunks(tmpdir)
+                conn.close()
+                with mock.patch("tars.search.search", wraps=search) as mock_s:
+                    _run_search_tool("memory_search", {"query": "chunk-2"})
+                    call_kwargs = mock_s.call_args[1]
+                    self.assertEqual(call_kwargs["window"], 1)
+
+                with mock.patch("tars.search.search_notes", wraps=search_notes) as mock_ns:
+                    _run_notes_search_tool("notes_search", {"query": "chunk-2"})
+                    call_kwargs = mock_ns.call_args[1]
+                    self.assertEqual(call_kwargs["window"], 2)
+
+    def test_tool_handler_clamps_window(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            with mock.patch.dict(os.environ, {"TARS_MEMORY_DIR": tmpdir}, clear=True):
+                conn, *_ = _setup_db_with_many_chunks(tmpdir)
+                conn.close()
+                with mock.patch("tars.search.search", wraps=search) as mock_s:
+                    _run_search_tool("memory_search", {"query": "chunk-2", "window": 99})
+                    call_kwargs = mock_s.call_args[1]
+                    self.assertEqual(call_kwargs["window"], 5)
+
+                with mock.patch("tars.search.search", wraps=search) as mock_s:
+                    _run_search_tool("memory_search", {"query": "chunk-2", "window": -3})
+                    call_kwargs = mock_s.call_args[1]
+                    self.assertEqual(call_kwargs["window"], 0)
+
+
+class MergeIntervalsTests(unittest.TestCase):
+    def test_no_overlap(self) -> None:
+        result = _merge_intervals([(0, 1, 0.5), (5, 6, 0.3)])
+        self.assertEqual(len(result), 2)
+
+    def test_overlap_merges(self) -> None:
+        result = _merge_intervals([(0, 2, 0.5), (1, 3, 0.8)])
+        self.assertEqual(len(result), 1)
+        self.assertEqual(result[0], (0, 3, 0.8))
+
+    def test_adjacent_merges(self) -> None:
+        result = _merge_intervals([(0, 1, 0.5), (2, 3, 0.3)])
+        self.assertEqual(len(result), 1)
+        self.assertEqual(result[0], (0, 3, 0.5))
+
+    def test_empty(self) -> None:
+        self.assertEqual(_merge_intervals([]), [])
+
+    def test_unsorted_input(self) -> None:
+        result = _merge_intervals([(5, 6, 0.3), (0, 1, 0.5)])
+        self.assertEqual(len(result), 2)
+        self.assertEqual(result[0][0], 0)
+        self.assertEqual(result[1][0], 5)
+
+
+@unittest.skipUnless(_HAS_SQLITE_VEC, "sqlite-vec not installed")
+class ExpandResultsTests(unittest.TestCase):
+    def setUp(self) -> None:
+        self._patcher = mock.patch.object(embeddings, "ollama")
+        self._mock_ollama = self._patcher.start()
+        self._mock_ollama.embed.side_effect = _fake_embed
+
+    def tearDown(self) -> None:
+        self._patcher.stop()
+
+    def test_expand_results_basic(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            with mock.patch.dict(os.environ, {"TARS_MEMORY_DIR": tmpdir}, clear=True):
+                conn, cid, fid = _setup_db_with_many_chunks(tmpdir)
+                conn.close()
+                anchor = SearchResult(
+                    content="chunk-2 gamma content here\n",
+                    score=0.9,
+                    file_path="/memory/Guide.md",
+                    file_title="Guide",
+                    memory_type="semantic",
+                    start_line=21,
+                    end_line=30,
+                    chunk_rowid=3,
+                    file_id=fid,
+                    chunk_sequence=2,
+                )
+                expanded = expand_results([anchor], window=1)
+                self.assertEqual(len(expanded), 1)
+                self.assertIn("beta", expanded[0].content)
+                self.assertIn("gamma", expanded[0].content)
+                self.assertIn("delta", expanded[0].content)
+
+    def test_expand_results_empty_input(self) -> None:
+        result = expand_results([], window=1)
+        self.assertEqual(result, [])
+
+    def test_expand_results_window_0_returns_copy(self) -> None:
+        r = SearchResult(
+            content="x", score=0.5, file_path="/a.md", file_title="a",
+            memory_type="semantic", start_line=1, end_line=1, chunk_rowid=1,
+            file_id=1, chunk_sequence=0,
+        )
+        result = expand_results([r], window=0)
+        self.assertEqual(len(result), 1)
+        self.assertEqual(result[0].content, "x")
+
+    def test_expand_results_no_db(self) -> None:
+        r = SearchResult(
+            content="x", score=0.5, file_path="/a.md", file_title="a",
+            memory_type="semantic", start_line=1, end_line=1, chunk_rowid=1,
+            file_id=1, chunk_sequence=0,
+        )
+        with mock.patch("tars.search._db_path", return_value=None):
+            result = expand_results([r], window=1)
+        self.assertEqual(len(result), 1)
+        self.assertEqual(result[0].content, "x")
 
 
 if __name__ == "__main__":

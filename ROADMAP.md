@@ -15,6 +15,14 @@
 
 Pattern detection over session history for suggestions.
 
+### 36. Escalation-aware search budgeting
+
+Make `max_search_context_tokens` adaptive based on routing: allow a larger search budget for local-only conversations (cheap), tighten for Claude-routed requests unless the user explicitly asked for deep recall. Keeps default Claude cost low.
+
+### 37. Per-section prompt caps in `_build_system_prompt`
+
+Cap each system prompt section (procedural, memory, search_context, daily) independently so one section can't starve the others. Makes compaction triggers more predictable and keeps the total prompt stable over time.
+
 </details>
 
 <details>

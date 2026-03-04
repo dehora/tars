@@ -147,6 +147,10 @@ ANTHROPIC_TOOLS = [
                     "type": "integer",
                     "description": "Max results to return (default 5)",
                 },
+                "window": {
+                    "type": "integer",
+                    "description": "Number of neighboring chunks to include for context (default 1)",
+                },
             },
             "required": ["query"],
         },
@@ -168,6 +172,10 @@ ANTHROPIC_TOOLS = [
                 "limit": {
                     "type": "integer",
                     "description": "Max results to return (default 5)",
+                },
+                "window": {
+                    "type": "integer",
+                    "description": "Number of neighboring chunks to include for context (default 2)",
                 },
             },
             "required": ["query"],
