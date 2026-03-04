@@ -452,6 +452,64 @@ class DailyContextProvenanceTests(unittest.TestCase):
         self.assertIn("summarized web content", prompt)
 
 
+class WeakResultExpansionTests(unittest.TestCase):
+    def test_weak_results_trigger_expansion(self) -> None:
+        weak = [_make_result(1, 0, 0.20)]
+        better = [_make_result(2, 0, 0.55, content="expanded hit")]
+        with (
+            mock.patch("tars.search.search", return_value=weak),
+            mock.patch("tars.search.search_expanded", return_value=better) as mock_se,
+            mock.patch("tars.search.expand_results", return_value=[]),
+        ):
+            result = core._search_relevant_context("vague query about something")
+        mock_se.assert_called_once()
+        self.assertIn("expanded hit", result)
+
+    def test_strong_results_skip_expansion(self) -> None:
+        strong = [_make_result(1, 0, 0.80, content="strong hit")]
+        with (
+            mock.patch("tars.search.search", return_value=strong),
+            mock.patch("tars.search.search_expanded") as mock_se,
+            mock.patch("tars.search.expand_results", return_value=[]),
+        ):
+            result = core._search_relevant_context("specific query")
+        mock_se.assert_not_called()
+        self.assertIn("strong hit", result)
+
+    def test_empty_results_trigger_expansion(self) -> None:
+        better = [_make_result(1, 0, 0.50, content="found via expansion")]
+        with (
+            mock.patch("tars.search.search", return_value=[]),
+            mock.patch("tars.search.search_expanded", return_value=better) as mock_se,
+            mock.patch("tars.search.expand_results", return_value=[]),
+        ):
+            result = core._search_relevant_context("obscure topic")
+        mock_se.assert_called_once()
+        self.assertIn("found via expansion", result)
+
+    def test_expansion_failure_falls_back(self) -> None:
+        weak = [_make_result(1, 0, 0.20, content="weak but present")]
+        with (
+            mock.patch("tars.search.search", return_value=weak),
+            mock.patch("tars.search.search_expanded", side_effect=Exception("ollama down")),
+            mock.patch("tars.search.expand_results", return_value=[]),
+        ):
+            result = core._search_relevant_context("test query")
+        self.assertIn("weak but present", result)
+
+    def test_expansion_worse_keeps_original(self) -> None:
+        original = [_make_result(1, 0, 0.28, content="original hit")]
+        worse = [_make_result(2, 0, 0.15, content="worse expansion")]
+        with (
+            mock.patch("tars.search.search", return_value=original),
+            mock.patch("tars.search.search_expanded", return_value=worse),
+            mock.patch("tars.search.expand_results", return_value=[]),
+        ):
+            result = core._search_relevant_context("borderline query")
+        self.assertIn("original hit", result)
+        self.assertNotIn("worse expansion", result)
+
+
 class ParseModelTests(unittest.TestCase):
     def test_valid_format(self) -> None:
         provider, model = core.parse_model("ollama:llama3")

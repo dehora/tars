@@ -330,9 +330,22 @@ def _dispatch_capture(parts: list[str], provider: str, model: str) -> str:
 
 
 def _dispatch_search(query: str, mode: str = "hybrid") -> str:
-    from tars.search import search
+    from tars.search import search, search_expanded
 
-    results = search(query, mode=mode, limit=5)
+    expand = False
+    tokens = query.split()
+    if "--expand" in tokens or "-e" in tokens:
+        expand = True
+        tokens = [t for t in tokens if t not in ("--expand", "-e")]
+        query = " ".join(tokens)
+
+    if not query.strip():
+        return "No query provided."
+
+    if expand:
+        results = search_expanded(query, mode=mode, limit=5)
+    else:
+        results = search(query, mode=mode, limit=5)
     if not results:
         return "No results."
     lines = []

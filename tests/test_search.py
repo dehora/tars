@@ -31,6 +31,7 @@ from tars.search import (
     _sanitize_fts_query,
     expand_results,
     search,
+    search_expanded,
     search_fts,
     search_notes,
     search_vec,
@@ -810,6 +811,77 @@ class ExpandResultsTests(unittest.TestCase):
             result = expand_results([r], window=1)
         self.assertEqual(len(result), 1)
         self.assertEqual(result[0].content, "x")
+
+
+@unittest.skipUnless(_HAS_SQLITE_VEC, "sqlite-vec not installed")
+class SearchExpandedTests(unittest.TestCase):
+    def setUp(self) -> None:
+        self._patcher = mock.patch.object(embeddings, "ollama")
+        self._mock_ollama = self._patcher.start()
+        self._mock_ollama.embed.side_effect = _fake_embed
+
+    def tearDown(self) -> None:
+        self._patcher.stop()
+
+    def _patch_rewriter(self, expand_rv, hyde_rv):
+        p1 = mock.patch("tars.search.rewriter.expand_queries", return_value=expand_rv)
+        p2 = mock.patch("tars.search.rewriter.generate_hyde", return_value=hyde_rv)
+        m1 = p1.start()
+        m2 = p2.start()
+        self.addCleanup(p1.stop)
+        self.addCleanup(p2.stop)
+        return m1, m2
+
+    def test_includes_original_query(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            with mock.patch.dict(os.environ, {"TARS_MEMORY_DIR": tmpdir}, clear=True):
+                conn, *_ = _setup_db_with_chunks(tmpdir)
+                conn.close()
+                mock_eq, mock_hy = self._patch_rewriter(
+                    ["Perry dog", "dog named Perry"], None
+                )
+                results = search_expanded(
+                    "Perry dog", model="test-model", limit=5
+                )
+                mock_eq.assert_called_once_with("Perry dog")
+                self.assertGreater(len(results), 0)
+
+    def test_with_hyde(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            with mock.patch.dict(os.environ, {"TARS_MEMORY_DIR": tmpdir}, clear=True):
+                conn, *_ = _setup_db_with_chunks(tmpdir)
+                conn.close()
+                mock_eq, mock_hy = self._patch_rewriter(
+                    ["Perry the dog"],
+                    "- dog named Perry\n- walks in the park",
+                )
+                results = search_expanded(
+                    "Perry the dog", model="test-model", limit=5
+                )
+                mock_hy.assert_called_once_with("Perry the dog")
+                self.assertGreater(len(results), 0)
+
+    def test_without_hyde_short_query(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            with mock.patch.dict(os.environ, {"TARS_MEMORY_DIR": tmpdir}, clear=True):
+                conn, *_ = _setup_db_with_chunks(tmpdir)
+                conn.close()
+                self._patch_rewriter(["Perry", "Perry dog name"], None)
+                results = search_expanded(
+                    "Perry", model="test-model", limit=5
+                )
+                self.assertGreater(len(results), 0)
+
+    def test_no_db_returns_empty(self) -> None:
+        with mock.patch.dict(os.environ, {}, clear=True):
+            os.environ.pop("TARS_MEMORY_DIR", None)
+            results = search_expanded("anything", model="test-model")
+            self.assertEqual(results, [])
+
+    def test_limit_validation(self) -> None:
+        with mock.patch("tars.search._db_path", return_value=None):
+            results = search_expanded("test", limit=None)
+        self.assertEqual(results, [])
 
 
 if __name__ == "__main__":

@@ -65,6 +65,7 @@ Tars is a personal AI assistant with CLI, web, email, and Telegram channels. Rou
 | `TARS_ESCALATION_MODEL` | — | Legacy remote model for tool calls (`provider:model`) |
 | `TARS_REMOTE_MODEL` | — | Remote model for tool calls (`provider:model`, explicit versions recommended) |
 | `TARS_DEFAULT_EMBEDDING_MODEL` | `qwen3-embedding:8b` | Embedding model for indexing and search |
+| `TARS_RETRIEVAL_MODEL` | `gemma3:4b` | Local model for query rewriting and HyDE |
 | `TARS_ROUTING_POLICY` | `tool` | Routing policy (only `tool` supported) |
 | `TARS_MEMORY_DIR` | — | Path to tars obsidian vault |
 | `TARS_NOTES_DIR` | — | Path to personal obsidian vault (daily notes) |

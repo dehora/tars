@@ -10,6 +10,7 @@ from tars.embeddings import (
     _supports_instruct,
     embed,
 )
+from tars import rewriter
 
 
 @dataclass(frozen=True, slots=True)
@@ -276,6 +277,106 @@ def search(
         else:
             fused = _reciprocal_rank_fusion(fts_rowids)
 
+        fused = [(rid, score) for rid, score in fused if score >= min_score]
+        fused = fused[:limit]
+
+        if not fused:
+            return []
+
+        _raw: list[tuple[SearchResult, int, int]] = []
+        for rowid, score in fused:
+            row = conn.execute(
+                "SELECT vc.content, vc.file_id, vc.chunk_sequence, "
+                "vc.start_line, vc.end_line, "
+                "f.path, f.title, f.memory_type "
+                "FROM vec_chunks vc "
+                "JOIN files f ON f.id = vc.file_id "
+                "WHERE vc.rowid = ?",
+                (rowid,),
+            ).fetchone()
+            if row is None:
+                continue
+            result = SearchResult(
+                content=row["content"],
+                score=score,
+                file_path=row["path"],
+                file_title=row["title"],
+                memory_type=row["memory_type"],
+                start_line=row["start_line"],
+                end_line=row["end_line"],
+                chunk_rowid=rowid,
+                file_id=row["file_id"],
+                chunk_sequence=row["chunk_sequence"],
+            )
+            _raw.append((result, row["file_id"], row["chunk_sequence"]))
+
+        if window > 0:
+            results = _expand_windows(_raw, window, conn)
+        else:
+            results = [r for r, _, _ in _raw]
+
+        if max_context_chars > 0:
+            results = _apply_char_cap(results, max_context_chars)
+
+        return results
+    finally:
+        conn.close()
+
+
+def search_expanded(
+    query: str,
+    *,
+    model: str = DEFAULT_EMBEDDING_MODEL,
+    limit: int = 10,
+    min_score: float = 0.0,
+    mode: str = "hybrid",
+    db_path=None,
+    window: int = 0,
+    max_context_chars: int = 0,
+) -> list[SearchResult]:
+    """Multi-query search with query rewriting and optional HyDE.
+
+    Generates keyword-dense rewrites of the query (and a hypothetical
+    document for longer queries), runs each through vec+fts, and fuses
+    all ranked lists via RRF.
+    """
+
+    try:
+        limit = int(limit)
+    except (TypeError, ValueError):
+        limit = 10
+    limit = min(max(limit, 1), 100)
+    p = db_path if db_path is not None else _db_path()
+    if p is None or not p.exists():
+        return []
+
+    conn = _connect(p)
+    try:
+        if not _vec_table_exists(conn):
+            return []
+
+        stored_model = _get_metadata(conn, "embedding_model")
+        vec_model = stored_model if stored_model else model
+        instruct = _DEFAULT_QUERY_INSTRUCT if _supports_instruct(vec_model) else None
+
+        queries = rewriter.expand_queries(query)
+        hyde_text = rewriter.generate_hyde(query)
+
+        ranked_lists: list[list[int]] = []
+        oversample = limit * 2
+
+        for q in queries:
+            if mode in ("hybrid", "vec"):
+                q_vec = embed(q, model=vec_model, instruct=instruct)[0]
+                ranked_lists.append(search_vec(conn, q_vec, limit=oversample))
+            if mode in ("hybrid", "fts"):
+                ranked_lists.append(search_fts(conn, q, limit=oversample))
+
+        if hyde_text and mode in ("hybrid", "vec"):
+            hyde_vec = embed(hyde_text, model=vec_model)[0]
+            ranked_lists.append(search_vec(conn, hyde_vec, limit=oversample))
+
+        fused = _reciprocal_rank_fusion(*ranked_lists)
         fused = [(rid, score) for rid, score in fused if score >= min_score]
         fused = fused[:limit]
 

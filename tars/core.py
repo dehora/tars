@@ -82,6 +82,8 @@ _ANCHOR_BUDGET_RATIO_MIN = 0.3
 _ANCHOR_BUDGET_RATIO_MAX = 0.7
 _TOP_N_CANDIDATES = 20
 _EXPAND_WINDOW = 1
+_AUTO_SEARCH_MIN_SCORE = 0.25
+_EXPANSION_SCORE_THRESHOLD = 0.30
 
 
 def _estimate_tokens(text: str) -> int:
@@ -116,11 +118,25 @@ def _format_results(results: list) -> str:
 
 def _search_relevant_context(opening_message: str, limit: int = 5) -> str:
     """Two-pass context packing: anchor breadth first, then expand best hits."""
-    from tars.search import expand_results, search
+    from tars.search import expand_results, search, search_expanded
 
     anchors = search(
-        opening_message, limit=_TOP_N_CANDIDATES, min_score=0.25, window=0,
+        opening_message, limit=_TOP_N_CANDIDATES, min_score=_AUTO_SEARCH_MIN_SCORE, window=0,
     )
+
+    if not anchors or anchors[0].score < _EXPANSION_SCORE_THRESHOLD:
+        try:
+            expanded_anchors = search_expanded(
+                opening_message, limit=_TOP_N_CANDIDATES,
+                min_score=_AUTO_SEARCH_MIN_SCORE, window=0,
+            )
+            if expanded_anchors and (
+                not anchors or expanded_anchors[0].score > anchors[0].score
+            ):
+                anchors = expanded_anchors
+        except Exception:
+            pass
+
     if not anchors:
         return ""
 
