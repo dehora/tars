@@ -75,6 +75,7 @@ def _setup_db_with_chunks(tmpdir):
     ]
     emb2 = [[0.15, 0.25, 0.35, 0.45]]
     db.insert_chunks(conn, fid2, chunks2, emb2)
+    conn.commit()
 
     return conn, cid, fid1, fid2
 
@@ -395,6 +396,7 @@ class SearchWithDbPathTests(unittest.TestCase):
                            start_line=1, end_line=1, content_hash="n1")],
                     [[0.9, 0.8, 0.7, 0.6]],
                 )
+                conn2.commit()
                 conn2.close()
 
             results = search("routing", model="test-model", db_path=alt_db)
@@ -431,6 +433,7 @@ class SearchWithDbPathTests(unittest.TestCase):
                            start_line=1, end_line=1, content_hash="q1")],
                     [[0.3, 0.4, 0.5, 0.6]],
                 )
+                conn.commit()
                 conn.close()
 
                 results = search_notes("quantum computing", model="test-model")

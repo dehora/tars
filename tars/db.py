@@ -352,10 +352,12 @@ def _delete_fts_for_file(conn: sqlite3.Connection, file_id: int) -> None:
 
 
 def delete_chunks_for_file(conn: sqlite3.Connection, file_id: int) -> None:
-    """Remove all chunks for a file before re-indexing."""
+    """Remove all chunks for a file before re-indexing.
+
+    Does not commit — caller is responsible for transaction management.
+    """
     _delete_fts_for_file(conn, file_id)
     conn.execute("DELETE FROM vec_chunks WHERE file_id = ?", (file_id,))
-    conn.commit()
 
 
 def insert_chunks(
@@ -364,7 +366,10 @@ def insert_chunks(
     chunks: list,
     embeddings: list[list[float]],
 ) -> None:
-    """Bulk insert chunks with their embeddings into vec_chunks and chunks_fts."""
+    """Bulk insert chunks with their embeddings into vec_chunks and chunks_fts.
+
+    Does not commit — caller is responsible for transaction management.
+    """
     count = min(len(chunks), len(embeddings))
     for i in range(count):
         chunk = chunks[i]
@@ -387,4 +392,3 @@ def insert_chunks(
             "INSERT INTO chunks_fts (rowid, content) VALUES (?, ?)",
             (cur.lastrowid, chunk.content),
         )
-    conn.commit()

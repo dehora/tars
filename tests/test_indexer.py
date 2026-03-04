@@ -10,7 +10,14 @@ sys.modules.setdefault("dotenv", mock.Mock(load_dotenv=lambda: None))
 sys.modules.setdefault("ollama", mock.MagicMock())
 
 from tars import embeddings
-from tars.indexer import _discover_files, _discover_vault_files, build_index, build_notes_index
+from tars.indexer import (
+    _batched_embed,
+    _discover_files,
+    _discover_vault_files,
+    _embed_prefix,
+    build_index,
+    build_notes_index,
+)
 
 _DIM = 4
 
@@ -152,18 +159,16 @@ class BuildIndexTests(unittest.TestCase):
             (d / "Memory.md").write_text("# Memory\n\nFacts.\n", encoding="utf-8")
 
             with mock.patch.dict(os.environ, {"TARS_MEMORY_DIR": td}):
-                # First run succeeds normally
                 build_index(model="test-model")
 
-                # Change content to trigger reindex, but with bad embeddings
                 (d / "Memory.md").write_text(
                     "# Memory\n\nUpdated facts.\n\n## Section\n\nMore content.\n",
                     encoding="utf-8",
                 )
-                # Patch embed at the indexer level so embedding_dimensions still works
+                # Bad embeddings — _index_files catches the error per-file
                 with mock.patch("tars.indexer.embed", return_value=[]):
-                    with self.assertRaises(ValueError):
-                        build_index(model="test-model")
+                    stats_bad = build_index(model="test-model")
+                self.assertEqual(stats_bad["indexed"], 0)
 
                 # Restore good embeddings — file should be reindexed, not skipped
                 stats = build_index(model="test-model")
@@ -287,6 +292,135 @@ class ContextInEmbeddingTests(unittest.TestCase):
             context_texts = [t for t in texts if t.startswith("Recipes > Main Dishes")]
             self.assertGreater(len(context_texts), 0,
                                "At least one embed input should have heading context prepended")
+
+
+class EmbedPrefixTests(unittest.TestCase):
+    def test_empty_context(self) -> None:
+        self.assertEqual(_embed_prefix(""), "")
+
+    def test_short_context_unchanged(self) -> None:
+        self.assertEqual(_embed_prefix("Alpha > Beta"), "Alpha > Beta")
+
+    def test_caps_at_three_levels(self) -> None:
+        result = _embed_prefix("L1 > L2 > L3 > L4 > L5")
+        self.assertEqual(result, "L1 > L2 > L3")
+
+    def test_truncates_long_breadcrumb(self) -> None:
+        long = " > ".join(f"Heading{i:03d}" for i in range(3))
+        # Should not exceed _MAX_CONTEXT_CHARS (120)
+        result = _embed_prefix(long)
+        self.assertLessEqual(len(result), 120)
+
+    def test_truncation_preserves_whole_segments(self) -> None:
+        ctx = "A" * 50 + " > " + "B" * 50 + " > " + "C" * 50
+        result = _embed_prefix(ctx)
+        self.assertNotIn(" > C", result)
+        self.assertIn(" > ", result)
+
+
+class BatchedEmbedTests(unittest.TestCase):
+    def test_single_batch(self) -> None:
+        texts = ["hello", "world"]
+        with mock.patch("tars.indexer.embed", return_value=[[0.1] * _DIM, [0.2] * _DIM]) as m:
+            result = _batched_embed(texts, model="test")
+        self.assertEqual(len(result), 2)
+        m.assert_called_once()
+
+    def test_multiple_batches(self) -> None:
+        texts = [f"text{i}" for i in range(100)]
+        call_count = 0
+
+        def fake_embed(batch, **kw):
+            nonlocal call_count
+            call_count += 1
+            return [[0.1] * _DIM for _ in batch]
+
+        with mock.patch("tars.indexer.embed", side_effect=fake_embed):
+            result = _batched_embed(texts, model="test")
+        self.assertEqual(len(result), 100)
+        self.assertEqual(call_count, 2)  # 64 + 36
+
+    def test_retry_on_transient_failure(self) -> None:
+        attempt = {"n": 0}
+
+        def flaky_embed(batch, **kw):
+            attempt["n"] += 1
+            if attempt["n"] == 1:
+                raise ConnectionError("transient")
+            return [[0.1] * _DIM for _ in batch]
+
+        with mock.patch("tars.indexer.embed", side_effect=flaky_embed):
+            with mock.patch("tars.indexer.time.sleep"):
+                result = _batched_embed(["hello"], model="test")
+        self.assertEqual(len(result), 1)
+        self.assertEqual(attempt["n"], 2)
+
+    def test_raises_after_max_retries(self) -> None:
+        with mock.patch("tars.indexer.embed", side_effect=ConnectionError("down")):
+            with mock.patch("tars.indexer.time.sleep"):
+                with self.assertRaises(ConnectionError):
+                    _batched_embed(["hello"], model="test")
+
+    def test_count_mismatch_raises(self) -> None:
+        with mock.patch("tars.indexer.embed", return_value=[[0.1] * _DIM]):
+            with self.assertRaises(ValueError):
+                _batched_embed(["a", "b"], model="test")
+
+
+class SavepointAtomicityTests(unittest.TestCase):
+    def setUp(self) -> None:
+        self._patcher = mock.patch.object(embeddings, "ollama")
+        self._mock_ollama = self._patcher.start()
+        self._mock_ollama.embed.side_effect = _fake_embed
+
+    def tearDown(self) -> None:
+        self._patcher.stop()
+
+    def test_embed_failure_preserves_old_chunks(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            d = Path(td)
+            (d / "Memory.md").write_text(
+                "# Memory\n\nOriginal content here.\n", encoding="utf-8"
+            )
+
+            with mock.patch.dict(os.environ, {"TARS_MEMORY_DIR": td}):
+                stats1 = build_index(model="test-model")
+                self.assertEqual(stats1["indexed"], 1)
+
+                (d / "Memory.md").write_text(
+                    "# Memory\n\nChanged content.\n", encoding="utf-8"
+                )
+
+                # Fail embedding — _index_files catches per-file
+                with mock.patch("tars.indexer.embed", side_effect=RuntimeError("embed service down")):
+                    stats2 = build_index(model="test-model")
+                self.assertEqual(stats2["indexed"], 0)
+
+                # Restore embed and retry — file should be reindexable (content_hash reset)
+                stats3 = build_index(model="test-model")
+                self.assertEqual(stats3["indexed"], 1)
+
+    def test_failed_file_does_not_block_others(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            d = Path(td)
+            (d / "Memory.md").write_text("# Memory\n\nGood file.\n", encoding="utf-8")
+            sessions = d / "sessions"
+            sessions.mkdir()
+            (sessions / "bad.md").write_text("# Bad\n\nWill fail.\n", encoding="utf-8")
+
+            call_count = {"n": 0}
+
+            def fail_for_bad(texts, **kw):
+                call_count["n"] += 1
+                if any("Will fail" in t for t in texts):
+                    raise RuntimeError("boom")
+                return [[0.1] * _DIM for _ in texts]
+
+            with mock.patch.dict(os.environ, {"TARS_MEMORY_DIR": td}):
+                with mock.patch("tars.indexer.embed", side_effect=fail_for_bad):
+                    stats = build_index(model="test-model")
+
+            self.assertEqual(stats["indexed"], 1)
 
 
 class StartupIndexTests(unittest.TestCase):
