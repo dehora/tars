@@ -84,7 +84,8 @@ Tars is a personal AI assistant with CLI, web, email, and Telegram channels. Rou
 
 ## Git commits
 
-Use third-person singular and present tense verbs in commit messages (e.g., "Adds emacs", "Ignores license", "Renames gitconfig template").
+- Use third-person singular and present tense verbs in commit messages (e.g., "Adds emacs", "Ignores license", "Renames gitconfig template").
+- Use semver X.Y.Z for git tags, don't prefix with 'v'.
 
 ### Agent Model Choices
 
