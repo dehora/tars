@@ -116,6 +116,15 @@ def _format_results(results: list) -> str:
     return "\n\n".join(parts)
 
 
+def _expansion_improves(baseline: list, expanded: list) -> bool:
+    """Check whether expanded results surface chunks the baseline missed."""
+    if not baseline:
+        return True
+    baseline_ids = {r.chunk_rowid for r in baseline}
+    new_chunks = sum(1 for r in expanded if r.chunk_rowid not in baseline_ids)
+    return new_chunks > 0
+
+
 def _search_relevant_context(opening_message: str, limit: int = 5) -> str:
     """Two-pass context packing: anchor breadth first, then expand best hits."""
     from tars.search import expand_results, search, search_expanded
@@ -130,7 +139,7 @@ def _search_relevant_context(opening_message: str, limit: int = 5) -> str:
             expanded_anchors = search_expanded(
                 opening_message, limit=_TOP_N_CANDIDATES, min_score=0.0, window=0,
             )
-            if expanded_anchors and (not anchors or len(expanded_anchors) > len(anchors)):
+            if expanded_anchors and _expansion_improves(anchors, expanded_anchors):
                 anchors = expanded_anchors
         except Exception:
             pass

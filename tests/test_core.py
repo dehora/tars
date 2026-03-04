@@ -455,10 +455,8 @@ class DailyContextProvenanceTests(unittest.TestCase):
 class WeakResultExpansionTests(unittest.TestCase):
     def test_weak_results_trigger_expansion(self) -> None:
         weak = [_make_result(1, 0, 0.20)]
-        better = [
-            _make_result(2, 0, 0.55, content="expanded hit"),
-            _make_result(3, 0, 0.40, content="second expanded"),
-        ]
+        # chunk_rowid=200 is new — not in baseline
+        better = [_make_result(2, 0, 0.55, content="expanded hit")]
         with (
             mock.patch("tars.search.search", return_value=weak),
             mock.patch("tars.search.search_expanded", return_value=better) as mock_se,
@@ -500,20 +498,30 @@ class WeakResultExpansionTests(unittest.TestCase):
             result = core._search_relevant_context("test query")
         self.assertIn("weak but present", result)
 
-    def test_expansion_fewer_results_keeps_original(self) -> None:
-        original = [
-            _make_result(1, 0, 0.28, content="original hit"),
-            _make_result(2, 0, 0.20, content="second hit"),
-        ]
-        fewer = [_make_result(3, 0, 0.15, content="fewer expansion")]
+    def test_expansion_same_chunks_keeps_original(self) -> None:
+        original = [_make_result(1, 0, 0.28, content="original hit")]
+        # Same chunk_rowid (100) — expansion found nothing new
+        same = [_make_result(1, 0, 0.28, content="same chunk re-scored")]
         with (
             mock.patch("tars.search.search", return_value=original),
-            mock.patch("tars.search.search_expanded", return_value=fewer),
+            mock.patch("tars.search.search_expanded", return_value=same),
             mock.patch("tars.search.expand_results", return_value=[]),
         ):
             result = core._search_relevant_context("borderline query")
         self.assertIn("original hit", result)
-        self.assertNotIn("fewer expansion", result)
+
+    def test_expansion_at_limit_with_new_chunks_wins(self) -> None:
+        baseline = [_make_result(i, 0, 0.20) for i in range(20)]
+        # Same count but includes a new chunk (file_id=99, rowid=9900)
+        expanded = [_make_result(i, 0, 0.20) for i in range(19)]
+        expanded.append(_make_result(99, 0, 0.50, content="new chunk"))
+        with (
+            mock.patch("tars.search.search", return_value=baseline),
+            mock.patch("tars.search.search_expanded", return_value=expanded),
+            mock.patch("tars.search.expand_results", return_value=[]),
+        ):
+            result = core._search_relevant_context("test at limit")
+        self.assertIn("new chunk", result)
 
     def test_expansion_uses_no_min_score(self) -> None:
         weak = [_make_result(1, 0, 0.20)]
