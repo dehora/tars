@@ -275,7 +275,7 @@ class AnchorBudgetRatioTests(unittest.TestCase):
     def test_full_dominance_returns_min(self) -> None:
         results = [_make_result(1, 0, 1.0), _make_result(2, 0, 0.0)]
         ratio = core._anchor_budget_ratio(results)
-        self.assertAlmostEqual(ratio, core._ANCHOR_BUDGET_RATIO_MAX)
+        self.assertAlmostEqual(ratio, core._ANCHOR_BUDGET_RATIO_MIN)
 
     def test_ratio_bounded(self) -> None:
         for spread in [0.0, 0.3, 0.5, 0.8, 1.0]:

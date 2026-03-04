@@ -8,6 +8,13 @@ _DEFAULT_QUERY_INSTRUCT = (
     "Given a search query, retrieve relevant passages that answer the query"
 )
 
+_INSTRUCT_MODEL_PREFIXES = ("qwen3-embedding",)
+
+
+def _supports_instruct(model: str) -> bool:
+    """Check if the embedding model supports instruction-aware query asymmetry."""
+    return any(model.startswith(p) for p in _INSTRUCT_MODEL_PREFIXES)
+
 
 def embed(
     texts: str | list[str],

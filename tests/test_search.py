@@ -18,7 +18,7 @@ except ImportError:
 
 from tars import db, embeddings
 from tars.chunker import Chunk
-from tars.embeddings import _DEFAULT_QUERY_INSTRUCT
+from tars.embeddings import _DEFAULT_QUERY_INSTRUCT, _supports_instruct
 from tars.search import (
     SearchResult,
     _apply_char_cap,
@@ -225,7 +225,23 @@ class SearchHybridTests(unittest.TestCase):
                 self.assertEqual(len(filtered), 0)
                 self.assertGreater(len(all_results), 0)
 
-    def test_query_uses_instruct_prefix(self) -> None:
+    def test_query_uses_instruct_for_supported_model(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            with mock.patch.dict(os.environ, {"TARS_MEMORY_DIR": tmpdir}, clear=True):
+                conn, *_ = _setup_db_with_chunks(tmpdir)
+                from tars.db import _set_metadata
+                conn2 = db._connect(db._db_path())
+                _set_metadata(conn2, "embedding_model", "qwen3-embedding:0.6b")
+                conn2.commit()
+                conn2.close()
+                conn.close()
+                with mock.patch("tars.search.embed", wraps=embeddings.embed) as mock_embed:
+                    search("Perry dog", model="qwen3-embedding:0.6b", limit=1)
+                    mock_embed.assert_called_once()
+                    _, kwargs = mock_embed.call_args
+                    self.assertEqual(kwargs["instruct"], _DEFAULT_QUERY_INSTRUCT)
+
+    def test_query_skips_instruct_for_unsupported_model(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             with mock.patch.dict(os.environ, {"TARS_MEMORY_DIR": tmpdir}, clear=True):
                 conn, *_ = _setup_db_with_chunks(tmpdir)
@@ -234,7 +250,7 @@ class SearchHybridTests(unittest.TestCase):
                     search("Perry dog", model="test-model", limit=1)
                     mock_embed.assert_called_once()
                     _, kwargs = mock_embed.call_args
-                    self.assertEqual(kwargs["instruct"], _DEFAULT_QUERY_INSTRUCT)
+                    self.assertIsNone(kwargs["instruct"])
 
     def test_empty_db(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:

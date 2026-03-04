@@ -90,6 +90,17 @@ class InstructPrefixTests(unittest.TestCase):
         self.assertEqual(call_args[1]["input"], ["hello"])
 
 
+class SupportsInstructTests(unittest.TestCase):
+    def test_qwen3_embedding_supported(self) -> None:
+        self.assertTrue(embeddings._supports_instruct("qwen3-embedding:0.6b"))
+        self.assertTrue(embeddings._supports_instruct("qwen3-embedding:8b"))
+
+    def test_other_models_not_supported(self) -> None:
+        self.assertFalse(embeddings._supports_instruct("nomic-embed-text"))
+        self.assertFalse(embeddings._supports_instruct("test-model"))
+        self.assertFalse(embeddings._supports_instruct("mxbai-embed-large"))
+
+
 class EmbeddingDimensionsTests(unittest.TestCase):
     def setUp(self) -> None:
         _mock_ollama.reset_mock()

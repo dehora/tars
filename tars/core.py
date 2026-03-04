@@ -99,7 +99,7 @@ def _anchor_budget_ratio(deduped: list) -> float:
         return _ANCHOR_BUDGET_RATIO_MAX
     top = deduped[0].score
     second = deduped[1].score
-    if top <= 0 or second <= 0:
+    if top <= 0:
         return _ANCHOR_BUDGET_RATIO_MAX
     dominance = (top - second) / top
     ratio = _ANCHOR_BUDGET_RATIO_MAX - dominance * (_ANCHOR_BUDGET_RATIO_MAX - _ANCHOR_BUDGET_RATIO_MIN)
