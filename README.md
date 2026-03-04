@@ -61,7 +61,7 @@ tars has a four-tier memory system. Each tier has different granularity, persist
 
 **Multi-model routing:**
 
-When `TARS_REMOTE_MODEL` (or legacy `TARS_ESCALATION_MODEL`) is set, tars uses the primary model (from `TARS_DEFAULT_MODEL` or legacy `TARS_MODEL`) for chat and automatically escalates to the remote model when tool use is detected. If the remote model is unavailable (rate limit, outage, transient errors), it falls back to the primary model.
+When `TARS_MODEL_REMOTE` is set, tars uses the primary model (from `TARS_MODEL_DEFAULT`) for chat and automatically escalates to the remote model when tool use is detected. If the remote model is unavailable (rate limit, outage, transient errors), it falls back to the primary model.
 
 **In-process scheduling:**
 
@@ -123,7 +123,7 @@ Format matches Claude Code's `mcpServers` config — keyed by server name, each 
 
 ```
 
-- **Providers**: Claude (Anthropic API) or ollama (local models). Set via `TARS_DEFAULT_MODEL` (or legacy `TARS_MODEL`).
+- **Providers**: Claude (Anthropic API) or ollama (local models). Set via `TARS_MODEL_DEFAULT`.
 - **Routing**: keyword-based pre-routing detects tool intent and escalates to a remote model when configured. Falls back on transient API errors.
 - **Search**: markdown-aware chunking → ollama embeddings → sqlite-vec for KNN, FTS5 for keyword, fused with Reciprocal Rank Fusion. Tool calls use windowed retrieval (neighboring chunks for context). Auto-search uses two-pass packing (anchor breadth + selective expansion under a token budget).
 - **Indexing**: incremental via content hash — only re-indexes changed files. Batched embedding with retry. Savepoint atomicity preserves old chunks on failure.
@@ -245,10 +245,8 @@ Slash commands work in the bot chat. A persistent reply keyboard provides one-ta
 
 | Env var | Default | Purpose |
 |---------|---------|---------|
-| `TARS_MODEL` | `claude:sonnet` | Legacy primary model (`provider:model`) |
-| `TARS_DEFAULT_MODEL` | `claude:sonnet` | Primary model (`provider:model`) |
-| `TARS_ESCALATION_MODEL` | — | Legacy remote model for tool calls (`provider:model`) |
-| `TARS_REMOTE_MODEL` | — | Remote model for tool calls (`provider:model`, explicit versions recommended; set to `none` to disable) |
+| `TARS_MODEL_DEFAULT` | `claude:sonnet` | Primary model (`provider:model`) |
+| `TARS_MODEL_REMOTE` | — | Remote model for tool calls (`provider:model`, explicit versions recommended; set to `none` to disable) |
 | `TARS_ROUTING_POLICY` | `tool` | Routing policy (only `tool` supported) |
 | `TARS_MEMORY_DIR` | — | Path to tars Obsidian vault |
 | `TARS_NOTES_DIR` | — | Path to personal Obsidian vault (daily notes, captures) |

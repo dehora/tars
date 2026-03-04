@@ -26,13 +26,6 @@ def _clean_env(value: str | None) -> str | None:
     return cleaned
 
 
-def _coalesce(*values: str | None) -> str | None:
-    for value in values:
-        if value is not None and value != "":
-            return value
-    return None
-
-
 def _validate_routing_policy(policy: str) -> None:
     if policy not in _ALLOWED_ROUTING_POLICIES:
         raise ValueError(f"Unknown routing policy: {policy}")
@@ -49,20 +42,18 @@ def _validate_remote_model(provider: str, model: str) -> None:
 
 
 def load_model_config() -> ModelConfig:
-    default_model_env = _clean_env(os.environ.get("TARS_DEFAULT_MODEL"))
-    legacy_model_env = _clean_env(os.environ.get("TARS_MODEL"))
-    model_str = _coalesce(default_model_env, legacy_model_env)
+    model_env = _clean_env(os.environ.get("TARS_MODEL_DEFAULT"))
+    model_str = model_env
     if model_str is None:
         model_str = DEFAULT_MODEL
     primary_provider, primary_model = parse_model(model_str)
 
-    remote_env_raw = os.environ.get("TARS_REMOTE_MODEL")
+    remote_env_raw = os.environ.get("TARS_MODEL_REMOTE")
     remote_env = _clean_env(remote_env_raw)
-    legacy_remote_env = _clean_env(os.environ.get("TARS_ESCALATION_MODEL"))
     if remote_env_raw is not None and remote_env is None:
         remote_str = None
     else:
-        remote_str = _coalesce(remote_env, legacy_remote_env)
+        remote_str = remote_env
     remote_provider = None
     remote_model = None
     if remote_str is not None:

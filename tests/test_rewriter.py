@@ -151,21 +151,21 @@ class RetrievalModelEnvTests(unittest.TestCase):
         rewriter.ollama = _mock_ollama
 
     def test_default_when_empty(self) -> None:
-        with mock.patch.dict("os.environ", {"TARS_RETRIEVAL_MODEL": ""}, clear=True):
+        with mock.patch.dict("os.environ", {"TARS_MODEL_RETRIEVAL": ""}, clear=True):
             import importlib
             importlib.reload(rewriter)
         self.assertEqual(rewriter.RETRIEVAL_MODEL, "gemma3:4b")
         rewriter.ollama = _mock_ollama
 
     def test_default_when_whitespace(self) -> None:
-        with mock.patch.dict("os.environ", {"TARS_RETRIEVAL_MODEL": "  "}, clear=True):
+        with mock.patch.dict("os.environ", {"TARS_MODEL_RETRIEVAL": "  "}, clear=True):
             import importlib
             importlib.reload(rewriter)
         self.assertEqual(rewriter.RETRIEVAL_MODEL, "gemma3:4b")
         rewriter.ollama = _mock_ollama
 
     def test_explicit_override(self) -> None:
-        with mock.patch.dict("os.environ", {"TARS_RETRIEVAL_MODEL": "llama3:8b"}, clear=True):
+        with mock.patch.dict("os.environ", {"TARS_MODEL_RETRIEVAL": "llama3:8b"}, clear=True):
             import importlib
             importlib.reload(rewriter)
         self.assertEqual(rewriter.RETRIEVAL_MODEL, "llama3:8b")
