@@ -6,7 +6,7 @@ from dataclasses import dataclass
 
 _HEADING_RE = re.compile(r"^(#{1,6})\s")
 _HR_RE = re.compile(r"^(-{3,}|\*{3,}|_{3,})\s*$")
-_FENCE_RE = re.compile(r"^(`{3,}|~{3,})")
+_FENCE_RE = re.compile(r"^\s*(`{3,}|~{3,})")
 _LIST_RE = re.compile(r"^(\s*[-*+]|\s*\d+\.)\s")
 _DATA_IMG_RE = re.compile(r"!\[[^\]]*\]\(data:[^)]+\)")
 
@@ -43,7 +43,7 @@ def _build_heading_context(lines, classifications, up_to):
 
 
 def _estimate_tokens(text: str) -> int:
-    return len(text) // 4
+    return max(len(text) // 4, int(len(text.split()) * 1.3))
 
 
 def _content_hash(text: str) -> str:
@@ -91,6 +91,13 @@ def chunk_markdown(
 
     # Pre-classify every line
     classifications = [_classify_line(line) for line in lines]
+
+    # Upgrade blank lines at list-end boundaries to better cut points
+    for i in range(1, total_lines):
+        kind, _ = classifications[i]
+        prev_kind, _ = classifications[i - 1]
+        if kind == "blank" and prev_kind == "list":
+            classifications[i] = ("blank", 30)
 
     chunks: list[Chunk] = []
     pos = 0  # current line index
@@ -212,10 +219,20 @@ def chunk_markdown(
         # Next chunk starts with overlap
         overlap_lines = max(0, int((best_idx - pos) * overlap_fraction))
         next_pos = best_idx - overlap_lines
-        # Snap to a line boundary (already line-aligned)
-        # Don't go backwards
         if next_pos <= pos:
             next_pos = best_idx
+
+        # Don't let overlap reintroduce an unmatched fence — if the overlap
+        # region has odd fence parity, push next_pos past the last fence.
+        fence_count = 0
+        last_fence = next_pos
+        for i in range(next_pos, best_idx):
+            if classifications[i][0] == "fence":
+                fence_count += 1
+                last_fence = i
+        if fence_count % 2 != 0:
+            next_pos = last_fence + 1
+
         pos = next_pos
 
     return chunks

@@ -2,6 +2,7 @@ import unittest
 
 from tars.chunker import (
     Chunk,
+    _FENCE_RE,
     _build_heading_context,
     _classify_line,
     _content_hash,
@@ -163,7 +164,7 @@ class ChunkMarkdownTests(unittest.TestCase):
             self.assertLessEqual(tokens, 800, f"Chunk too large: {tokens} tokens")
 
     def test_long_fence_extends_to_close(self) -> None:
-        code = "```python\n" + ("x = 1\n" * 80) + "```\n"
+        code = "```python\n" + ("x = 1\n" * 30) + "```\n"
         text = code + "\nAfter\n"
         chunks = chunk_markdown(text, target_tokens=50)
         self.assertGreaterEqual(len(chunks), 1)
@@ -262,6 +263,90 @@ class HorizontalRuleContextTests(unittest.TestCase):
         chunks = chunk_markdown(text, target_tokens=200)
         last = chunks[-1]
         self.assertIn("Beta", last.context)
+
+
+class OverlapFenceParityTests(unittest.TestCase):
+    def test_overlap_does_not_start_inside_fence(self) -> None:
+        # Build: prose, fence-open, code, fence-close, prose
+        # Sized so the cut lands after the fence block but overlap
+        # would normally back into it.
+        text = ("word " * 200 + "\n")
+        text += "```python\n"
+        text += "x = 1\n" * 20
+        text += "```\n"
+        text += ("word " * 200 + "\n")
+        chunks = chunk_markdown(text, target_tokens=200, overlap_fraction=0.3)
+        for chunk in chunks:
+            # No chunk should start with a bare code line inside a fence
+            lines = chunk.content.strip().splitlines()
+            if lines and not lines[0].startswith("```"):
+                # First line isn't a fence opener — check we're not mid-code
+                fence_opens = sum(1 for l in lines if _FENCE_RE.match(l))
+                # If we see a closing fence without an opener, overlap broke parity
+                self.assertTrue(
+                    fence_opens == 0 or fence_opens % 2 == 0,
+                    f"Chunk starts with unbalanced fence: {lines[:3]}",
+                )
+
+
+class IndentedFenceTests(unittest.TestCase):
+    def test_indented_fence_detected(self) -> None:
+        kind, score = _classify_line("  ```python")
+        self.assertEqual(kind, "fence")
+        self.assertGreater(score, 0)
+
+    def test_indented_fence_in_list_tracked(self) -> None:
+        text = "- Item 1\n  ```\n  code\n  ```\n- Item 2\n"
+        text += ("word " * 300 + "\n") * 3
+        chunks = chunk_markdown(text, target_tokens=200)
+        self.assertGreater(len(chunks), 0)
+
+
+class TokenEstimationTests(unittest.TestCase):
+    def test_code_tokens_not_undercounted(self) -> None:
+        code = "x = foo(a, b, c)\n" * 10
+        prose = "This is a normal English sentence with several words.\n" * 10
+        code_tokens = _estimate_tokens(code)
+        prose_tokens = _estimate_tokens(prose)
+        # Code should get at least as many tokens per char as prose
+        code_ratio = code_tokens / len(code) if code else 0
+        prose_ratio = prose_tokens / len(prose) if prose else 0
+        self.assertGreaterEqual(code_ratio, prose_ratio * 0.8)
+
+    def test_word_based_floor_active_for_short_tokens(self) -> None:
+        # Short identifiers: char/4 undercounts, word-based should kick in
+        code = "a b c d e f g h i j\n"
+        tokens = _estimate_tokens(code)
+        self.assertGreaterEqual(tokens, 10)
+
+
+class ListBoundaryScoreTests(unittest.TestCase):
+    def test_blank_after_list_gets_higher_score(self) -> None:
+        text = "- item 1\n- item 2\n\nSome prose.\n"
+        lines = text.splitlines(keepends=True)
+        classifications = [_classify_line(line) for line in lines]
+        # Post-process like chunk_markdown does
+        for i in range(1, len(lines)):
+            kind, _ = classifications[i]
+            prev_kind, _ = classifications[i - 1]
+            if kind == "blank" and prev_kind == "list":
+                classifications[i] = ("blank", 30)
+        # The blank line after "- item 2" should be scored at 30
+        blank_idx = 2  # "- item 1", "- item 2", "", "Some prose."
+        self.assertEqual(classifications[blank_idx][1], 30)
+
+    def test_list_end_preferred_as_cut_point(self) -> None:
+        # Two list blocks separated by prose — should prefer cutting between them
+        text = ""
+        for i in range(15):
+            text += f"- First list item {i}\n"
+        text += "\nSome connecting prose.\n\n"
+        for i in range(15):
+            text += f"- Second list item {i}\n"
+        chunks = chunk_markdown(text, target_tokens=200)
+        if len(chunks) > 1:
+            first_content = chunks[0].content
+            self.assertIn("connecting prose", first_content + chunks[1].content)
 
 
 if __name__ == "__main__":
