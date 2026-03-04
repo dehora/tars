@@ -455,7 +455,10 @@ class DailyContextProvenanceTests(unittest.TestCase):
 class WeakResultExpansionTests(unittest.TestCase):
     def test_weak_results_trigger_expansion(self) -> None:
         weak = [_make_result(1, 0, 0.20)]
-        better = [_make_result(2, 0, 0.55, content="expanded hit")]
+        better = [
+            _make_result(2, 0, 0.55, content="expanded hit"),
+            _make_result(3, 0, 0.40, content="second expanded"),
+        ]
         with (
             mock.patch("tars.search.search", return_value=weak),
             mock.patch("tars.search.search_expanded", return_value=better) as mock_se,
@@ -497,17 +500,31 @@ class WeakResultExpansionTests(unittest.TestCase):
             result = core._search_relevant_context("test query")
         self.assertIn("weak but present", result)
 
-    def test_expansion_worse_keeps_original(self) -> None:
-        original = [_make_result(1, 0, 0.28, content="original hit")]
-        worse = [_make_result(2, 0, 0.15, content="worse expansion")]
+    def test_expansion_fewer_results_keeps_original(self) -> None:
+        original = [
+            _make_result(1, 0, 0.28, content="original hit"),
+            _make_result(2, 0, 0.20, content="second hit"),
+        ]
+        fewer = [_make_result(3, 0, 0.15, content="fewer expansion")]
         with (
             mock.patch("tars.search.search", return_value=original),
-            mock.patch("tars.search.search_expanded", return_value=worse),
+            mock.patch("tars.search.search_expanded", return_value=fewer),
             mock.patch("tars.search.expand_results", return_value=[]),
         ):
             result = core._search_relevant_context("borderline query")
         self.assertIn("original hit", result)
-        self.assertNotIn("worse expansion", result)
+        self.assertNotIn("fewer expansion", result)
+
+    def test_expansion_uses_no_min_score(self) -> None:
+        weak = [_make_result(1, 0, 0.20)]
+        with (
+            mock.patch("tars.search.search", return_value=weak),
+            mock.patch("tars.search.search_expanded", return_value=[]) as mock_se,
+            mock.patch("tars.search.expand_results", return_value=[]),
+        ):
+            core._search_relevant_context("test")
+        _, kwargs = mock_se.call_args
+        self.assertEqual(kwargs["min_score"], 0.0)
 
 
 class ParseModelTests(unittest.TestCase):

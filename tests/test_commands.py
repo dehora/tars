@@ -354,6 +354,31 @@ class CentralizedDispatchTests(unittest.TestCase):
         result = dispatch("/svec")
         self.assertIn("Usage", result)
 
+    @mock.patch("tars.search.search_expanded", return_value=[])
+    @mock.patch("tars.search.search", return_value=[])
+    def test_expand_flag_at_start(self, mock_search, mock_expanded) -> None:
+        from tars.commands import _dispatch_search
+        _dispatch_search("--expand some query")
+        mock_expanded.assert_called_once()
+        mock_search.assert_not_called()
+        self.assertEqual(mock_expanded.call_args[0][0], "some query")
+
+    @mock.patch("tars.search.search_expanded", return_value=[])
+    @mock.patch("tars.search.search", return_value=[])
+    def test_expand_short_flag_at_start(self, mock_search, mock_expanded) -> None:
+        from tars.commands import _dispatch_search
+        _dispatch_search("-e some query")
+        mock_expanded.assert_called_once()
+
+    @mock.patch("tars.search.search_expanded", return_value=[])
+    @mock.patch("tars.search.search", return_value=[])
+    def test_expand_flag_mid_query_not_consumed(self, mock_search, mock_expanded) -> None:
+        from tars.commands import _dispatch_search
+        _dispatch_search("grep -e pattern")
+        mock_search.assert_called_once()
+        mock_expanded.assert_not_called()
+        self.assertEqual(mock_search.call_args[0][0], "grep -e pattern")
+
     def test_dispatch_help(self) -> None:
         result = dispatch("/help")
         self.assertIn("/todoist", result)

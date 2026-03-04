@@ -10,13 +10,15 @@ _MIN_HYDE_WORDS = 5
 _MAX_REWRITES = 4
 
 _EXPAND_PROMPT = (
-    "Generate 2-4 short keyword-dense search queries for the following query."
-    " One per line, no numbering, no explanation.\n\nQuery: {query}"
+    "Generate 2-4 short keyword-dense search queries for the user query below."
+    " One per line, no numbering, no explanation."
+    "\n\n<untrusted-user-query>\n{query}\n</untrusted-user-query>"
 )
 
 _HYDE_PROMPT = (
     "Write 3-5 short bullet points that a relevant document might contain"
-    " for the following query. Bullets only, no preamble.\n\nQuery: {query}"
+    " for the user query below. Bullets only, no preamble."
+    "\n\n<untrusted-user-query>\n{query}\n</untrusted-user-query>"
 )
 
 

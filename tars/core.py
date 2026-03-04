@@ -124,15 +124,13 @@ def _search_relevant_context(opening_message: str, limit: int = 5) -> str:
         opening_message, limit=_TOP_N_CANDIDATES, min_score=_AUTO_SEARCH_MIN_SCORE, window=0,
     )
 
-    if not anchors or anchors[0].score < _EXPANSION_SCORE_THRESHOLD:
+    baseline_weak = not anchors or anchors[0].score < _EXPANSION_SCORE_THRESHOLD
+    if baseline_weak:
         try:
             expanded_anchors = search_expanded(
-                opening_message, limit=_TOP_N_CANDIDATES,
-                min_score=_AUTO_SEARCH_MIN_SCORE, window=0,
+                opening_message, limit=_TOP_N_CANDIDATES, min_score=0.0, window=0,
             )
-            if expanded_anchors and (
-                not anchors or expanded_anchors[0].score > anchors[0].score
-            ):
+            if expanded_anchors and (not anchors or len(expanded_anchors) > len(anchors)):
                 anchors = expanded_anchors
         except Exception:
             pass

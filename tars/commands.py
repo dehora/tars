@@ -334,9 +334,9 @@ def _dispatch_search(query: str, mode: str = "hybrid") -> str:
 
     expand = False
     tokens = query.split()
-    if "--expand" in tokens or "-e" in tokens:
+    if tokens and tokens[0] in ("--expand", "-e"):
         expand = True
-        tokens = [t for t in tokens if t not in ("--expand", "-e")]
+        tokens = tokens[1:]
         query = " ".join(tokens)
 
     if not query.strip():
