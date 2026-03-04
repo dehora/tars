@@ -22,96 +22,21 @@ tars is a conversational assistant that remembers things across sessions, manage
 - **Capture** — save web pages to your Obsidian vault with AI summarization (context-aware when mid-conversation)
 - **MCP** — extend with external tool servers via the Model Context Protocol (fetch, GitHub, filesystem, etc.)
 
-**Memory architecture:**
+**Memory:** Four-tier system (semantic, procedural, daily, episodic) stored as plain markdown in the Obsidian vault. Automatic fact extraction promotes good entries to permanent memory via `/review`. See [docs/memory.md](docs/memory.md).
 
-tars has a four-tier memory system. Each tier has different granularity, persistence, and write patterns. All tiers live in the Obsidian vault (`TARS_MEMORY_DIR`) as plain markdown, readable and editable outside of tars.
+**Multi-model routing:** When `TARS_MODEL_REMOTE` is set, tars escalates tool-intent messages to the remote model and falls back on transient errors. See [docs/routing.md](docs/routing.md).
 
-| Tier | Files | Granularity | Persistence | Written by |
-|------|-------|-------------|-------------|------------|
-| Semantic | `Memory.md` | Distilled facts | Permanent | User (`/remember`), `/review` promotion |
-| Procedural | `Procedural.md` | Behavioural rules | Permanent | `/review` distillation |
-| Daily | `YYYY-MM-DD.md` | Notable events per day | Rolling window | Auto (tools, compaction, extraction) |
-| Episodic | `sessions/*.md` | Full conversation summaries | Archived | Auto (compaction, session save) |
+**Search:** Hybrid FTS5 keyword + sqlite-vec KNN, fused with Reciprocal Rank Fusion. Query rewriting and HyDE for expanded retrieval. Two-pass context packing for automatic search on first message. See [docs/search.md](docs/search.md).
 
-**How memory flows through the system:**
+**Scheduling:** In-process scheduler for recurring tasks within long-lived processes, plus OS-level scheduling via launchd/systemd. See [docs/scheduling.md](docs/scheduling.md).
 
-```
-[conversation]
-    ↓ tool calls, corrections, compaction events
-[daily file] ← append_daily() writes timestamped entries
-    ↓ automatic fact extraction on compaction/save
-[daily file] ← [extracted] facts appended
-    ↓ /review promotes good entries
-[Memory.md / Procedural.md] ← permanent memory
-```
+**MCP:** Extend with external tool servers via the [Model Context Protocol](https://modelcontextprotocol.io/). Configured, not coded. See [docs/mcp.md](docs/mcp.md).
 
-**Automatic fact extraction** — after a conversation compacts or ends, the model extracts discrete reusable facts (preferences, project names, decisions, corrections) and writes them to the daily file tagged as `[extracted]`. Bad extractions age out naturally. Good ones get promoted to permanent memory via `/review`. Controlled by `TARS_AUTO_EXTRACT` (default: enabled). Skips trivial conversations (fewer than 3 user messages).
-
-**What goes where:**
-- *Semantic memory* — "user prefers dark mode", "project uses Python 3.14", "dog's name is Max"
-- *Procedural memory* — "route 'remind me' requests to todoist", "use metric units for weather"
-- *Daily memory* — "10:15 added 'buy milk' to todoist", "14:30 session compacted — discussed deployment", "14:30 [extracted] user is deploying to fly.io"
-- *Episodic memory* — full session summaries with topics discussed, tools used, decisions made
-
-**Memory in the system prompt:**
-- `Memory.md` and `Procedural.md` are always loaded (small, high-signal)
-- Today's daily file loads as `<daily-context>` (cross-session awareness within the day)
-- Recent session logs load as `<recent-sessions>` on first message
-- Hybrid search (FTS5 + vector KNN) auto-retrieves relevant context on first message using two-pass packing — anchors for breadth, then windowed expansion for depth, under a token budget
-
-**Multi-model routing:**
-
-When `TARS_MODEL_REMOTE` is set, tars uses the primary model (from `TARS_MODEL_DEFAULT`) for chat and automatically escalates to the remote model when tool use is detected. If the remote model is unavailable (rate limit, outage, transient errors), it falls back to the primary model.
-
-**In-process scheduling:**
-
-Long-lived processes (`tars serve`, `tars telegram`, `tars email`) run an in-process scheduler that fires configured tasks as slash commands through the existing dispatch. Configure via `schedules.json` in the memory dir or the `TARS_SCHEDULES` env var:
-
-```json
-[
-  {"name": "morning_brief", "schedule": "08:00", "action": "/brief", "deliver": "email"},
-  {"name": "todoist_check", "schedule": "*/60", "action": "/todoist today", "deliver": "daily"}
-]
-```
-
-- `schedule`: `"HH:MM"` for daily or `"*/N"` for every N minutes
-- `deliver`: `"daily"` (default, appends to daily memory), `"email"`, or `"telegram"`
-- `/schedule` shows both OS-level and in-process schedules
-
-The in-process scheduler complements the OS-level scheduler (`tars schedule add` → launchd/systemd) — use OS scheduling for external invocations, in-process scheduling for recurring tasks within a running process.
-
-**MCP integration:**
-
-tars can consume external tool servers via the [Model Context Protocol](https://modelcontextprotocol.io/). MCP servers are configured (not coded) — tars discovers their tools at startup, merges them into the tool list, and routes calls through the MCP client. Native tools stay native; MCP is an extension point.
-
-Configure via `mcp_servers.json` in the memory dir or `TARS_MCP_SERVERS` env var:
-
-```json
-{
-  "fetch": {
-    "command": "uvx",
-    "args": ["mcp-server-fetch"]
-  },
-  "github": {
-    "command": "npx",
-    "args": ["-y", "@modelcontextprotocol/server-github"],
-    "env": {"GITHUB_TOKEN": "..."}
-  }
-}
-```
-
-Format matches Claude Code's `mcpServers` config — keyed by server name, each with `command`, `args`, optional `env`. Tool names are prefixed with server name (e.g. `fetch.fetch`, `github.create_issue`). Use `/mcp` to list connected servers and their tools.
-
-**Feedback loop:**
-- `/w` flags a bad response, `/r` flags a good one
-- `/review` distills corrections into procedural rules
-- `/tidy` cleans up stale or duplicate memory entries
-- Procedural rules feed back into every future response
+**Feedback loop:** `/w` flags bad responses, `/r` flags good ones, `/review` distills corrections into procedural rules, `/tidy` cleans up stale entries. See [docs/memory.md](docs/memory.md#feedback-loop).
 
 ## How it works
 
 ```
-
 [CLI / Web / Email / Telegram] → [conversation.py] → [core.py] → ollama / claude
                                                ↕
                                          [tools.py] → todoist, weather, memory, notes, search, web
@@ -120,13 +45,12 @@ Format matches Claude Code's `mcpServers` config — keyed by server name, each 
                               [notes.py]  ← obsidian vault (TARS_NOTES_DIR)
                               [search.py] ← sqlite-vec + FTS5 (tars.db)
                               [router.py] → multi-model routing + fallback
-
 ```
 
 - **Providers**: Claude (Anthropic API) or ollama (local models). Set via `TARS_MODEL_DEFAULT`.
-- **Routing**: keyword-based pre-routing detects tool intent and escalates to a remote model when configured. Falls back on transient API errors.
-- **Search**: markdown-aware chunking → ollama embeddings → sqlite-vec for KNN, FTS5 for keyword, fused with Reciprocal Rank Fusion. Tool calls use windowed retrieval (neighboring chunks for context). Auto-search uses two-pass packing (anchor breadth + selective expansion under a token budget).
-- **Indexing**: incremental via content hash — only re-indexes changed files. Batched embedding with retry. Savepoint atomicity preserves old chunks on failure.
+- **Routing**: keyword pre-routing escalates to remote model on tool intent, falls back on errors. See [docs/routing.md](docs/routing.md).
+- **Search**: hybrid FTS5 + sqlite-vec KNN with RRF fusion, query rewriting, and two-pass context packing. See [docs/search.md](docs/search.md).
+- **Memory**: four-tier system with automatic extraction and feedback loop. See [docs/memory.md](docs/memory.md).
 - **Streaming**: CLI and web UI stream responses token-by-token.
 - **Sessions**: conversations are summarised and logged to the vault. Compaction keeps context manageable during long sessions.
 
@@ -247,6 +171,8 @@ Slash commands work in the bot chat. A persistent reply keyboard provides one-ta
 |---------|---------|---------|
 | `TARS_MODEL_DEFAULT` | `claude:sonnet` | Primary model (`provider:model`) |
 | `TARS_MODEL_REMOTE` | — | Remote model for tool calls (`provider:model`, explicit versions recommended; set to `none` to disable) |
+| `TARS_MODEL_EMBEDDING` | `qwen3-embedding:8b` | Embedding model for indexing and search |
+| `TARS_MODEL_RETRIEVAL` | `gemma3:4b` | Local model for query rewriting and HyDE |
 | `TARS_ROUTING_POLICY` | `tool` | Routing policy (only `tool` supported) |
 | `TARS_MEMORY_DIR` | — | Path to tars Obsidian vault |
 | `TARS_NOTES_DIR` | — | Path to personal Obsidian vault (daily notes, captures) |
