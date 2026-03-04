@@ -5,7 +5,7 @@ import os
 import ollama
 
 DEFAULT_EMBEDDING_MODEL = os.environ.get(
-    "TARS_DEFAULT_EMBEDDING_MODEL", "qwen3-embedding:0.6b"
+    "TARS_DEFAULT_EMBEDDING_MODEL", "qwen3-embedding:8b"
 )
 
 _DEFAULT_QUERY_INSTRUCT = (
