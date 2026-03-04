@@ -247,5 +247,22 @@ class HeadingContextTests(unittest.TestCase):
                                 "Most list items should stay in the same chunk")
 
 
+class HorizontalRuleContextTests(unittest.TestCase):
+    def test_hr_does_not_crash_heading_context(self) -> None:
+        text = "# Intro\n\n---\n\nSome text after hr.\n"
+        text += ("word " * 300 + "\n") * 3
+        chunks = chunk_markdown(text, target_tokens=200)
+        self.assertGreater(len(chunks), 0)
+        for chunk in chunks:
+            self.assertNotIn("---", chunk.context)
+
+    def test_hr_between_headings_preserves_context(self) -> None:
+        text = "# Alpha\n\nSome text.\n\n---\n\n## Beta\n\n"
+        text += ("word " * 300 + "\n") * 3
+        chunks = chunk_markdown(text, target_tokens=200)
+        last = chunks[-1]
+        self.assertIn("Beta", last.context)
+
+
 if __name__ == "__main__":
     unittest.main()

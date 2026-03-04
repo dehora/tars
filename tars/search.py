@@ -82,6 +82,11 @@ def search(
     db_path=None,
 ) -> list[SearchResult]:
     """Search memory chunks. Returns results sorted by relevance."""
+    try:
+        limit = int(limit)
+    except (TypeError, ValueError):
+        limit = 10
+    limit = min(max(limit, 1), 100)
     p = db_path if db_path is not None else _db_path()
     if p is None or not p.exists():
         return []

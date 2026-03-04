@@ -585,5 +585,42 @@ class ConversationIdValidationTests(unittest.TestCase):
         self.assertEqual(resp.status_code, 422)
 
 
+class NotesSearchAllowlistTests(unittest.TestCase):
+    def setUp(self) -> None:
+        api._conversations.clear()
+        api._session_files.clear()
+        self.client = TestClient(api.app)
+
+    def test_notes_search_allowed(self) -> None:
+        with mock.patch("tars.api.run_tool", return_value='{"results": []}'):
+            with mock.patch("tars.api.format_tool_result", return_value="no results"):
+                resp = self.client.post("/tool", json={
+                    "name": "notes_search",
+                    "args": {"query": "test"},
+                })
+        self.assertEqual(resp.status_code, 200)
+
+
+class TrailingNewlineValidationTests(unittest.TestCase):
+    def setUp(self) -> None:
+        api._conversations.clear()
+        api._session_files.clear()
+        self.client = TestClient(api.app)
+
+    def test_trailing_newline_rejected(self) -> None:
+        resp = self.client.post("/chat", json={
+            "conversation_id": "web-123\n",
+            "message": "hi",
+        })
+        self.assertEqual(resp.status_code, 422)
+
+    def test_trailing_newline_feedback_rejected(self) -> None:
+        resp = self.client.post("/feedback", json={
+            "conversation_id": "test\n",
+            "note": "bad",
+        })
+        self.assertEqual(resp.status_code, 422)
+
+
 if __name__ == "__main__":
     unittest.main()

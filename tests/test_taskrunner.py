@@ -400,6 +400,59 @@ class TelegramUidValidationTests(unittest.TestCase):
             sent_ids.append(data["chat_id"])
         self.assertEqual(sent_ids, [111, 222])
 
+    @mock.patch("urllib.request.urlopen")
+    def test_channel_username_accepted(self, mock_urlopen):
+        with mock.patch.dict(os.environ, {
+            "TARS_TELEGRAM_TOKEN": "tok",
+            "TARS_TELEGRAM_ALLOW": "@mychannel",
+        }):
+            _send_scheduled_telegram("hello")
+        mock_urlopen.assert_called_once()
+        data = json.loads(mock_urlopen.call_args[0][0].data)
+        self.assertEqual(data["chat_id"], "@mychannel")
+
+    @mock.patch("urllib.request.urlopen")
+    def test_mixed_numeric_and_channel(self, mock_urlopen):
+        with mock.patch.dict(os.environ, {
+            "TARS_TELEGRAM_TOKEN": "tok",
+            "TARS_TELEGRAM_ALLOW": "12345,@channel,bad",
+        }):
+            _send_scheduled_telegram("hello")
+        self.assertEqual(mock_urlopen.call_count, 2)
+        sent_ids = []
+        for call in mock_urlopen.call_args_list:
+            data = json.loads(call[0][0].data)
+            sent_ids.append(data["chat_id"])
+        self.assertEqual(sent_ids, [12345, "@channel"])
+
+
+class PerPassTimestampTests(unittest.TestCase):
+    def test_now_captured_once_per_loop_pass(self) -> None:
+        """All tasks in a single pass should be evaluated with the same timestamp."""
+        from tars.taskrunner import TaskRunner
+        captured_times = []
+
+        original_is_due = _is_due
+
+        def spy_is_due(task, now):
+            captured_times.append(now)
+            return False
+
+        runner = TaskRunner("ollama", "test", tick=1)
+        runner._tasks = [
+            ScheduledTask(name="a", schedule="0 10 * * *", action="/brief", deliver="log"),
+            ScheduledTask(name="b", schedule="0 10 * * *", action="/brief", deliver="log"),
+        ]
+        runner._running = True
+
+        with mock.patch("tars.taskrunner._is_due", side_effect=spy_is_due):
+            runner._stop_event = mock.Mock()
+            runner._stop_event.wait = mock.Mock(side_effect=lambda timeout: setattr(runner, '_running', False))
+            runner._loop()
+
+        self.assertEqual(len(captured_times), 2)
+        self.assertEqual(captured_times[0], captured_times[1])
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -502,12 +502,15 @@ class TestSubjectFallthrough(unittest.TestCase):
         # Simulate the email.py logic: if subject result starts with
         # "Unknown command:", try body dispatch
         slash_reply = subject_result
-        body = "/weather"
         if slash_reply is not None and slash_reply.startswith("Unknown command:"):
+            slash_reply = None
+        body = "/weather"
+        if slash_reply is None and body:
             with mock.patch("tars.commands.run_tool", return_value='{"temp": 20}'):
                 body_reply = dispatch(body, "ollama", "test")
-            if body_reply is not None:
+            if body_reply is not None and not body_reply.startswith("Unknown command:"):
                 slash_reply = body_reply
+        self.assertIsNotNone(slash_reply)
         self.assertNotIn("Unknown command", slash_reply)
 
     def test_valid_subject_does_not_check_body(self) -> None:
@@ -517,6 +520,22 @@ class TestSubjectFallthrough(unittest.TestCase):
             slash_reply = dispatch("/weather")
         self.assertIsNotNone(slash_reply)
         self.assertNotIn("Unknown command", slash_reply)
+
+    def test_unknown_subject_plain_body_falls_to_chat(self) -> None:
+        """Unknown command in subject + plain text body should fall through to chat."""
+        from tars.commands import dispatch
+
+        slash_reply = dispatch("/typo")
+        if slash_reply is not None and slash_reply.startswith("Unknown command:"):
+            slash_reply = None
+        body = "what's the weather like?"
+        if slash_reply is None and body:
+            body_reply = dispatch(body, "ollama", "test")
+            if body_reply is not None and not body_reply.startswith("Unknown command:"):
+                slash_reply = body_reply
+        # Neither subject nor body is a valid command, so slash_reply should be None
+        # and the email loop would fall through to normal chat processing
+        self.assertIsNone(slash_reply)
 
 
 if __name__ == "__main__":

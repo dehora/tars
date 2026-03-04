@@ -31,7 +31,7 @@ def _build_heading_context(lines, classifications, up_to):
     stack = {}
     for i in range(up_to):
         kind, _ = classifications[i]
-        if kind and kind.startswith("h"):
+        if kind and kind in ("h1", "h2", "h3", "h4", "h5", "h6"):
             level = int(kind[1])
             stack[level] = lines[i].lstrip("#").strip()
             for deeper in list(stack):

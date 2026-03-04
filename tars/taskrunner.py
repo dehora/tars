@@ -206,9 +206,11 @@ def _send_scheduled_telegram(body: str) -> None:
         raw_uid = raw_uid.strip()
         if not raw_uid:
             continue
-        try:
-            uid = int(raw_uid)
-        except ValueError:
+        if raw_uid.isdigit():
+            uid: int | str = int(raw_uid)
+        elif raw_uid.startswith("@"):
+            uid = raw_uid
+        else:
             logger.warning("skipping invalid telegram uid: %s", raw_uid)
             continue
         url = f"https://api.telegram.org/bot{token}/sendMessage"
@@ -257,8 +259,8 @@ class TaskRunner:
 
     def _loop(self) -> None:
         while self._running:
+            now = datetime.now()
             for task in self._tasks:
-                now = datetime.now()
                 if _is_due(task, now):
                     if not task._lock.acquire(blocking=False):
                         logger.info("taskrunner: skipping %s (still running)", task.name)

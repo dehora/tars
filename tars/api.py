@@ -113,7 +113,7 @@ class ChatRequest(BaseModel):
     @field_validator("conversation_id")
     @classmethod
     def validate_conversation_id(cls, v: str) -> str:
-        if not _CONV_ID_RE.match(v):
+        if not _CONV_ID_RE.fullmatch(v):
             raise ValueError("conversation_id must be 1-64 alphanumeric/._- characters")
         return v
 
@@ -131,7 +131,7 @@ class FeedbackRequest(BaseModel):
     @field_validator("conversation_id")
     @classmethod
     def validate_conversation_id(cls, v: str) -> str:
-        if not _CONV_ID_RE.match(v):
+        if not _CONV_ID_RE.fullmatch(v):
             raise ValueError("conversation_id must be 1-64 alphanumeric/._- characters")
         return v
 
@@ -246,6 +246,7 @@ _ALLOWED_TOOLS = {
     "weather_now", "weather_forecast",
     "memory_recall", "memory_remember", "memory_update", "memory_forget", "memory_search",
     "note_daily",
+    "notes_search",
     "web_read",
 }
 

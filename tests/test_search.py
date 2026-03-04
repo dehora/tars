@@ -476,5 +476,27 @@ class NotesSearchToolTests(unittest.TestCase):
             mock_search.assert_called_once_with("test", limit=3)
 
 
+class SearchLimitValidationTests(unittest.TestCase):
+    def test_none_limit_defaults(self) -> None:
+        with mock.patch("tars.search._db_path", return_value=None):
+            results = search("test", limit=None)
+        self.assertEqual(results, [])
+
+    def test_string_limit_coerced(self) -> None:
+        with mock.patch("tars.search._db_path", return_value=None):
+            results = search("test", limit="5")
+        self.assertEqual(results, [])
+
+    def test_negative_limit_clamped(self) -> None:
+        with mock.patch("tars.search._db_path", return_value=None):
+            results = search("test", limit=-10)
+        self.assertEqual(results, [])
+
+    def test_huge_limit_clamped(self) -> None:
+        with mock.patch("tars.search._db_path", return_value=None):
+            results = search("test", limit=9999)
+        self.assertEqual(results, [])
+
+
 if __name__ == "__main__":
     unittest.main()

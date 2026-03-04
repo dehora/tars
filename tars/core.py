@@ -258,47 +258,39 @@ def chat_anthropic_stream(
 
     tools = _get_tools("anthropic") if use_tools else []
 
-    # Step 1: tool-calling loop (non-streamed).
-    # Keep going until the model stops requesting tools.
-    for _round in range(_MAX_TOOL_ROUNDS):
-        kwargs: dict = dict(
-            model=resolved, max_tokens=_MAX_TOKENS,
-            system=system, messages=local_messages,
-        )
-        if tools:
-            kwargs["tools"] = tools
-        response = client.messages.create(**kwargs)
+    if tools:
+        # Step 1: tool-calling loop (non-streamed).
+        # Keep going until the model stops requesting tools.
+        for _round in range(_MAX_TOOL_ROUNDS):
+            response = client.messages.create(
+                model=resolved, max_tokens=_MAX_TOKENS,
+                system=system, messages=local_messages, tools=tools,
+            )
 
-        if response.stop_reason != "tool_use":
-            # Model is done with tools — break out to stream the final answer.
-            break
+            if response.stop_reason != "tool_use":
+                break
 
-        # Execute each tool the model requested and feed results back.
-        assistant_content = list(response.content)
-        local_messages.append({"role": "assistant", "content": assistant_content})
-        tool_results = []
-        for block in response.content:
-            if block.type == "tool_use":
-                result = run_tool(block.name, block.input)
-                tool_results.append({
-                    "type": "tool_result",
-                    "tool_use_id": block.id,
-                    "content": result,
-                })
-                try:
-                    append_daily(f"tool:{block.name} — {result[:80]}")
-                except Exception:
-                    pass
-        local_messages.append({"role": "user", "content": tool_results})
-    else:
-        yield "I've reached the maximum number of tool calls. Please try again."
-        return
+            assistant_content = list(response.content)
+            local_messages.append({"role": "assistant", "content": assistant_content})
+            tool_results = []
+            for block in response.content:
+                if block.type == "tool_use":
+                    result = run_tool(block.name, block.input)
+                    tool_results.append({
+                        "type": "tool_result",
+                        "tool_use_id": block.id,
+                        "content": result,
+                    })
+                    try:
+                        append_daily(f"tool:{block.name} — {result[:80]}")
+                    except Exception:
+                        pass
+            local_messages.append({"role": "user", "content": tool_results})
+        else:
+            yield "I've reached the maximum number of tool calls. Please try again."
+            return
 
     # Step 2: stream the final response.
-    # client.messages.stream() returns a context manager that yields text
-    # chunks via .text_stream. Each chunk is a small string (often a few
-    # tokens). The caller (web UI) sends each chunk to the browser as an
-    # SSE event, so the user sees tokens appear incrementally.
     stream_kwargs: dict = dict(
         model=resolved, max_tokens=_MAX_TOKENS,
         system=system, messages=local_messages,
@@ -320,29 +312,28 @@ def chat_ollama_stream(
 
     tools = _get_tools("ollama") if use_tools else []
 
-    # Step 1: tool-calling loop (non-streamed), same as chat_ollama.
-    for _round in range(_MAX_TOOL_ROUNDS):
-        response = ollama.chat(model=model, messages=local_messages, tools=tools)
+    if tools:
+        # Step 1: tool-calling loop (non-streamed), same as chat_ollama.
+        for _round in range(_MAX_TOOL_ROUNDS):
+            response = ollama.chat(model=model, messages=local_messages, tools=tools)
 
-        if not response.message.tool_calls:
-            break
+            if not response.message.tool_calls:
+                break
 
-        local_messages.append(response.message)
-        for tool_call in response.message.tool_calls:
-            name = tool_call.function.name
-            result = run_tool(name, tool_call.function.arguments)
-            local_messages.append({"role": "tool", "content": result})
-            try:
-                append_daily(f"tool:{name} — {result[:80]}")
-            except Exception:
-                pass
-    else:
-        yield "I've reached the maximum number of tool calls. Please try again."
-        return
+            local_messages.append(response.message)
+            for tool_call in response.message.tool_calls:
+                name = tool_call.function.name
+                result = run_tool(name, tool_call.function.arguments)
+                local_messages.append({"role": "tool", "content": result})
+                try:
+                    append_daily(f"tool:{name} — {result[:80]}")
+                except Exception:
+                    pass
+        else:
+            yield "I've reached the maximum number of tool calls. Please try again."
+            return
 
     # Step 2: stream the final response.
-    # ollama.chat() with stream=True returns an iterator of response chunks.
-    # Each chunk has .message.content with a small piece of the response text.
     for chunk in ollama.chat(model=model, messages=local_messages, stream=True):
         if chunk.message.content:
             yield chunk.message.content

@@ -279,6 +279,40 @@ class StreamUseToolsTests(unittest.TestCase):
         self.assertFalse(kwargs["use_tools"])
 
 
+class StreamNoPreflightTests(unittest.TestCase):
+    def test_anthropic_stream_no_preflight_when_no_tools(self) -> None:
+        mock_client = mock.Mock()
+        mock_stream_ctx = mock.MagicMock()
+        mock_stream_ctx.__enter__ = mock.Mock(return_value=mock_stream_ctx)
+        mock_stream_ctx.__exit__ = mock.Mock(return_value=False)
+        mock_stream_ctx.text_stream = iter(["hello"])
+        mock_client.messages.stream.return_value = mock_stream_ctx
+
+        with mock.patch("tars.core.anthropic") as mock_anthropic:
+            mock_anthropic.Anthropic.return_value = mock_client
+            result = list(core.chat_anthropic_stream(
+                [{"role": "user", "content": "hi"}], "sonnet",
+                use_tools=False,
+            ))
+        mock_client.messages.create.assert_not_called()
+        self.assertEqual(result, ["hello"])
+
+    def test_ollama_stream_no_preflight_when_no_tools(self) -> None:
+        chunk = mock.Mock()
+        chunk.message.content = "hello"
+        mock_ollama = mock.Mock()
+        mock_ollama.chat.return_value = iter([chunk])
+        with mock.patch.object(core, "ollama", mock_ollama):
+            result = list(core.chat_ollama_stream(
+                [{"role": "user", "content": "hi"}], "llama3",
+                use_tools=False,
+            ))
+        self.assertEqual(mock_ollama.chat.call_count, 1)
+        _, kwargs = mock_ollama.chat.call_args
+        self.assertTrue(kwargs.get("stream"))
+        self.assertEqual(result, ["hello"])
+
+
 class DailyContextProvenanceTests(unittest.TestCase):
     def test_daily_context_has_type_attribute(self) -> None:
         with (

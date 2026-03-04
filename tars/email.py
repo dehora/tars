@@ -311,14 +311,16 @@ def run_email(model_config: ModelConfig) -> None:
                             model_config.primary_model,
                             context=email_ctx,
                         )
-                        if (slash_reply is None or slash_reply.startswith("Unknown command:")) and body:
+                        if slash_reply is not None and slash_reply.startswith("Unknown command:"):
+                            slash_reply = None
+                        if slash_reply is None and body:
                             body_reply = dispatch(
                                 body,
                                 model_config.primary_provider,
                                 model_config.primary_model,
                                 context=email_ctx,
                             )
-                            if body_reply is not None:
+                            if body_reply is not None and not body_reply.startswith("Unknown command:"):
                                 slash_reply = body_reply
                     except Exception as e:
                         print(f"email: dispatch error: {e}", file=sys.stderr)
