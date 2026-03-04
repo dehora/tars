@@ -1,8 +1,12 @@
 """Thin wrapper around ollama.embed() for embedding text."""
 
+import os
+
 import ollama
 
-DEFAULT_EMBEDDING_MODEL = "qwen3-embedding:0.6b"
+DEFAULT_EMBEDDING_MODEL = os.environ.get(
+    "TARS_DEFAULT_EMBEDDING_MODEL", "qwen3-embedding:0.6b"
+)
 
 _DEFAULT_QUERY_INSTRUCT = (
     "Given a search query, retrieve relevant passages that answer the query"

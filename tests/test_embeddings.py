@@ -26,7 +26,7 @@ class EmbedTests(unittest.TestCase):
         self.assertEqual(len(result), 1)
         self.assertEqual(result[0], [0.1, 0.2, 0.3])
         _mock_ollama.embed.assert_called_once_with(
-            model="qwen3-embedding:0.6b", input=["hello"]
+            model=embeddings.DEFAULT_EMBEDDING_MODEL, input=["hello"]
         )
 
     def test_batch(self) -> None:
