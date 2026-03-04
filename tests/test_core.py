@@ -185,7 +185,7 @@ class TwoPassPackingTests(unittest.TestCase):
         self.assertEqual(result.count("file2"), 1)
 
     def test_anchor_budget_caps_breadth(self) -> None:
-        big = "x" * 6000  # ~1500 tokens each, budget is 1500 (50% of 3000)
+        big = "x" * 6000  # ~1500 tokens each, budget is 900-2100 (adaptive)
         anchors = [
             _make_result(i, 0, 0.9 - i * 0.1, content=big)
             for i in range(5)
@@ -195,7 +195,7 @@ class TwoPassPackingTests(unittest.TestCase):
             mock.patch("tars.search.expand_results", return_value=[]),
         ):
             result = core._search_relevant_context("test")
-        # Should only fit ~1 result at 1500 tokens each with 1500 budget
+        # At ~1500 tokens each, only 1-2 fit within adaptive budget
         file_count = sum(1 for i in range(5) if f"file{i}" in result)
         self.assertLessEqual(file_count, 2)
         self.assertGreater(file_count, 0)
@@ -253,6 +253,36 @@ class TwoPassPackingTests(unittest.TestCase):
         # Best hit should be expanded, secondary stays thin
         self.assertIn("expanded best hit with neighbors", result)
         self.assertIn("secondary hit", result)
+
+
+class AnchorBudgetRatioTests(unittest.TestCase):
+    def test_single_result_returns_max(self) -> None:
+        results = [_make_result(1, 0, 0.9)]
+        ratio = core._anchor_budget_ratio(results)
+        self.assertAlmostEqual(ratio, core._ANCHOR_BUDGET_RATIO_MAX)
+
+    def test_equal_scores_returns_max(self) -> None:
+        results = [_make_result(1, 0, 0.8), _make_result(2, 0, 0.8)]
+        ratio = core._anchor_budget_ratio(results)
+        self.assertAlmostEqual(ratio, core._ANCHOR_BUDGET_RATIO_MAX)
+
+    def test_dominant_top_returns_lower_ratio(self) -> None:
+        results = [_make_result(1, 0, 1.0), _make_result(2, 0, 0.1)]
+        ratio = core._anchor_budget_ratio(results)
+        self.assertLess(ratio, core._ANCHOR_BUDGET_RATIO_MAX)
+        self.assertGreaterEqual(ratio, core._ANCHOR_BUDGET_RATIO_MIN)
+
+    def test_full_dominance_returns_min(self) -> None:
+        results = [_make_result(1, 0, 1.0), _make_result(2, 0, 0.0)]
+        ratio = core._anchor_budget_ratio(results)
+        self.assertAlmostEqual(ratio, core._ANCHOR_BUDGET_RATIO_MAX)
+
+    def test_ratio_bounded(self) -> None:
+        for spread in [0.0, 0.3, 0.5, 0.8, 1.0]:
+            results = [_make_result(1, 0, 1.0), _make_result(2, 0, 1.0 - spread)]
+            ratio = core._anchor_budget_ratio(results)
+            self.assertGreaterEqual(ratio, core._ANCHOR_BUDGET_RATIO_MIN)
+            self.assertLessEqual(ratio, core._ANCHOR_BUDGET_RATIO_MAX)
 
 
 class ToolLoopBoundTests(unittest.TestCase):

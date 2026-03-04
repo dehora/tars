@@ -77,6 +77,27 @@ class InitDbTests(unittest.TestCase):
                 self.assertEqual(row["value"], "4")
                 conn.close()
 
+    def test_stores_distance_metric(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            with mock.patch.dict(os.environ, {"TARS_MEMORY_DIR": tmpdir}, clear=True):
+                conn = db.init_db(dim=4)
+                row = conn.execute(
+                    "SELECT value FROM metadata WHERE key = 'distance_metric'"
+                ).fetchone()
+                self.assertIsNotNone(row)
+                self.assertEqual(row["value"], "cosine")
+                conn.close()
+
+    def test_uses_cosine_distance_in_schema(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            with mock.patch.dict(os.environ, {"TARS_MEMORY_DIR": tmpdir}, clear=True):
+                conn = db.init_db(dim=4)
+                row = conn.execute(
+                    "SELECT sql FROM sqlite_master WHERE type='table' AND name='vec_chunks'"
+                ).fetchone()
+                self.assertIn("distance_metric=cosine", row["sql"])
+                conn.close()
+
     def test_dim_mismatch_raises(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             with mock.patch.dict(os.environ, {"TARS_MEMORY_DIR": tmpdir}, clear=True):
@@ -109,6 +130,27 @@ class PrepareDbTests(unittest.TestCase):
                         "SELECT value FROM metadata WHERE key = 'vec_dim'"
                     ).fetchone()
                     self.assertIsNone(row)
+                finally:
+                    conn.close()
+
+    def test_metric_change_forces_rebuild(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            with mock.patch.dict(os.environ, {"TARS_MEMORY_DIR": tmpdir}, clear=True):
+                conn = db.init_db(dim=4)
+                db._set_metadata(conn, "embedding_model", "test-model")
+                db._set_metadata(conn, "distance_metric", "l2")
+                conn.commit()
+                conn.close()
+
+                cached_dim, model_changed = db._prepare_db("test-model")
+
+                self.assertIsNone(cached_dim)
+                self.assertTrue(model_changed)
+
+                path = db._db_path()
+                conn = db._connect(path)
+                try:
+                    self.assertFalse(db._vec_table_exists(conn))
                 finally:
                     conn.close()
 

@@ -69,7 +69,7 @@ CREATE TABLE IF NOT EXISTS metadata (
 
 _VEC_TABLE_SQL = """\
 CREATE VIRTUAL TABLE vec_chunks USING vec0(
-    embedding float[{dim}],
+    embedding float[{dim}] distance_metric=cosine,
     +file_id INTEGER,
     +chunk_sequence INTEGER,
     +content_hash TEXT,
@@ -78,6 +78,8 @@ CREATE VIRTUAL TABLE vec_chunks USING vec0(
     +content TEXT
 );
 """
+
+_DISTANCE_METRIC = "cosine"
 
 
 def _vec_table_exists(conn: sqlite3.Connection) -> bool:
@@ -194,8 +196,11 @@ def _prepare_db(model: str, db_path: Path | None = None) -> tuple[int | None, bo
             conn.commit()
             return None, True
 
+        stored_metric = _get_metadata(conn, "distance_metric")
+        metric_changed = stored_metric != _DISTANCE_METRIC
+
         model_changed = stored_model != model
-        if model_changed:
+        if model_changed or metric_changed:
             if _vec_table_exists(conn):
                 conn.execute("DROP TABLE vec_chunks")
             if _fts_table_exists(conn):
@@ -250,6 +255,7 @@ def init_db(*, dim: int, db_path: Path | None = None) -> sqlite3.Connection | No
     else:
         conn.execute(_VEC_TABLE_SQL.format(dim=dim))
         _set_metadata(conn, "vec_dim", str(dim))
+        _set_metadata(conn, "distance_metric", _DISTANCE_METRIC)
         conn.commit()
     _ensure_fts(conn)
     return conn

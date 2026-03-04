@@ -78,13 +78,32 @@ def parse_model(model_str: str) -> tuple[str, str]:
 
 
 _MAX_SEARCH_CONTEXT_TOKENS = 3000
-_ANCHOR_BUDGET_RATIO = 0.5
+_ANCHOR_BUDGET_RATIO_MIN = 0.3
+_ANCHOR_BUDGET_RATIO_MAX = 0.7
 _TOP_N_CANDIDATES = 20
 _EXPAND_WINDOW = 1
 
 
 def _estimate_tokens(text: str) -> int:
-    return max(len(text) // 4, int(len(text.split()) * 1.1))
+    return max(len(text) // 4, int(len(text.split()) * 1.3))
+
+
+def _anchor_budget_ratio(deduped: list) -> float:
+    """Adaptive budget split based on score distribution.
+
+    When the top result dominates (focused query), return a lower ratio
+    to reserve more budget for depth/expansion. When scores are spread
+    (broad query), return a higher ratio for breadth.
+    """
+    if len(deduped) < 2:
+        return _ANCHOR_BUDGET_RATIO_MAX
+    top = deduped[0].score
+    second = deduped[1].score
+    if top <= 0 or second <= 0:
+        return _ANCHOR_BUDGET_RATIO_MAX
+    dominance = (top - second) / top
+    ratio = _ANCHOR_BUDGET_RATIO_MAX - dominance * (_ANCHOR_BUDGET_RATIO_MAX - _ANCHOR_BUDGET_RATIO_MIN)
+    return max(_ANCHOR_BUDGET_RATIO_MIN, min(_ANCHOR_BUDGET_RATIO_MAX, ratio))
 
 
 def _format_results(results: list) -> str:
@@ -114,7 +133,7 @@ def _search_relevant_context(opening_message: str, limit: int = 5) -> str:
     deduped = sorted(best_per_file.values(), key=lambda r: r.score, reverse=True)
 
     # Pass 1: pack anchors under budget
-    anchor_budget = int(_MAX_SEARCH_CONTEXT_TOKENS * _ANCHOR_BUDGET_RATIO)
+    anchor_budget = int(_MAX_SEARCH_CONTEXT_TOKENS * _anchor_budget_ratio(deduped))
     packed = []
     used_tokens = 0
     for r in deduped:

@@ -18,6 +18,7 @@ except ImportError:
 
 from tars import db, embeddings
 from tars.chunker import Chunk
+from tars.embeddings import _DEFAULT_QUERY_INSTRUCT
 from tars.search import (
     SearchResult,
     _apply_char_cap,
@@ -223,6 +224,17 @@ class SearchHybridTests(unittest.TestCase):
                 # Score > 1.0 is impossible, so everything should be filtered
                 self.assertEqual(len(filtered), 0)
                 self.assertGreater(len(all_results), 0)
+
+    def test_query_uses_instruct_prefix(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            with mock.patch.dict(os.environ, {"TARS_MEMORY_DIR": tmpdir}, clear=True):
+                conn, *_ = _setup_db_with_chunks(tmpdir)
+                conn.close()
+                with mock.patch("tars.search.embed", wraps=embeddings.embed) as mock_embed:
+                    search("Perry dog", model="test-model", limit=1)
+                    mock_embed.assert_called_once()
+                    _, kwargs = mock_embed.call_args
+                    self.assertEqual(kwargs["instruct"], _DEFAULT_QUERY_INSTRUCT)
 
     def test_empty_db(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:

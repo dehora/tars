@@ -55,6 +55,41 @@ class EmbedTests(unittest.TestCase):
         self.assertEqual(result, [])
 
 
+class InstructPrefixTests(unittest.TestCase):
+    def setUp(self) -> None:
+        _mock_ollama.reset_mock()
+
+    def test_instruct_wraps_single_text(self) -> None:
+        _mock_ollama.embed.return_value = {"embeddings": [[0.1, 0.2]]}
+        embeddings.embed("hello", instruct="find relevant docs")
+        call_args = _mock_ollama.embed.call_args
+        self.assertEqual(
+            call_args[1]["input"],
+            ["Instruct: find relevant docs\nQuery:hello"],
+        )
+
+    def test_instruct_wraps_batch(self) -> None:
+        _mock_ollama.embed.return_value = {"embeddings": [[0.1], [0.2]]}
+        embeddings.embed(["a", "b"], instruct="search task")
+        call_args = _mock_ollama.embed.call_args
+        self.assertEqual(
+            call_args[1]["input"],
+            ["Instruct: search task\nQuery:a", "Instruct: search task\nQuery:b"],
+        )
+
+    def test_no_instruct_passes_raw(self) -> None:
+        _mock_ollama.embed.return_value = {"embeddings": [[0.1]]}
+        embeddings.embed("hello")
+        call_args = _mock_ollama.embed.call_args
+        self.assertEqual(call_args[1]["input"], ["hello"])
+
+    def test_none_instruct_passes_raw(self) -> None:
+        _mock_ollama.embed.return_value = {"embeddings": [[0.1]]}
+        embeddings.embed("hello", instruct=None)
+        call_args = _mock_ollama.embed.call_args
+        self.assertEqual(call_args[1]["input"], ["hello"])
+
+
 class EmbeddingDimensionsTests(unittest.TestCase):
     def setUp(self) -> None:
         _mock_ollama.reset_mock()
