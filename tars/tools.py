@@ -3,10 +3,10 @@ from __future__ import annotations
 import json
 import os
 import subprocess
-import sys
 import shutil
 from typing import TYPE_CHECKING
 
+from tars.debug import verbose
 from tars.memory import _run_memory_tool
 from tars.notes import _run_note_tool
 from tars.search import _run_notes_search_tool, _run_search_tool
@@ -297,7 +297,7 @@ def run_tool(name: str, args: dict, *, quiet: bool = False) -> str:
     if missing:
         return json.dumps({"error": f"missing required field(s) for {name}: {', '.join(missing)}"})
     if not quiet:
-        print(f"  [tool] {name}({args})", file=sys.stderr)
+        verbose(f"  [tool] {name}({args})")
     try:
         if name in ("memory_remember", "memory_recall", "memory_update", "memory_forget"):
             return _run_memory_tool(name, args)

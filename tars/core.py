@@ -4,6 +4,7 @@ from collections.abc import Generator
 import anthropic
 import ollama
 
+from tars.debug import verbose
 from tars.memory import _load_memory, _load_procedural, append_daily, load_daily
 from tars.tools import ANTHROPIC_TOOLS, OLLAMA_TOOLS, get_all_tools, run_tool
 
@@ -117,12 +118,12 @@ def _format_results(results: list) -> str:
 
 
 def _expansion_improves(baseline: list, expanded: list) -> bool:
-    """Check whether expanded results surface chunks the baseline missed."""
+    """Check whether expanded results surface files the baseline missed."""
     if not baseline:
         return True
-    baseline_ids = {r.chunk_rowid for r in baseline}
-    new_chunks = sum(1 for r in expanded if r.chunk_rowid not in baseline_ids)
-    return new_chunks > 0
+    baseline_files = {r.file_id for r in baseline}
+    new_files = sum(1 for r in expanded if r.file_id not in baseline_files)
+    return new_files > 0
 
 
 def _search_relevant_context(opening_message: str, limit: int = 5) -> str:
@@ -133,14 +134,21 @@ def _search_relevant_context(opening_message: str, limit: int = 5) -> str:
         opening_message, limit=_TOP_N_CANDIDATES, min_score=_AUTO_SEARCH_MIN_SCORE, window=0,
     )
 
+    top_score = anchors[0].score if anchors else 0.0
+    verbose(f"  [context] baseline: {len(anchors)} results, top_score={top_score:.3f}")
+
     baseline_weak = not anchors or anchors[0].score < _EXPANSION_SCORE_THRESHOLD
     if baseline_weak:
+        verbose(f"  [context] baseline weak, triggering expansion")
         try:
             expanded_anchors = search_expanded(
                 opening_message, limit=_TOP_N_CANDIDATES, min_score=0.0, window=0,
             )
             if expanded_anchors and _expansion_improves(anchors, expanded_anchors):
-                anchors = expanded_anchors
+                baseline_files = {r.file_id for r in anchors}
+                new_results = [r for r in expanded_anchors if r.file_id not in baseline_files]
+                verbose(f"  [context] expansion added {len(new_results)} new results")
+                anchors = anchors + new_results
         except Exception:
             pass
 
@@ -156,7 +164,8 @@ def _search_relevant_context(opening_message: str, limit: int = 5) -> str:
     deduped = sorted(best_per_file.values(), key=lambda r: r.score, reverse=True)
 
     # Pass 1: pack anchors under budget
-    anchor_budget = int(_MAX_SEARCH_CONTEXT_TOKENS * _anchor_budget_ratio(deduped))
+    ratio = _anchor_budget_ratio(deduped)
+    anchor_budget = int(_MAX_SEARCH_CONTEXT_TOKENS * ratio)
     packed = []
     used_tokens = 0
     for r in deduped:
@@ -165,6 +174,8 @@ def _search_relevant_context(opening_message: str, limit: int = 5) -> str:
             continue
         packed.append(r)
         used_tokens += cost
+
+    verbose(f"  [context] anchor budget ratio={ratio:.2f}, packed={len(packed)}/{len(deduped)}")
 
     if not packed:
         return ""
@@ -180,6 +191,7 @@ def _search_relevant_context(opening_message: str, limit: int = 5) -> str:
         pass
 
     final = []
+    expanded_count = 0
     for r in packed:
         expanded = expanded_map.get(r.file_id)
         if expanded is not None and expanded.content != r.content:
@@ -187,9 +199,11 @@ def _search_relevant_context(opening_message: str, limit: int = 5) -> str:
             if expansion_cost <= remaining:
                 final.append(expanded)
                 remaining -= expansion_cost
+                expanded_count += 1
                 continue
         final.append(r)
 
+    verbose(f"  [context] pass 2: {expanded_count} anchors expanded")
     return _format_results(final)
 
 

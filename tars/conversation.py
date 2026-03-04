@@ -7,6 +7,7 @@ import anthropic
 
 from tars.config import ModelConfig
 from tars.core import _search_relevant_context, chat, chat_stream
+from tars.debug import verbose
 from tars.extractor import extract_facts
 from tars.memory import append_daily
 from tars.router import route_message
@@ -93,7 +94,7 @@ def process_message(
         try:
             conv.search_context = _search_relevant_context(user_input)
         except Exception as e:
-            print(f"  [warning] startup search failed: {e}", file=sys.stderr)
+            verbose(f"  [warning] startup search failed: {e}")
 
     conv.messages.append({"role": "user", "content": user_input})
     route = route_message(user_input, _model_config_for(conv))
@@ -110,7 +111,7 @@ def process_message(
         if not escalated or not _should_fallback(exc):
             raise
         status = getattr(exc, "status_code", "connection")
-        print(f"  [router] escalation failed ({status}), falling back to {conv.provider}:{conv.model}", file=sys.stderr)
+        verbose(f"  [router] escalation failed ({status}), falling back to {conv.provider}:{conv.model}")
         reply = chat(
             conv.messages, conv.provider, conv.model,
             search_context=conv.search_context, tool_hints=route.tool_hints,
@@ -137,7 +138,7 @@ def process_message_stream(
         try:
             conv.search_context = _search_relevant_context(user_input)
         except Exception as e:
-            print(f"  [warning] startup search failed: {e}", file=sys.stderr)
+            verbose(f"  [warning] startup search failed: {e}")
 
     conv.messages.append({"role": "user", "content": user_input})
 
@@ -162,7 +163,7 @@ def process_message_stream(
             if not _should_fallback(exc):
                 raise
             status = getattr(exc, "status_code", "connection")
-            print(f"  [router] escalation failed ({status}), falling back to {conv.provider}:{conv.model}", file=sys.stderr)
+            verbose(f"  [router] escalation failed ({status}), falling back to {conv.provider}:{conv.model}")
             conv.last_provider = conv.provider
             conv.last_model = conv.model
             for delta in chat_stream(

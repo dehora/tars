@@ -4,6 +4,7 @@ import json
 from dataclasses import dataclass
 
 from tars.db import _connect, _db_path, _fts_table_exists, _get_metadata, _serialize_f32, _vec_table_exists
+from tars.debug import verbose
 from tars.embeddings import (
     DEFAULT_EMBEDDING_MODEL,
     _DEFAULT_QUERY_INSTRUCT,
@@ -30,10 +31,13 @@ class SearchResult:
 
 
 def _sanitize_fts_query(query: str) -> str:
-    """Convert user query into a safe FTS5 query string."""
+    """Convert user query into a safe FTS5 query string.
+
+    Uses OR so FTS casts a wide net for RRF fusion with vec results.
+    """
     tokens = query.split()
     safe = ['"' + t.replace('"', '""') + '"' for t in tokens if t.strip()]
-    return " ".join(safe)
+    return " OR ".join(safe)
 
 
 def search_vec(conn, query_embedding: list[float], *, limit: int = 20) -> list[int]:
@@ -270,6 +274,8 @@ def search(
         if mode in ("hybrid", "fts"):
             fts_rowids = search_fts(conn, query, limit=limit * 2)
 
+        verbose(f"  [search] mode={mode} vec={len(vec_rowids)} fts={len(fts_rowids)}")
+
         if mode == "hybrid":
             fused = _reciprocal_rank_fusion(vec_rowids, fts_rowids)
         elif mode == "vec":
@@ -279,6 +285,9 @@ def search(
 
         fused = [(rid, score) for rid, score in fused if score >= min_score]
         fused = fused[:limit]
+
+        top_score = fused[0][1] if fused else 0.0
+        verbose(f"  [search] rrf results={len(fused)} top_score={top_score:.3f}")
 
         if not fused:
             return []
@@ -361,6 +370,7 @@ def search_expanded(
 
         queries = rewriter.expand_queries(query)
         hyde_text = rewriter.generate_hyde(query)
+        verbose(f"  [search] expanded: {len(queries)} queries, hyde={'yes' if hyde_text else 'no'}")
 
         ranked_lists: list[list[int]] = []
         oversample = limit * 2
@@ -379,6 +389,9 @@ def search_expanded(
         fused = _reciprocal_rank_fusion(*ranked_lists)
         fused = [(rid, score) for rid, score in fused if score >= min_score]
         fused = fused[:limit]
+
+        top_score = fused[0][1] if fused else 0.0
+        verbose(f"  [search] expanded rrf: {len(ranked_lists)} lists, results={len(fused)} top_score={top_score:.3f}")
 
         if not fused:
             return []

@@ -4,6 +4,8 @@ import os
 
 import ollama
 
+from tars.debug import verbose
+
 RETRIEVAL_MODEL = os.environ.get("TARS_MODEL_RETRIEVAL", "").strip() or "gemma3:4b"
 
 _MIN_HYDE_WORDS = 5
@@ -40,7 +42,9 @@ def expand_queries(query: str, *, model: str = RETRIEVAL_MODEL) -> list[str]:
     )
     text = response.get("message", {}).get("content", "")
     lines = [ln.strip() for ln in text.splitlines() if ln.strip()]
-    return [query] + lines[:_MAX_REWRITES]
+    rewrites = lines[:_MAX_REWRITES]
+    verbose(f"  [rewriter] expand_queries: {len(rewrites)} rewrites: {rewrites}")
+    return [query] + rewrites
 
 
 def generate_hyde(query: str, *, model: str = RETRIEVAL_MODEL) -> str | None:
@@ -49,6 +53,7 @@ def generate_hyde(query: str, *, model: str = RETRIEVAL_MODEL) -> str | None:
     Returns None if the query is shorter than the word gate.
     """
     if len(query.split()) < _MIN_HYDE_WORDS:
+        verbose(f"  [rewriter] generate_hyde: skipped (query < {_MIN_HYDE_WORDS} words)")
         return None
 
     prompt = _HYDE_PROMPT.format(tag=_QUERY_TAG, query=_sanitize_query(query))
@@ -57,4 +62,6 @@ def generate_hyde(query: str, *, model: str = RETRIEVAL_MODEL) -> str | None:
         messages=[{"role": "user", "content": prompt}],
     )
     text = response.get("message", {}).get("content", "")
-    return text.strip() or None
+    result = text.strip() or None
+    verbose(f"  [rewriter] generate_hyde: {'generated' if result else 'empty response'}")
+    return result

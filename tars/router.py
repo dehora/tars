@@ -1,10 +1,10 @@
 """Multi-model routing: cheap model for chat, escalation model for tools."""
 
 import re
-import sys
 from dataclasses import dataclass, field
 
 from tars.config import ModelConfig
+from tars.debug import verbose
 
 
 @dataclass(frozen=True)
@@ -103,33 +103,21 @@ def route_message(user_input: str, config: ModelConfig) -> RouteResult:
     esc_model = config.remote_model
 
     if config.routing_policy != "tool":
-        print(
-            f"  [router] {default_provider}:{default_model} (routing={config.routing_policy})",
-            file=sys.stderr,
-        )
+        verbose(f"  [router] {default_provider}:{default_model} (routing={config.routing_policy})")
         return RouteResult(default_provider, default_model)
 
     if esc_provider is None or esc_model is None:
-        print(
-            f"  [router] {default_provider}:{default_model} (no escalation configured)",
-            file=sys.stderr,
-        )
+        verbose(f"  [router] {default_provider}:{default_model} (no escalation configured)")
         return RouteResult(default_provider, default_model)
 
     if default_provider == esc_provider and default_model == esc_model:
-        print(
-            f"  [router] {default_provider}:{default_model} (default matches remote)",
-            file=sys.stderr,
-        )
+        verbose(f"  [router] {default_provider}:{default_model} (default matches remote)")
         return RouteResult(default_provider, default_model)
 
     trigger, hints = _has_tool_intent(user_input)
     if trigger:
-        print(
-            f"  [router] escalating to {esc_provider}:{esc_model} (matched: {trigger!r}, hints: {hints})",
-            file=sys.stderr,
-        )
+        verbose(f"  [router] escalating to {esc_provider}:{esc_model} (matched: {trigger!r}, hints: {hints})")
         return RouteResult(esc_provider, esc_model, hints)
 
-    print(f"  [router] {default_provider}:{default_model} (no tool intent)", file=sys.stderr)
+    verbose(f"  [router] {default_provider}:{default_model} (no tool intent)")
     return RouteResult(default_provider, default_model)

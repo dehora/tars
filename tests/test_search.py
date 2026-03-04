@@ -89,7 +89,7 @@ def _setup_db_with_chunks(tmpdir):
 
 class SanitizeFtsQueryTests(unittest.TestCase):
     def test_simple_query(self) -> None:
-        self.assertEqual(_sanitize_fts_query("hello world"), '"hello" "world"')
+        self.assertEqual(_sanitize_fts_query("hello world"), '"hello" OR "world"')
 
     def test_empty_query(self) -> None:
         self.assertEqual(_sanitize_fts_query(""), "")

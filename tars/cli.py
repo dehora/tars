@@ -12,6 +12,7 @@ from dotenv import load_dotenv
 from tars.colors import _ENABLED as _COLORS_ENABLED
 from tars.colors import bold, cyan, dim, green, link, red, yellow
 from tars.commands import command_names, dispatch
+import tars.debug as debug
 from tars.config import apply_cli_overrides, load_model_config, model_summary
 from tars.conversation import Conversation, process_message, process_message_stream, save_session
 from tars.embeddings import DEFAULT_EMBEDDING_MODEL
@@ -124,15 +125,17 @@ class _Spinner:
 
     def start(self) -> None:
         self._spinning = True
+        debug.set_spinner(self)
         self._thread = threading.Thread(target=self._run, daemon=True)
         self._thread.start()
 
     def _run(self) -> None:
         i = 0
         while self._spinning:
-            frame = _SPINNER_FRAMES[i % len(_SPINNER_FRAMES)]
-            sys.stdout.write(f"\r  {frame} {dim('thinking...')}")
-            sys.stdout.flush()
+            with debug._lock:
+                frame = _SPINNER_FRAMES[i % len(_SPINNER_FRAMES)]
+                sys.stdout.write(f"\r  {frame} {dim('thinking...')}")
+                sys.stdout.flush()
             i += 1
             time.sleep(0.08)
 
@@ -140,7 +143,8 @@ class _Spinner:
         self._spinning = False
         if self._thread:
             self._thread.join(timeout=0.2)
-        sys.stdout.write("\r" + " " * 20 + "\r")
+        debug.set_spinner(None)
+        sys.stdout.write("\r" + " " * 40 + "\r")
         sys.stdout.flush()
 
 
@@ -155,7 +159,8 @@ _LOGO = r"""
 
 def _welcome(config) -> None:
     print(cyan(_LOGO.rstrip()))
-    print(dim(f"  [{config.primary_provider}:{config.primary_model}] ctrl-d to quit"))
+    v_tag = " [verbose]" if debug.VERBOSE else ""
+    print(dim(f"  [{config.primary_provider}:{config.primary_model}]{v_tag} ctrl-d to quit"))
     print(dim("  ? for shortcuts, /help for commands"))
 
 
@@ -380,6 +385,12 @@ def _startup_index() -> None:
 def main():
     parser = argparse.ArgumentParser(prog="tars", description="tars AI assistant")
     parser.add_argument(
+        "-v", "--verbose",
+        action="store_true",
+        default=False,
+        help="enable verbose debug output on stderr",
+    )
+    parser.add_argument(
         "-m", "--model",
         default=None,
         help="provider:model (e.g. ollama:gemma3:12b, claude:sonnet)",
@@ -436,7 +447,7 @@ def main():
     _subcommands = {"index", "notes-index", "search", "sgrep", "svec", "serve", "email", "email-brief", "telegram", "telegram-brief", "schedule"}
     raw_args = sys.argv[1:]
     message_args: list[str] = []
-    # Skip leading flags (-m, --model, --remote-model and their values)
+    # Skip leading flags (-v, --verbose, -m, --model, --remote-model and their values)
     i = 0
     while i < len(raw_args) and raw_args[i].startswith("-"):
         i += 1  # flag
@@ -448,6 +459,9 @@ def main():
 
     args = parser.parse_args(raw_args)
     args.message = message_args
+
+    if args.verbose:
+        debug.VERBOSE = True
 
     if args.command == "index":
         _run_index(args.embedding_model)
