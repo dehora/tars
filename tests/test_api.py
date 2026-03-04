@@ -549,5 +549,41 @@ class AuthWarningTests(unittest.TestCase):
             api._API_TOKEN = original
 
 
+class ConversationIdValidationTests(unittest.TestCase):
+    def setUp(self) -> None:
+        api._conversations.clear()
+        api._session_files.clear()
+        self.client = TestClient(api.app)
+
+    def test_valid_conversation_id(self) -> None:
+        with mock.patch.object(conversation, "chat", return_value="ok"):
+            resp = self.client.post("/chat", json={
+                "conversation_id": "web-abc123",
+                "message": "hi",
+            })
+        self.assertEqual(resp.status_code, 200)
+
+    def test_conversation_id_too_long(self) -> None:
+        resp = self.client.post("/chat", json={
+            "conversation_id": "a" * 65,
+            "message": "hi",
+        })
+        self.assertEqual(resp.status_code, 422)
+
+    def test_conversation_id_path_separators(self) -> None:
+        resp = self.client.post("/chat", json={
+            "conversation_id": "../etc/passwd",
+            "message": "hi",
+        })
+        self.assertEqual(resp.status_code, 422)
+
+    def test_feedback_conversation_id_validated(self) -> None:
+        resp = self.client.post("/feedback", json={
+            "conversation_id": "bad/id",
+            "note": "test",
+        })
+        self.assertEqual(resp.status_code, 422)
+
+
 if __name__ == "__main__":
     unittest.main()

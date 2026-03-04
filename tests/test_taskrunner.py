@@ -22,6 +22,7 @@ from tars.taskrunner import (
     _is_due,
     _load_tasks,
     _parse_schedule,
+    _send_scheduled_telegram,
 )
 
 
@@ -361,6 +362,43 @@ class IntegrationTests(unittest.TestCase):
         call_arg = mock_daily.call_args[0][0]
         self.assertIn("[scheduled:my_task]", call_arg)
         self.assertIn("hello world", call_arg)
+
+
+class TelegramUidValidationTests(unittest.TestCase):
+
+    @mock.patch("urllib.request.urlopen")
+    def test_valid_uid_sends(self, mock_urlopen):
+        with mock.patch.dict(os.environ, {
+            "TARS_TELEGRAM_TOKEN": "tok",
+            "TARS_TELEGRAM_ALLOW": "12345",
+        }):
+            _send_scheduled_telegram("hello")
+        mock_urlopen.assert_called_once()
+        data = json.loads(mock_urlopen.call_args[0][0].data)
+        self.assertEqual(data["chat_id"], 12345)
+
+    @mock.patch("urllib.request.urlopen")
+    def test_invalid_uid_skipped(self, mock_urlopen):
+        with mock.patch.dict(os.environ, {
+            "TARS_TELEGRAM_TOKEN": "tok",
+            "TARS_TELEGRAM_ALLOW": "not_a_number",
+        }):
+            _send_scheduled_telegram("hello")
+        mock_urlopen.assert_not_called()
+
+    @mock.patch("urllib.request.urlopen")
+    def test_mixed_uids_sends_only_valid(self, mock_urlopen):
+        with mock.patch.dict(os.environ, {
+            "TARS_TELEGRAM_TOKEN": "tok",
+            "TARS_TELEGRAM_ALLOW": "111,bad,222",
+        }):
+            _send_scheduled_telegram("hello")
+        self.assertEqual(mock_urlopen.call_count, 2)
+        sent_ids = []
+        for call in mock_urlopen.call_args_list:
+            data = json.loads(call[0][0].data)
+            sent_ids.append(data["chat_id"])
+        self.assertEqual(sent_ids, [111, 222])
 
 
 if __name__ == "__main__":

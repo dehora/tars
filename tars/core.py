@@ -121,7 +121,7 @@ def _build_system_prompt(*, search_context: str = "", tool_hints: list[str] | No
             daily = "\n".join(lines[-_MAX_DAILY_LINES:])
         if not has_untrusted:
             prompt += f"\n\n---\n\n{MEMORY_PROMPT_PREFACE}"
-        prompt += f"\n\n<daily-context>\n{_escape_prompt_block(daily)}\n</daily-context>"
+        prompt += f'\n\n<daily-context type="tars-generated, may include summarized web content">\n{_escape_prompt_block(daily)}\n</daily-context>'
     return prompt
 
 
@@ -248,7 +248,7 @@ def chat(
 
 def chat_anthropic_stream(
     messages: list[dict], model: str, *,
-    search_context: str = "", tool_hints: list[str] | None = None,
+    search_context: str = "", use_tools: bool = True, tool_hints: list[str] | None = None,
 ) -> Generator[str, None, None]:
     """Streaming version of chat_anthropic. Yields text deltas."""
     resolved = CLAUDE_MODELS.get(model, model)
@@ -256,15 +256,18 @@ def chat_anthropic_stream(
     local_messages = [m.copy() for m in messages]
     system = _build_system_prompt(search_context=search_context, tool_hints=tool_hints)
 
-    tools = _get_tools("anthropic")
+    tools = _get_tools("anthropic") if use_tools else []
 
     # Step 1: tool-calling loop (non-streamed).
     # Keep going until the model stops requesting tools.
     for _round in range(_MAX_TOOL_ROUNDS):
-        response = client.messages.create(
+        kwargs: dict = dict(
             model=resolved, max_tokens=_MAX_TOKENS,
-            system=system, messages=local_messages, tools=tools,
+            system=system, messages=local_messages,
         )
+        if tools:
+            kwargs["tools"] = tools
+        response = client.messages.create(**kwargs)
 
         if response.stop_reason != "tool_use":
             # Model is done with tools — break out to stream the final answer.
@@ -296,23 +299,26 @@ def chat_anthropic_stream(
     # chunks via .text_stream. Each chunk is a small string (often a few
     # tokens). The caller (web UI) sends each chunk to the browser as an
     # SSE event, so the user sees tokens appear incrementally.
-    with client.messages.stream(
+    stream_kwargs: dict = dict(
         model=resolved, max_tokens=_MAX_TOKENS,
-        system=system, messages=local_messages, tools=tools,
-    ) as stream:
+        system=system, messages=local_messages,
+    )
+    if tools:
+        stream_kwargs["tools"] = tools
+    with client.messages.stream(**stream_kwargs) as stream:
         for text in stream.text_stream:
             yield text
 
 
 def chat_ollama_stream(
     messages: list[dict], model: str, *,
-    search_context: str = "", tool_hints: list[str] | None = None,
+    search_context: str = "", use_tools: bool = True, tool_hints: list[str] | None = None,
 ) -> Generator[str, None, None]:
     """Streaming version of chat_ollama. Yields text deltas."""
     local_messages = [{"role": "system", "content": _build_system_prompt(search_context=search_context, tool_hints=tool_hints)}]
     local_messages.extend(m.copy() for m in messages)
 
-    tools = _get_tools("ollama")
+    tools = _get_tools("ollama") if use_tools else []
 
     # Step 1: tool-calling loop (non-streamed), same as chat_ollama.
     for _round in range(_MAX_TOOL_ROUNDS):
@@ -344,12 +350,12 @@ def chat_ollama_stream(
 
 def chat_stream(
     messages: list[dict], provider: str, model: str, *,
-    search_context: str = "", tool_hints: list[str] | None = None,
+    search_context: str = "", use_tools: bool = True, tool_hints: list[str] | None = None,
 ) -> Generator[str, None, None]:
     """Route to the appropriate streaming chat function."""
     if provider == "claude":
-        yield from chat_anthropic_stream(messages, model, search_context=search_context, tool_hints=tool_hints)
+        yield from chat_anthropic_stream(messages, model, search_context=search_context, use_tools=use_tools, tool_hints=tool_hints)
     elif provider == "ollama":
-        yield from chat_ollama_stream(messages, model, search_context=search_context, tool_hints=tool_hints)
+        yield from chat_ollama_stream(messages, model, search_context=search_context, use_tools=use_tools, tool_hints=tool_hints)
     else:
         raise ValueError(f"Unknown provider: {provider}")

@@ -202,9 +202,14 @@ def _send_scheduled_telegram(body: str) -> None:
     if not token or not allow:
         logger.warning("telegram delivery skipped: missing TARS_TELEGRAM_* config")
         return
-    for uid in allow.split(","):
-        uid = uid.strip()
-        if not uid:
+    for raw_uid in allow.split(","):
+        raw_uid = raw_uid.strip()
+        if not raw_uid:
+            continue
+        try:
+            uid = int(raw_uid)
+        except ValueError:
+            logger.warning("skipping invalid telegram uid: %s", raw_uid)
             continue
         url = f"https://api.telegram.org/bot{token}/sendMessage"
         data = json.dumps({"chat_id": uid, "text": body[:4096]}).encode()

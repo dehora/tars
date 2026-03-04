@@ -11,7 +11,9 @@ from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
-from pydantic import BaseModel
+import re
+
+from pydantic import BaseModel, field_validator
 from starlette.middleware.base import BaseHTTPMiddleware
 
 from tars.config import load_model_config, model_summary
@@ -101,9 +103,19 @@ _provider = _model_config.primary_provider
 _model = _model_config.primary_model
 
 
+_CONV_ID_RE = re.compile(r"^[a-zA-Z0-9._-]{1,64}$")
+
+
 class ChatRequest(BaseModel):
     conversation_id: str
     message: str
+
+    @field_validator("conversation_id")
+    @classmethod
+    def validate_conversation_id(cls, v: str) -> str:
+        if not _CONV_ID_RE.match(v):
+            raise ValueError("conversation_id must be 1-64 alphanumeric/._- characters")
+        return v
 
 
 class ChatResponse(BaseModel):
@@ -115,6 +127,13 @@ class FeedbackRequest(BaseModel):
     conversation_id: str
     note: str = ""
     kind: str = "correction"  # "correction" or "reward"
+
+    @field_validator("conversation_id")
+    @classmethod
+    def validate_conversation_id(cls, v: str) -> str:
+        if not _CONV_ID_RE.match(v):
+            raise ValueError("conversation_id must be 1-64 alphanumeric/._- characters")
+        return v
 
 
 class ToolRequest(BaseModel):

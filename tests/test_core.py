@@ -133,9 +133,9 @@ class DailyContextCapTests(unittest.TestCase):
             mock.patch.object(core, "load_daily", return_value=big_daily),
         ):
             prompt = core._build_system_prompt()
-        self.assertIn("<daily-context>", prompt)
+        self.assertIn("<daily-context ", prompt)
         # Should only contain the last _MAX_DAILY_LINES lines
-        daily_section = prompt.split("<daily-context>")[1].split("</daily-context>")[0]
+        daily_section = prompt[prompt.index("<daily-context "):].split(">", 1)[1].split("</daily-context>")[0]
         daily_lines = [l for l in daily_section.strip().splitlines() if l.strip()]
         self.assertLessEqual(len(daily_lines), core._MAX_DAILY_LINES)
 
@@ -253,6 +253,42 @@ class ToolLoopBoundTests(unittest.TestCase):
             result = list(core.chat_ollama_stream([{"role": "user", "content": "x"}], "llama3"))
         self.assertEqual(len(result), 1)
         self.assertIn("maximum number of tool calls", result[0])
+
+
+class StreamUseToolsTests(unittest.TestCase):
+    def test_chat_stream_use_tools_false_anthropic(self) -> None:
+        with mock.patch.object(
+            core, "chat_anthropic_stream", return_value=iter(["hi"]),
+        ) as m:
+            list(core.chat_stream(
+                [{"role": "user", "content": "x"}], "claude", "sonnet",
+                use_tools=False,
+            ))
+        _, kwargs = m.call_args
+        self.assertFalse(kwargs["use_tools"])
+
+    def test_chat_stream_use_tools_false_ollama(self) -> None:
+        with mock.patch.object(
+            core, "chat_ollama_stream", return_value=iter(["hi"]),
+        ) as m:
+            list(core.chat_stream(
+                [{"role": "user", "content": "x"}], "ollama", "llama3",
+                use_tools=False,
+            ))
+        _, kwargs = m.call_args
+        self.assertFalse(kwargs["use_tools"])
+
+
+class DailyContextProvenanceTests(unittest.TestCase):
+    def test_daily_context_has_type_attribute(self) -> None:
+        with (
+            mock.patch.object(core, "_load_memory", return_value=""),
+            mock.patch.object(core, "_load_procedural", return_value=""),
+            mock.patch.object(core, "load_daily", return_value="- 08:00 captured: example.com"),
+        ):
+            prompt = core._build_system_prompt()
+        self.assertIn('type="tars-generated', prompt)
+        self.assertIn("summarized web content", prompt)
 
 
 class ParseModelTests(unittest.TestCase):

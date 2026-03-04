@@ -1,6 +1,7 @@
 """Zero-dependency ANSI color helpers with NO_COLOR and non-TTY support."""
 
 import os
+import re
 import sys
 
 _ENABLED = (
@@ -52,8 +53,6 @@ def magenta(s: str) -> str:
 def blue(s: str) -> str:
     return f"{_BLUE}{s}{RESET}" if _ENABLED else s
 
-
-import re
 
 _CONTROL_RE = re.compile(r"[\x00-\x1f\x7f-\x9f]")
 

@@ -19,6 +19,7 @@ from tars.scheduler import (
     _is_macos,
     _load_dotenv_values,
     _read_last_log_line,
+    _schedule_test_linux,
     schedule_list,
 )
 
@@ -338,6 +339,54 @@ class TestFilePermissions(unittest.TestCase):
             self.assertEqual(service_path.stat().st_mode & 0o777, 0o600)
             self.assertTrue(timer_path.exists())
             self.assertEqual(timer_path.stat().st_mode & 0o777, 0o600)
+
+
+class ScheduleTestLinuxTests(unittest.TestCase):
+
+    def test_schedule_test_linux_shlex(self):
+        """shlex.split handles quoted args with spaces."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            service = Path(tmpdir) / "tars-shlex.service"
+            service.write_text(
+                "[Service]\n"
+                'ExecStart=/usr/bin/uv run tars "hello world"\n'
+                "WorkingDirectory=/tmp\n",
+                encoding="utf-8",
+            )
+            with mock.patch(
+                "tars.scheduler._systemd_dir", return_value=Path(tmpdir),
+            ):
+                with mock.patch("tars.scheduler.subprocess.run") as mock_run:
+                    mock_run.return_value = mock.Mock(
+                        returncode=0, stdout="ok", stderr="",
+                    )
+                    _schedule_test_linux("shlex")
+                args = mock_run.call_args[0][0]
+                self.assertEqual(
+                    args, ["/usr/bin/uv", "run", "tars", "hello world"],
+                )
+
+    def test_schedule_test_linux_env_quotes(self):
+        """Environment= values with systemd quoting are parsed correctly."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            service = Path(tmpdir) / "tars-envq.service"
+            service.write_text(
+                "[Service]\n"
+                'Environment="TARS_MEMORY_DIR=/my dir"\n'
+                "ExecStart=/usr/bin/uv run tars\n"
+                "WorkingDirectory=/tmp\n",
+                encoding="utf-8",
+            )
+            with mock.patch(
+                "tars.scheduler._systemd_dir", return_value=Path(tmpdir),
+            ):
+                with mock.patch("tars.scheduler.subprocess.run") as mock_run:
+                    mock_run.return_value = mock.Mock(
+                        returncode=0, stdout="ok", stderr="",
+                    )
+                    _schedule_test_linux("envq")
+                env = mock_run.call_args[1]["env"]
+                self.assertEqual(env["TARS_MEMORY_DIR"], "/my dir")
 
 
 if __name__ == "__main__":

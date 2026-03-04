@@ -340,7 +340,7 @@ class DailyContextPromptTests(unittest.TestCase):
             mock.patch("tars.core.load_daily", return_value="# 2026-03-01\n- 09:00 tool:weather"),
         ):
             prompt = core._build_system_prompt()
-        self.assertIn("<daily-context>", prompt)
+        self.assertIn("<daily-context ", prompt)
         self.assertIn("tool:weather", prompt)
 
     def test_system_prompt_no_daily_when_empty(self) -> None:
@@ -350,7 +350,7 @@ class DailyContextPromptTests(unittest.TestCase):
             mock.patch("tars.core.load_daily", return_value=""),
         ):
             prompt = core._build_system_prompt()
-        self.assertNotIn("<daily-context>", prompt)
+        self.assertNotIn("<daily-context ", prompt)
 
 
 if __name__ == "__main__":

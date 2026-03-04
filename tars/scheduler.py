@@ -7,6 +7,7 @@ tars subcommands on a timer or when a watched path changes.
 import os
 import platform
 import plistlib
+import shlex
 import shutil
 import subprocess
 from dataclasses import dataclass, field
@@ -608,7 +609,7 @@ def _schedule_test_linux(name: str) -> str:
         elif line.startswith("WorkingDirectory="):
             work_dir = line.split("=", 1)[1]
         elif line.startswith("Environment="):
-            kv = line.split("=", 1)[1]
+            kv = line.split("=", 1)[1].strip('"')
             if "=" in kv:
                 k, v = kv.split("=", 1)
                 baked_env[k] = v
@@ -622,7 +623,7 @@ def _schedule_test_linux(name: str) -> str:
 
     try:
         result = subprocess.run(
-            exec_start.split(),
+            shlex.split(exec_start),
             cwd=work_dir,
             env=test_env,
             capture_output=True,
