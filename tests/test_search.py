@@ -675,6 +675,30 @@ class WindowedRetrievalTests(unittest.TestCase):
                     call_kwargs = mock_s.call_args[1]
                     self.assertEqual(call_kwargs["window"], 0)
 
+    def test_search_tool_invalid_window_string(self) -> None:
+        with mock.patch("tars.search.search", return_value=[]) as mock_s:
+            _run_search_tool("memory_search", {"query": "test", "window": "abc"})
+            call_kwargs = mock_s.call_args[1]
+            self.assertEqual(call_kwargs["window"], 1)
+
+    def test_search_tool_invalid_window_null(self) -> None:
+        with mock.patch("tars.search.search", return_value=[]) as mock_s:
+            _run_search_tool("memory_search", {"query": "test", "window": None})
+            call_kwargs = mock_s.call_args[1]
+            self.assertEqual(call_kwargs["window"], 1)
+
+    def test_notes_tool_invalid_window_string(self) -> None:
+        with mock.patch("tars.search.search_notes", return_value=[]) as mock_s:
+            _run_notes_search_tool("notes_search", {"query": "test", "window": "abc"})
+            call_kwargs = mock_s.call_args[1]
+            self.assertEqual(call_kwargs["window"], 2)
+
+    def test_notes_tool_invalid_window_null(self) -> None:
+        with mock.patch("tars.search.search_notes", return_value=[]) as mock_s:
+            _run_notes_search_tool("notes_search", {"query": "test", "window": None})
+            call_kwargs = mock_s.call_args[1]
+            self.assertEqual(call_kwargs["window"], 2)
+
 
 class MergeIntervalsTests(unittest.TestCase):
     def test_no_overlap(self) -> None:

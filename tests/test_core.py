@@ -223,6 +223,22 @@ class TwoPassPackingTests(unittest.TestCase):
         self.assertIn("tiny", result)
         self.assertNotIn("x" * 100, result)
 
+    def test_large_result_skipped_smaller_still_packed(self) -> None:
+        """An oversized chunk shouldn't prevent smaller chunks from fitting."""
+        anchors = [
+            _make_result(1, 0, 0.9, content="best hit"),      # small, packed first
+            _make_result(2, 0, 0.8, content="x" * 20000),     # huge, should be skipped
+            _make_result(3, 0, 0.7, content="third hit"),      # small, should still fit
+        ]
+        with (
+            mock.patch("tars.search.search", return_value=anchors),
+            mock.patch("tars.search.expand_results", return_value=[]),
+        ):
+            result = core._search_relevant_context("test")
+        self.assertIn("best hit", result)
+        self.assertIn("third hit", result)
+        self.assertNotIn("x" * 100, result)
+
     def test_thin_and_thick_mix(self) -> None:
         anchors = [
             _make_result(1, 0, 0.9, content="best hit"),

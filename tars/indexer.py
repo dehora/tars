@@ -82,8 +82,6 @@ def _index_file(
     preserved and the content_hash is reset for retry on next run.
     """
     chunks = chunk_markdown(content)
-    if not chunks:
-        return 0
 
     embed_texts = [
         (_embed_prefix(c.context) + "\n" + c.content) if c.context else c.content
@@ -93,6 +91,10 @@ def _index_file(
     conn.execute("SAVEPOINT reindex_file")
     try:
         delete_chunks_for_file(conn, file_id)
+
+        if not chunks:
+            conn.execute("RELEASE reindex_file")
+            return 0
         chunk_embeddings = _batched_embed(embed_texts, model=model)
         if len(chunk_embeddings) != len(chunks):
             raise ValueError(

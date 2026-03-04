@@ -9,7 +9,13 @@ sys.modules.setdefault("anthropic", mock.Mock())
 sys.modules.setdefault("dotenv", mock.Mock(load_dotenv=lambda: None))
 sys.modules.setdefault("ollama", mock.MagicMock())
 
-from tars import embeddings
+try:
+    import sqlite_vec
+    _HAS_SQLITE_VEC = True
+except ImportError:
+    _HAS_SQLITE_VEC = False
+
+from tars import db, embeddings
 from tars.indexer import (
     _batched_embed,
     _discover_files,
@@ -421,6 +427,44 @@ class SavepointAtomicityTests(unittest.TestCase):
                     stats = build_index(model="test-model")
 
             self.assertEqual(stats["indexed"], 1)
+
+
+@unittest.skipUnless(_HAS_SQLITE_VEC, "sqlite-vec not installed")
+class ZeroChunkCleanupTests(unittest.TestCase):
+    def setUp(self) -> None:
+        self._patcher = mock.patch.object(embeddings, "ollama")
+        self._mock_ollama = self._patcher.start()
+        self._mock_ollama.embed.side_effect = _fake_embed
+
+    def tearDown(self) -> None:
+        self._patcher.stop()
+
+    def test_emptied_file_cleans_stale_chunks(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            d = Path(td)
+            (d / "Memory.md").write_text(
+                "# Memory\n\nSome real content here.\n", encoding="utf-8"
+            )
+
+            with mock.patch.dict(os.environ, {"TARS_MEMORY_DIR": td}):
+                stats1 = build_index(model="test-model")
+                self.assertEqual(stats1["indexed"], 1)
+                self.assertGreater(stats1["chunks"], 0)
+
+                # Empty the file — chunker produces zero chunks
+                (d / "Memory.md").write_text("", encoding="utf-8")
+                stats2 = build_index(model="test-model")
+
+                self.assertEqual(stats2["indexed"], 1)
+                self.assertEqual(stats2["chunks"], 0)
+
+                # Verify no stale chunks remain in DB
+                conn = db._connect(d / "tars.db")
+                count = conn.execute(
+                    "SELECT count(*) as cnt FROM vec_chunks"
+                ).fetchone()["cnt"]
+                conn.close()
+                self.assertEqual(count, 0)
 
 
 class StartupIndexTests(unittest.TestCase):

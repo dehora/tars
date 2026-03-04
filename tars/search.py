@@ -322,13 +322,20 @@ def search_notes(query: str, **kwargs) -> list[SearchResult]:
     return search(query, db_path=_notes_db_path(), **kwargs)
 
 
+def _safe_int(val, default: int) -> int:
+    try:
+        return int(val)
+    except (TypeError, ValueError):
+        return default
+
+
 def _run_notes_search_tool(name: str, args: dict) -> str:
     """Handle notes_search tool calls."""
     query = args.get("query", "")
     limit = args.get("limit", 5)
     if not query:
         return json.dumps({"error": "query is required"})
-    window = min(max(int(args.get("window", 2)), 0), 5)
+    window = min(max(_safe_int(args.get("window", 2), 2), 0), 5)
     results = search_notes(query, limit=limit, window=window, max_context_chars=12000)
     if not results:
         return json.dumps({"results": [], "message": "No matching notes found."})
@@ -352,7 +359,7 @@ def _run_search_tool(name: str, args: dict) -> str:
     limit = args.get("limit", 5)
     if not query:
         return json.dumps({"error": "query is required"})
-    window = min(max(int(args.get("window", 1)), 0), 5)
+    window = min(max(_safe_int(args.get("window", 1), 1), 0), 5)
     results = search(query, limit=limit, window=window, max_context_chars=12000)
     if not results:
         return json.dumps({"results": [], "message": "No matching memories found."})

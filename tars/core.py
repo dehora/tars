@@ -120,7 +120,7 @@ def _search_relevant_context(opening_message: str, limit: int = 5) -> str:
     for r in deduped:
         cost = _estimate_tokens(r.content)
         if packed and used_tokens + cost > anchor_budget:
-            break
+            continue
         packed.append(r)
         used_tokens += cost
 
