@@ -44,6 +44,19 @@ class TestCaptureEnv(unittest.TestCase):
             self.assertEqual(env["TARS_MAX_TOKENS"], "2048")
 
     @mock.patch("tars.scheduler._load_dotenv_values", return_value={})
+    def test_captures_model_vars(self, _mock_dotenv):
+        env_vars = {
+            "TARS_MODEL_DEFAULT": "ollama:qwen3.5:27b",
+            "TARS_MODEL_REMOTE": "claude:claude-sonnet-4-5-20250929",
+            "TARS_MODEL_EMBEDDING": "qwen3-embedding:8b",
+            "TARS_MODEL_RETRIEVAL": "gemma3:4b",
+        }
+        with mock.patch.dict(os.environ, env_vars, clear=False):
+            env = _capture_env()
+        for key, val in env_vars.items():
+            self.assertEqual(env[key], val, f"{key} not captured")
+
+    @mock.patch("tars.scheduler._load_dotenv_values", return_value={})
     def test_ignores_unknown_vars(self, _mock_dotenv):
         with mock.patch.dict(os.environ, {"RANDOM_VAR": "nope"}, clear=False):
             env = _capture_env()

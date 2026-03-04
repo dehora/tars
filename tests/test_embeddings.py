@@ -116,5 +116,35 @@ class EmbeddingDimensionsTests(unittest.TestCase):
             embeddings.embedding_dimensions()
 
 
+class EmbeddingModelEnvTests(unittest.TestCase):
+    def test_default_when_unset(self) -> None:
+        with mock.patch.dict("os.environ", {}, clear=True):
+            import importlib
+            importlib.reload(embeddings)
+        self.assertEqual(embeddings.DEFAULT_EMBEDDING_MODEL, "qwen3-embedding:8b")
+        embeddings.ollama = _mock_ollama
+
+    def test_default_when_empty(self) -> None:
+        with mock.patch.dict("os.environ", {"TARS_MODEL_EMBEDDING": ""}, clear=True):
+            import importlib
+            importlib.reload(embeddings)
+        self.assertEqual(embeddings.DEFAULT_EMBEDDING_MODEL, "qwen3-embedding:8b")
+        embeddings.ollama = _mock_ollama
+
+    def test_default_when_whitespace(self) -> None:
+        with mock.patch.dict("os.environ", {"TARS_MODEL_EMBEDDING": "  "}, clear=True):
+            import importlib
+            importlib.reload(embeddings)
+        self.assertEqual(embeddings.DEFAULT_EMBEDDING_MODEL, "qwen3-embedding:8b")
+        embeddings.ollama = _mock_ollama
+
+    def test_explicit_override(self) -> None:
+        with mock.patch.dict("os.environ", {"TARS_MODEL_EMBEDDING": "nomic-embed-text"}, clear=True):
+            import importlib
+            importlib.reload(embeddings)
+        self.assertEqual(embeddings.DEFAULT_EMBEDDING_MODEL, "nomic-embed-text")
+        embeddings.ollama = _mock_ollama
+
+
 if __name__ == "__main__":
     unittest.main()

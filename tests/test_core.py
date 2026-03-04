@@ -510,18 +510,34 @@ class WeakResultExpansionTests(unittest.TestCase):
             result = core._search_relevant_context("borderline query")
         self.assertIn("original hit", result)
 
-    def test_expansion_at_limit_with_new_chunks_wins(self) -> None:
+    def test_expansion_at_limit_with_new_files_wins(self) -> None:
         baseline = [_make_result(i, 0, 0.20) for i in range(20)]
-        # Same count but includes a new chunk (file_id=99, rowid=9900)
+        # Includes a new file (file_id=99) — expansion adds coverage
         expanded = [_make_result(i, 0, 0.20) for i in range(19)]
-        expanded.append(_make_result(99, 0, 0.50, content="new chunk"))
+        expanded.append(_make_result(99, 0, 0.50, content="new file chunk"))
         with (
             mock.patch("tars.search.search", return_value=baseline),
             mock.patch("tars.search.search_expanded", return_value=expanded),
             mock.patch("tars.search.expand_results", return_value=[]),
         ):
             result = core._search_relevant_context("test at limit")
-        self.assertIn("new chunk", result)
+        self.assertIn("new file chunk", result)
+
+    def test_expansion_new_chunk_same_file_keeps_baseline(self) -> None:
+        baseline = [
+            _make_result(1, 0, 0.20, content="file1 baseline"),
+            _make_result(2, 0, 0.20, content="file2 baseline"),
+        ]
+        # Expanded returns different chunk from file_id=1 but drops file_id=2
+        expanded = [_make_result(1, 1, 0.25, content="file1 different chunk")]
+        with (
+            mock.patch("tars.search.search", return_value=baseline),
+            mock.patch("tars.search.search_expanded", return_value=expanded),
+            mock.patch("tars.search.expand_results", return_value=[]),
+        ):
+            result = core._search_relevant_context("test same file")
+        self.assertIn("file1 baseline", result)
+        self.assertIn("file2 baseline", result)
 
     def test_expansion_uses_no_min_score(self) -> None:
         weak = [_make_result(1, 0, 0.20)]
