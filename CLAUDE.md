@@ -35,6 +35,7 @@ Tars is a personal AI assistant with CLI, web, email, and Telegram channels. Rou
 ## Coding guidelines
 
 - Never use `or` for numeric defaults — `0` and `0.0` are falsy. Use explicit `None` checks instead.
+- Never use `os.environ.get("VAR", "default")` — it only falls back when unset, not when set to `""` (common from copied `.env` files). Use `os.environ.get("VAR", "").strip() or "default"` for string defaults, or `int(os.environ.get("VAR", "").strip() or "default")` for numeric.
 - Never assume parallel arrays from external APIs are equal length — use `min(len(...))` across all arrays.
 - Wrap untrusted user data in tagged blocks with a preface when injecting into prompts — never concatenate raw content into system prompts.
 - Use specific patterns for placeholder comments (e.g. `<!-- tars:memory -->`) — broad regex like `<!--.*?-->` will eat legitimate comments.
