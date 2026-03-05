@@ -19,7 +19,7 @@ Tars is a personal AI assistant with CLI, web, email, and Telegram channels. Rou
 ## Architecture
 
 ```
-[cli/web/email/telegram] → [conversation.py] → [core.py] → ollama / claude
+[cli/web/email/telegram] → [conversation.py] → [core.py] → ollama / claude / openai
                                      ↕
                                [tools.py] → todoist, weather, memory, search, web
                                      ↕                              ↕
@@ -27,7 +27,7 @@ Tars is a personal AI assistant with CLI, web, email, and Telegram channels. Rou
                           [search.py] ← sqlite-vec + FTS5 (tars.db)
 ```
 
-- **Memory types**: semantic (Memory.md), procedural (Procedural.md), episodic (session logs)
+- **Memory types**: semantic (Memory.md), procedural (Procedural.md), pinned (Pinned.md), episodic (session logs)
 - **Search**: hybrid FTS5 keyword + sqlite-vec KNN, fused with RRF
 - **Indexing**: markdown-aware chunking → ollama embeddings → sqlite-vec, incremental via content_hash
 - **Feedback loop**: `/w` → corrections.md, `/r` → rewards.md, `/review` → distills into Procedural.md
@@ -69,6 +69,8 @@ Tars is a personal AI assistant with CLI, web, email, and Telegram channels. Rou
 | `TARS_MEMORY_DIR` | — | Path to tars obsidian vault |
 | `TARS_NOTES_DIR` | — | Path to personal obsidian vault (daily notes) |
 | `TARS_MAX_TOKENS` | `1024` | Max tokens for Anthropic responses |
+| `TARS_OPENAI_BASE_URL` | `http://localhost:8000/v1` | Base URL for OpenAI-compatible API (vllm-mlx, llama.cpp, etc.) |
+| `TARS_OPENAI_API_KEY` | `not-set` | API key for OpenAI-compatible server (optional) |
 | `ANTHROPIC_API_KEY` | — | Required for Claude provider |
 | `TARS_EMAIL_ADDRESS` | — | Gmail address for tars email channel |
 | `TARS_EMAIL_PASSWORD` | — | Gmail app password |

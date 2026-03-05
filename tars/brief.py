@@ -4,12 +4,16 @@ import re
 
 from tars.colors import blue, bold, cyan, dim, red, yellow
 from tars.format import format_tool_result
+from tars.memory import _load_pinned
 from tars.tools import run_tool
 
 
 def build_brief_sections() -> list[tuple[str, str]]:
     """Run briefing tools and return (label, content) sections."""
     sections: list[tuple[str, str]] = []
+    pinned = _load_pinned()
+    if pinned.strip():
+        sections.append(("pinned", pinned.strip()))
     for label, tool_name in [
         ("tasks", "todoist_today"),
         ("weather", "weather_now"),

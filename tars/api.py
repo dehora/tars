@@ -311,7 +311,12 @@ def find_endpoint(q: str = "", limit: int = 10) -> dict:
 
 @app.get("/brief")
 def brief_endpoint() -> dict:
+    from tars.memory import _load_pinned
+
     sections = {}
+    pinned = _load_pinned()
+    if pinned.strip():
+        sections["pinned"] = pinned.strip()
     for name in ("todoist_today", "weather_now", "weather_forecast"):
         try:
             raw = run_tool(name, {}, quiet=True)

@@ -11,6 +11,7 @@ RECENT_SESSIONS_LIMIT = 2
 _MEMORY_FILES = {
     "semantic": "Memory.md",
     "procedural": "Procedural.md",
+    "pinned": "Pinned.md",
 }
 
 
@@ -41,6 +42,14 @@ def _load_memory() -> str:
 def _load_procedural() -> str:
     """Load Procedural.md — learned rules included in system prompt."""
     p = _memory_file("procedural")
+    if p is None or not p.exists():
+        return ""
+    return p.read_text(encoding="utf-8", errors="replace")
+
+
+def _load_pinned() -> str:
+    """Load Pinned.md — persistent items included in system prompt and brief."""
+    p = _memory_file("pinned")
     if p is None or not p.exists():
         return ""
     return p.read_text(encoding="utf-8", errors="replace")
@@ -227,7 +236,7 @@ def _run_memory_tool(name: str, args: dict) -> str:
     # memory_remember
     section = args["section"]
     if section not in _MEMORY_FILES:
-        return json.dumps({"error": "Invalid section; must be semantic or procedural"})
+        return json.dumps({"error": f"Invalid section; must be one of {', '.join(_MEMORY_FILES)}"})
     p = _memory_file(section)
     if p is None:
         return json.dumps({"error": "Memory not configured (TARS_MEMORY_DIR not set)"})

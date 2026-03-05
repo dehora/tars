@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from tars.format import format_tool_result
-from tars.memory import append_daily, save_correction, save_reward
+from tars.memory import _load_pinned, append_daily, save_correction, save_reward
 from tars.tools import run_tool
 
 if TYPE_CHECKING:
@@ -123,6 +123,9 @@ tools:
   /forecast        today's hourly forecast
   /memory          show persistent memory
   /remember <semantic|procedural> <text>
+  /pin <text>      pin an item (appears in brief + system prompt)
+  /unpin <text>    remove a pinned item
+  /pins            show pinned items
   /note <text>     append to today's daily note
   /capture <url> [--raw]  capture web page to vault
   /model           show active model configuration
@@ -226,6 +229,25 @@ def dispatch(
                 "memory_remember",
                 {"section": parts[1], "content": " ".join(parts[2:])},
             )
+        if cmd == "/pin":
+            if len(parts) < 2:
+                return "Usage: /pin <text>"
+            return _run_tool(
+                "memory_remember",
+                {"section": "pinned", "content": " ".join(parts[1:])},
+            )
+        if cmd == "/unpin":
+            if len(parts) < 2:
+                return "Usage: /unpin <text>"
+            return _run_tool(
+                "memory_forget",
+                {"content": " ".join(parts[1:])},
+            )
+        if cmd == "/pins":
+            content = _load_pinned()
+            if not content.strip():
+                return "No pinned items."
+            return content.strip()
         if cmd == "/note":
             if len(parts) < 2:
                 return "Usage: /note <text>"
@@ -603,7 +625,8 @@ def _dispatch_model(context: dict | None) -> str:
 
 
 _ALL_COMMANDS = {
-    "/todoist", "/weather", "/forecast", "/memory", "/remember", "/note",
+    "/todoist", "/weather", "/forecast", "/memory", "/remember",
+    "/pin", "/unpin", "/pins", "/note",
     "/read", "/capture", "/brief",
     "/search", "/sgrep", "/svec", "/find",
     "/sessions", "/session",

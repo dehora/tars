@@ -91,8 +91,8 @@ ANTHROPIC_TOOLS = [
                 "content": {"type": "string", "description": "The information to remember (a single line)"},
                 "section": {
                     "type": "string",
-                    "description": "Which memory section: 'semantic' for facts/preferences, 'procedural' for rules/patterns",
-                    "enum": ["semantic", "procedural"],
+                    "description": "Which memory section: 'semantic' for facts/preferences, 'procedural' for rules/patterns, 'pinned' for persistent brief items",
+                    "enum": ["semantic", "procedural", "pinned"],
                 },
             },
             "required": ["content", "section"],

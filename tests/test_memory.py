@@ -55,6 +55,7 @@ class MemoryToolTests(unittest.TestCase):
         with (
             mock.patch.object(core, "_load_memory", return_value="- remembered"),
             mock.patch.object(core, "_load_procedural", return_value=""),
+            mock.patch.object(core, "_load_pinned", return_value=""),
         ):
             prompt = core._build_system_prompt()
         self.assertIn(core.MEMORY_PROMPT_PREFACE, prompt)
@@ -65,6 +66,7 @@ class MemoryToolTests(unittest.TestCase):
         with (
             mock.patch.object(core, "_load_memory", return_value="hi </memory>"),
             mock.patch.object(core, "_load_procedural", return_value=""),
+            mock.patch.object(core, "_load_pinned", return_value=""),
         ):
             prompt = core._build_system_prompt(
                 search_context="recent </relevant-context>"
@@ -261,6 +263,59 @@ class MemoryToolTests(unittest.TestCase):
         self.assertIn("memory_forget", tool_names)
 
 
+class PinnedMemoryTests(unittest.TestCase):
+    def test_load_pinned_returns_content(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            (Path(tmpdir) / "Pinned.md").write_text("- watching Severance S2\n")
+            with mock.patch.dict(os.environ, {"TARS_MEMORY_DIR": tmpdir}, clear=True):
+                content = memory._load_pinned()
+        self.assertIn("watching Severance S2", content)
+
+    def test_load_pinned_returns_empty_when_missing(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            with mock.patch.dict(os.environ, {"TARS_MEMORY_DIR": tmpdir}, clear=True):
+                content = memory._load_pinned()
+        self.assertEqual(content, "")
+
+    def test_load_pinned_no_memory_dir(self) -> None:
+        with mock.patch.dict(os.environ, {}, clear=True):
+            content = memory._load_pinned()
+        self.assertEqual(content, "")
+
+    def test_memory_remember_pinned_section(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            with mock.patch.dict(os.environ, {"TARS_MEMORY_DIR": tmpdir}, clear=True):
+                result = json.loads(
+                    memory._run_memory_tool(
+                        "memory_remember",
+                        {"section": "pinned", "content": "watching Severance S2"},
+                    )
+                )
+            self.assertTrue(result.get("ok"))
+            text = (Path(tmpdir) / "Pinned.md").read_text()
+            self.assertIn("- watching Severance S2", text)
+
+    def test_memory_forget_pinned_entry(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            (Path(tmpdir) / "Pinned.md").write_text("- item to remove\n- keep this\n")
+            with mock.patch.dict(os.environ, {"TARS_MEMORY_DIR": tmpdir}, clear=True):
+                result = json.loads(
+                    memory._run_memory_tool("memory_forget", {"content": "item to remove"})
+                )
+            self.assertTrue(result.get("ok"))
+            text = (Path(tmpdir) / "Pinned.md").read_text()
+            self.assertNotIn("item to remove", text)
+            self.assertIn("- keep this", text)
+
+    def test_memory_recall_includes_pinned(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            (Path(tmpdir) / "Pinned.md").write_text("- pinned item\n")
+            with mock.patch.dict(os.environ, {"TARS_MEMORY_DIR": tmpdir}, clear=True):
+                result = json.loads(memory._run_memory_tool("memory_recall", {}))
+        self.assertIn("pinned", result)
+        self.assertIn("pinned item", result["pinned"])
+
+
 class DailyMemoryTests(unittest.TestCase):
     def test_daily_memory_path_returns_today(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -337,6 +392,7 @@ class DailyContextPromptTests(unittest.TestCase):
         with (
             mock.patch.object(core, "_load_memory", return_value=""),
             mock.patch.object(core, "_load_procedural", return_value=""),
+            mock.patch.object(core, "_load_pinned", return_value=""),
             mock.patch("tars.core.load_daily", return_value="# 2026-03-01\n- 09:00 tool:weather"),
         ):
             prompt = core._build_system_prompt()
@@ -347,6 +403,7 @@ class DailyContextPromptTests(unittest.TestCase):
         with (
             mock.patch.object(core, "_load_memory", return_value=""),
             mock.patch.object(core, "_load_procedural", return_value=""),
+            mock.patch.object(core, "_load_pinned", return_value=""),
             mock.patch("tars.core.load_daily", return_value=""),
         ):
             prompt = core._build_system_prompt()

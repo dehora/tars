@@ -407,7 +407,8 @@ class CentralizedDispatchTests(unittest.TestCase):
     def test_command_names_complete(self) -> None:
         names = command_names()
         expected = {
-            "/todoist", "/weather", "/forecast", "/memory", "/remember", "/note",
+            "/todoist", "/weather", "/forecast", "/memory", "/remember",
+            "/pin", "/unpin", "/pins", "/note",
             "/read", "/capture", "/brief",
             "/search", "/sgrep", "/svec", "/find",
             "/sessions", "/session",
@@ -434,6 +435,53 @@ class CentralizedDispatchTests(unittest.TestCase):
         conv = Conversation(id="test", provider="ollama", model="test")
         result = dispatch("/w", conv=conv, context={"channel": "cli"})
         self.assertIn("nothing to flag", result)
+
+
+class PinCommandTests(unittest.TestCase):
+    @mock.patch("tars.commands.run_tool", return_value='{"ok": true}')
+    def test_pin(self, mock_run) -> None:
+        result = dispatch("/pin watching Severance S2")
+        self.assertIsNotNone(result)
+        mock_run.assert_called_once_with(
+            "memory_remember",
+            {"section": "pinned", "content": "watching Severance S2"},
+            quiet=True,
+        )
+
+    def test_pin_no_content(self) -> None:
+        result = dispatch("/pin")
+        self.assertIn("Usage", result)
+
+    @mock.patch("tars.commands.run_tool", return_value='{"ok": true}')
+    def test_unpin(self, mock_run) -> None:
+        result = dispatch("/unpin watching Severance S2")
+        self.assertIsNotNone(result)
+        mock_run.assert_called_once_with(
+            "memory_forget",
+            {"content": "watching Severance S2"},
+            quiet=True,
+        )
+
+    def test_unpin_no_content(self) -> None:
+        result = dispatch("/unpin")
+        self.assertIn("Usage", result)
+
+    @mock.patch("tars.commands._load_pinned", return_value="- watching Severance S2\n- reading Dune\n")
+    def test_pins_shows_content(self, mock_load) -> None:
+        result = dispatch("/pins")
+        self.assertIn("watching Severance S2", result)
+        self.assertIn("reading Dune", result)
+
+    @mock.patch("tars.commands._load_pinned", return_value="")
+    def test_pins_empty(self, mock_load) -> None:
+        result = dispatch("/pins")
+        self.assertEqual(result, "No pinned items.")
+
+    def test_command_names_include_pin_commands(self) -> None:
+        names = command_names()
+        self.assertIn("/pin", names)
+        self.assertIn("/unpin", names)
+        self.assertIn("/pins", names)
 
 
 class ReviewTidyToolLeakageTests(unittest.TestCase):
