@@ -12,6 +12,7 @@ dependencies = [
     "fastapi[standard]>=0.115.0",
     "python-telegram-bot>=22.6",
     "mcp>=1.26.0",
+    "openai>=2.24.0",
 ]
 
 [project.scripts]

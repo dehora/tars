@@ -1,14 +1,25 @@
+import json
 import os
 from collections.abc import Generator
 
 import anthropic
 import ollama
+import openai
 
 from tars.debug import verbose
-from tars.memory import _load_memory, _load_procedural, append_daily, load_daily
+from tars.memory import _load_memory, _load_pinned, _load_procedural, append_daily, load_daily
 from tars.tools import ANTHROPIC_TOOLS, OLLAMA_TOOLS, get_all_tools, run_tool
 
-_MAX_TOKENS = int(os.environ.get("TARS_MAX_TOKENS", "").strip() or "1024")
+def _openai_base_url() -> str:
+    return os.environ.get("TARS_OPENAI_BASE_URL", "").strip() or "http://localhost:8000/v1"
+
+
+def _openai_api_key() -> str:
+    return os.environ.get("TARS_OPENAI_API_KEY", "").strip() or "not-set"
+
+
+def _max_tokens() -> int:
+    return int(os.environ.get("TARS_MAX_TOKENS", "").strip() or "1024")
 _MAX_DAILY_LINES = 50
 _MAX_TOOL_ROUNDS = 10
 CLAUDE_MODELS = {
@@ -47,7 +58,8 @@ preferences, and rules the user shares. Use memory_recall to check existing \
 memory before adding — avoid duplicates. When new information contradicts \
 existing memory, update the existing entry rather than appending. \
 Use memory_forget to remove entries that are no longer true or relevant. \
-Sections: "semantic" for facts/preferences, "procedural" for rules/patterns. \
+Sections: "semantic" for facts/preferences, "procedural" for rules/patterns, \
+"pinned" for persistent items that appear in the daily brief. \
 Use memory_search to find relevant past conversations, facts, or context \
 when the user asks about something that might be in memory.
 
@@ -220,7 +232,8 @@ def _build_system_prompt(*, search_context: str = "", tool_hints: list[str] | No
 
     procedural = _load_procedural()
     memory = _load_memory()
-    has_untrusted = bool(procedural or memory or search_context)
+    pinned = _load_pinned()
+    has_untrusted = bool(procedural or memory or pinned or search_context)
 
     if has_untrusted:
         prompt += f"\n\n---\n\n{MEMORY_PROMPT_PREFACE}"
@@ -228,6 +241,8 @@ def _build_system_prompt(*, search_context: str = "", tool_hints: list[str] | No
         prompt += f"\n\n<procedural-rules>\n{_escape_prompt_block(procedural)}\n</procedural-rules>"
     if memory:
         prompt += f"\n\n<memory>\n{_escape_prompt_block(memory)}\n</memory>"
+    if pinned:
+        prompt += f"\n\n<pinned>\n{_escape_prompt_block(pinned)}\n</pinned>"
     if search_context:
         prompt += f"\n\n<relevant-context>\n{_escape_prompt_block(search_context)}\n</relevant-context>"
     daily = load_daily()
@@ -258,7 +273,7 @@ def chat_anthropic(
 
     for _round in range(_MAX_TOOL_ROUNDS):
         kwargs: dict = dict(
-            model=resolved, max_tokens=_MAX_TOKENS,
+            model=resolved, max_tokens=_max_tokens(),
             system=_build_system_prompt(search_context=search_context, tool_hints=tool_hints),
             messages=local_messages,
         )
@@ -327,6 +342,53 @@ def chat_ollama(
     return "I've reached the maximum number of tool calls. Please try again."
 
 
+def _parse_tool_arguments(raw: str | dict) -> dict:
+    """Parse tool call arguments from OpenAI-format (JSON string) or dict."""
+    if isinstance(raw, dict):
+        return raw
+    try:
+        return json.loads(raw)
+    except (json.JSONDecodeError, TypeError):
+        return {}
+
+
+def chat_openai(
+    messages: list[dict], model: str, *,
+    search_context: str = "", use_tools: bool = True, tool_hints: list[str] | None = None,
+) -> str:
+    client = openai.OpenAI(base_url=_openai_base_url(), api_key=_openai_api_key())
+    system = _build_system_prompt(search_context=search_context, tool_hints=tool_hints)
+    local_messages = [{"role": "system", "content": system}]
+    local_messages.extend(m.copy() for m in messages)
+    tools = _get_tools("ollama") if use_tools else []
+
+    for _round in range(_MAX_TOOL_ROUNDS):
+        kwargs: dict = dict(model=model, messages=local_messages, max_completion_tokens=_max_tokens())
+        if tools:
+            kwargs["tools"] = tools
+        response = client.chat.completions.create(**kwargs)
+        choice = response.choices[0]
+
+        if choice.finish_reason != "tool_calls":
+            return choice.message.content or ""
+
+        local_messages.append(choice.message)
+        for tc in choice.message.tool_calls:
+            args = _parse_tool_arguments(tc.function.arguments)
+            result = run_tool(tc.function.name, args)
+            local_messages.append({
+                "role": "tool",
+                "tool_call_id": tc.id,
+                "content": result,
+            })
+            try:
+                append_daily(f"tool:{tc.function.name} — {result[:80]}")
+            except Exception:
+                pass
+
+    return "I've reached the maximum number of tool calls. Please try again."
+
+
 def chat(
     messages: list[dict], provider: str, model: str,
     *, search_context: str = "", use_tools: bool = True, tool_hints: list[str] | None = None,
@@ -335,6 +397,8 @@ def chat(
         return chat_anthropic(messages, model, search_context=search_context, use_tools=use_tools, tool_hints=tool_hints)
     if provider == "ollama":
         return chat_ollama(messages, model, search_context=search_context, use_tools=use_tools, tool_hints=tool_hints)
+    if provider == "openai":
+        return chat_openai(messages, model, search_context=search_context, use_tools=use_tools, tool_hints=tool_hints)
     raise ValueError(f"Unknown provider: {provider}")
 
 
@@ -379,7 +443,7 @@ def chat_anthropic_stream(
         # Keep going until the model stops requesting tools.
         for _round in range(_MAX_TOOL_ROUNDS):
             response = client.messages.create(
-                model=resolved, max_tokens=_MAX_TOKENS,
+                model=resolved, max_tokens=_max_tokens(),
                 system=system, messages=local_messages, tools=tools,
             )
 
@@ -408,7 +472,7 @@ def chat_anthropic_stream(
 
     # Step 2: stream the final response.
     stream_kwargs: dict = dict(
-        model=resolved, max_tokens=_MAX_TOKENS,
+        model=resolved, max_tokens=_max_tokens(),
         system=system, messages=local_messages,
     )
     if tools:
@@ -455,6 +519,55 @@ def chat_ollama_stream(
             yield chunk.message.content
 
 
+def chat_openai_stream(
+    messages: list[dict], model: str, *,
+    search_context: str = "", use_tools: bool = True, tool_hints: list[str] | None = None,
+) -> Generator[str, None, None]:
+    """Streaming version of chat_openai. Yields text deltas."""
+    client = openai.OpenAI(base_url=_openai_base_url(), api_key=_openai_api_key())
+    system = _build_system_prompt(search_context=search_context, tool_hints=tool_hints)
+    local_messages = [{"role": "system", "content": system}]
+    local_messages.extend(m.copy() for m in messages)
+
+    tools = _get_tools("ollama") if use_tools else []
+
+    if tools:
+        for _round in range(_MAX_TOOL_ROUNDS):
+            response = client.chat.completions.create(
+                model=model, messages=local_messages,
+                max_completion_tokens=_max_tokens(), tools=tools,
+            )
+            choice = response.choices[0]
+
+            if choice.finish_reason != "tool_calls":
+                break
+
+            local_messages.append(choice.message)
+            for tc in choice.message.tool_calls:
+                args = _parse_tool_arguments(tc.function.arguments)
+                result = run_tool(tc.function.name, args)
+                local_messages.append({
+                    "role": "tool",
+                    "tool_call_id": tc.id,
+                    "content": result,
+                })
+                try:
+                    append_daily(f"tool:{tc.function.name} — {result[:80]}")
+                except Exception:
+                    pass
+        else:
+            yield "I've reached the maximum number of tool calls. Please try again."
+            return
+
+    with client.chat.completions.create(
+        model=model, messages=local_messages,
+        max_completion_tokens=_max_tokens(), stream=True,
+    ) as stream:
+        for chunk in stream:
+            if chunk.choices and chunk.choices[0].delta.content:
+                yield chunk.choices[0].delta.content
+
+
 def chat_stream(
     messages: list[dict], provider: str, model: str, *,
     search_context: str = "", use_tools: bool = True, tool_hints: list[str] | None = None,
@@ -464,5 +577,7 @@ def chat_stream(
         yield from chat_anthropic_stream(messages, model, search_context=search_context, use_tools=use_tools, tool_hints=tool_hints)
     elif provider == "ollama":
         yield from chat_ollama_stream(messages, model, search_context=search_context, use_tools=use_tools, tool_hints=tool_hints)
+    elif provider == "openai":
+        yield from chat_openai_stream(messages, model, search_context=search_context, use_tools=use_tools, tool_hints=tool_hints)
     else:
         raise ValueError(f"Unknown provider: {provider}")

@@ -6,7 +6,18 @@ from unittest import mock
 
 sys.modules.setdefault("anthropic", mock.Mock())
 sys.modules.setdefault("ollama", mock.Mock())
+sys.modules.setdefault("openai", mock.Mock())
 sys.modules.setdefault("dotenv", mock.Mock(load_dotenv=lambda: None))
+
+# Ensure mock modules have real exception classes (needed by conversation._PROVIDER_ERRORS).
+_APIStatusError = type("APIStatusError", (Exception,), {"status_code": 0})
+sys.modules["anthropic"].APIStatusError = _APIStatusError
+sys.modules["anthropic"].APIConnectionError = type("APIConnectionError", (Exception,), {})
+sys.modules["anthropic"].APITimeoutError = type("APITimeoutError", (Exception,), {})
+_OAIAPIStatusError = type("APIStatusError", (Exception,), {"status_code": 0})
+sys.modules["openai"].APIStatusError = _OAIAPIStatusError
+sys.modules["openai"].APIConnectionError = type("APIConnectionError", (Exception,), {})
+sys.modules["openai"].APITimeoutError = type("APITimeoutError", (Exception,), {})
 
 from tars import api, conversation
 from tars.search import SearchResult

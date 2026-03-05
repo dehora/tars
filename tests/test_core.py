@@ -4,6 +4,7 @@ from unittest import mock
 
 sys.modules.setdefault("anthropic", mock.Mock())
 sys.modules.setdefault("ollama", mock.Mock())
+sys.modules.setdefault("openai", mock.Mock())
 sys.modules.setdefault("dotenv", mock.Mock(load_dotenv=lambda: None))
 
 from tars import core
@@ -63,6 +64,7 @@ class BuildSystemPromptTests(unittest.TestCase):
         with (
             mock.patch.object(core, "_load_memory", return_value=""),
             mock.patch.object(core, "_load_procedural", return_value=""),
+            mock.patch.object(core, "_load_pinned", return_value=""),
         ):
             prompt = core._build_system_prompt()
         self.assertEqual(prompt, core.SYSTEM_PROMPT)
@@ -72,6 +74,7 @@ class BuildSystemPromptTests(unittest.TestCase):
         with (
             mock.patch.object(core, "_load_memory", return_value="- fact"),
             mock.patch.object(core, "_load_procedural", return_value=""),
+            mock.patch.object(core, "_load_pinned", return_value=""),
         ):
             prompt = core._build_system_prompt()
         self.assertIn("<memory>", prompt)
@@ -81,6 +84,7 @@ class BuildSystemPromptTests(unittest.TestCase):
         with (
             mock.patch.object(core, "_load_memory", return_value=""),
             mock.patch.object(core, "_load_procedural", return_value=""),
+            mock.patch.object(core, "_load_pinned", return_value=""),
         ):
             prompt = core._build_system_prompt(search_context="recent stuff")
         self.assertIn("<relevant-context>", prompt)
@@ -90,6 +94,7 @@ class BuildSystemPromptTests(unittest.TestCase):
         with (
             mock.patch.object(core, "_load_memory", return_value=""),
             mock.patch.object(core, "_load_procedural", return_value=""),
+            mock.patch.object(core, "_load_pinned", return_value=""),
         ):
             prompt = core._build_system_prompt(tool_hints=["todoist_add_task", "weather_now"])
         self.assertIn("<tool-hints>", prompt)
@@ -100,6 +105,7 @@ class BuildSystemPromptTests(unittest.TestCase):
         with (
             mock.patch.object(core, "_load_memory", return_value=""),
             mock.patch.object(core, "_load_procedural", return_value="- always confirm tasks"),
+            mock.patch.object(core, "_load_pinned", return_value=""),
         ):
             prompt = core._build_system_prompt()
         self.assertIn("<procedural-rules>", prompt)
@@ -109,14 +115,36 @@ class BuildSystemPromptTests(unittest.TestCase):
         with (
             mock.patch.object(core, "_load_memory", return_value=""),
             mock.patch.object(core, "_load_procedural", return_value=""),
+            mock.patch.object(core, "_load_pinned", return_value=""),
         ):
             prompt = core._build_system_prompt()
         self.assertNotIn("<procedural-rules>", prompt)
+
+    def test_with_pinned(self) -> None:
+        with (
+            mock.patch.object(core, "_load_memory", return_value=""),
+            mock.patch.object(core, "_load_procedural", return_value=""),
+            mock.patch.object(core, "_load_pinned", return_value="- watching Severance S2"),
+        ):
+            prompt = core._build_system_prompt()
+        self.assertIn("<pinned>", prompt)
+        self.assertIn("watching Severance S2", prompt)
+        self.assertIn(core.MEMORY_PROMPT_PREFACE, prompt)
+
+    def test_pinned_empty_excluded(self) -> None:
+        with (
+            mock.patch.object(core, "_load_memory", return_value=""),
+            mock.patch.object(core, "_load_procedural", return_value=""),
+            mock.patch.object(core, "_load_pinned", return_value=""),
+        ):
+            prompt = core._build_system_prompt()
+        self.assertNotIn("<pinned>", prompt)
 
     def test_tool_hints_before_untrusted(self) -> None:
         with (
             mock.patch.object(core, "_load_memory", return_value="- fact"),
             mock.patch.object(core, "_load_procedural", return_value=""),
+            mock.patch.object(core, "_load_pinned", return_value=""),
         ):
             prompt = core._build_system_prompt(tool_hints=["weather_now"])
         hints_pos = prompt.index("<tool-hints>")
@@ -131,6 +159,7 @@ class DailyContextCapTests(unittest.TestCase):
         with (
             mock.patch.object(core, "_load_memory", return_value=""),
             mock.patch.object(core, "_load_procedural", return_value=""),
+            mock.patch.object(core, "_load_pinned", return_value=""),
             mock.patch.object(core, "load_daily", return_value=big_daily),
         ):
             prompt = core._build_system_prompt()
@@ -145,6 +174,7 @@ class DailyContextCapTests(unittest.TestCase):
         with (
             mock.patch.object(core, "_load_memory", return_value=""),
             mock.patch.object(core, "_load_procedural", return_value=""),
+            mock.patch.object(core, "_load_pinned", return_value=""),
             mock.patch.object(core, "load_daily", return_value=daily),
         ):
             prompt = core._build_system_prompt()
@@ -445,6 +475,7 @@ class DailyContextProvenanceTests(unittest.TestCase):
         with (
             mock.patch.object(core, "_load_memory", return_value=""),
             mock.patch.object(core, "_load_procedural", return_value=""),
+            mock.patch.object(core, "_load_pinned", return_value=""),
             mock.patch.object(core, "load_daily", return_value="- 08:00 captured: example.com"),
         ):
             prompt = core._build_system_prompt()

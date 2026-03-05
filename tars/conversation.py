@@ -4,6 +4,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 import anthropic
+import openai
 
 from tars.config import ModelConfig
 from tars.core import _search_relevant_context, chat, chat_stream
@@ -15,6 +16,11 @@ from tars.sessions import (
     SESSION_COMPACTION_INTERVAL,
     _save_session,
     _summarize_session,
+)
+
+_PROVIDER_ERRORS = (
+    anthropic.APIStatusError, anthropic.APIConnectionError, anthropic.APITimeoutError,
+    openai.APIStatusError, openai.APIConnectionError, openai.APITimeoutError,
 )
 
 
@@ -69,7 +75,7 @@ _FALLBACK_STATUS_CODES = {408, 409, 429, 529}
 
 
 def _should_fallback(exc: Exception) -> bool:
-    if isinstance(exc, anthropic.APIStatusError):
+    if isinstance(exc, (anthropic.APIStatusError, openai.APIStatusError)):
         status = getattr(exc, "status_code", None)
         if status is None:
             return False
@@ -78,9 +84,9 @@ def _should_fallback(exc: Exception) -> bool:
         if 500 <= status <= 599:
             return True
         return False
-    if isinstance(exc, anthropic.APIConnectionError):
+    if isinstance(exc, (anthropic.APIConnectionError, openai.APIConnectionError)):
         return True
-    if isinstance(exc, anthropic.APITimeoutError):
+    if isinstance(exc, (anthropic.APITimeoutError, openai.APITimeoutError)):
         return True
     return False
 
@@ -107,7 +113,7 @@ def process_message(
         )
         conv.last_provider = provider
         conv.last_model = model
-    except (anthropic.APIStatusError, anthropic.APIConnectionError, anthropic.APITimeoutError) as exc:
+    except _PROVIDER_ERRORS as exc:
         if not escalated or not _should_fallback(exc):
             raise
         status = getattr(exc, "status_code", "connection")
@@ -159,7 +165,7 @@ def process_message_stream(
             conv.last_model = model
             full_reply = [reply]
             yield reply
-        except (anthropic.APIStatusError, anthropic.APIConnectionError, anthropic.APITimeoutError) as exc:
+        except _PROVIDER_ERRORS as exc:
             if not _should_fallback(exc):
                 raise
             status = getattr(exc, "status_code", "connection")

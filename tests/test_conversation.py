@@ -6,6 +6,7 @@ from unittest import mock
 
 sys.modules.setdefault("anthropic", mock.Mock())
 sys.modules.setdefault("ollama", mock.Mock())
+sys.modules.setdefault("openai", mock.Mock())
 sys.modules.setdefault("dotenv", mock.Mock(load_dotenv=lambda: None))
 
 # Ensure the anthropic mock has real exception classes for fallback tests.
@@ -16,6 +17,11 @@ sys.modules["anthropic"].RateLimitError = type("RateLimitError", (_APIStatusErro
 sys.modules["anthropic"].BadRequestError = type("BadRequestError", (_APIStatusError,), {"status_code": 400})
 sys.modules["anthropic"].APIConnectionError = type("APIConnectionError", (Exception,), {})
 sys.modules["anthropic"].APITimeoutError = type("APITimeoutError", (Exception,), {})
+
+_OAIAPIStatusError = type("APIStatusError", (Exception,), {"status_code": 0})
+sys.modules["openai"].APIStatusError = _OAIAPIStatusError
+sys.modules["openai"].APIConnectionError = type("APIConnectionError", (Exception,), {})
+sys.modules["openai"].APITimeoutError = type("APITimeoutError", (Exception,), {})
 
 from tars import conversation
 from tars.conversation import Conversation, process_message, process_message_stream, save_session
@@ -142,6 +148,16 @@ class ProcessMessageStreamTests(unittest.TestCase):
 
 
 class EscalationFallbackTests(unittest.TestCase):
+    def setUp(self) -> None:
+        conversation._PROVIDER_ERRORS = (
+            sys.modules["anthropic"].APIStatusError,
+            sys.modules["anthropic"].APIConnectionError,
+            sys.modules["anthropic"].APITimeoutError,
+            sys.modules["openai"].APIStatusError,
+            sys.modules["openai"].APIConnectionError,
+            sys.modules["openai"].APITimeoutError,
+        )
+
     def _api_error(self, cls_name: str = "RateLimitError"):
         _anthropic = sys.modules["anthropic"]
         return getattr(_anthropic, cls_name)("error")
@@ -318,6 +334,88 @@ class SaveSessionTests(unittest.TestCase):
         with mock.patch.object(conversation, "_summarize_session") as summarize:
             save_session(conv, None)
         summarize.assert_not_called()
+
+
+class OpenAIEscalationFallbackTests(unittest.TestCase):
+    def setUp(self) -> None:
+        conversation._PROVIDER_ERRORS = (
+            sys.modules["anthropic"].APIStatusError,
+            sys.modules["anthropic"].APIConnectionError,
+            sys.modules["anthropic"].APITimeoutError,
+            sys.modules["openai"].APIStatusError,
+            sys.modules["openai"].APIConnectionError,
+            sys.modules["openai"].APITimeoutError,
+        )
+
+    def _oai_error(self, status_code: int):
+        cls = type("OAIStatusError", (sys.modules["openai"].APIStatusError,), {"status_code": status_code})
+        return cls("error")
+
+    def _oai_connection_error(self):
+        return sys.modules["openai"].APIConnectionError("error")
+
+    def _oai_timeout_error(self):
+        return sys.modules["openai"].APITimeoutError("error")
+
+    def test_openai_rate_limit_falls_back(self) -> None:
+        conv = Conversation(id="test", provider="ollama", model="llama3.1:8b")
+        with (
+            mock.patch.object(conversation, "route_message", return_value=RouteResult("openai", "qwen3.5")),
+            mock.patch.object(
+                conversation, "chat",
+                side_effect=[self._oai_error(429), "fallback reply"],
+            ) as chat_mock,
+        ):
+            reply = process_message(conv, "hello")
+        self.assertEqual(reply, "fallback reply")
+        self.assertEqual(chat_mock.call_count, 2)
+
+    def test_openai_connection_error_falls_back(self) -> None:
+        conv = Conversation(id="test", provider="ollama", model="llama3.1:8b")
+        with (
+            mock.patch.object(conversation, "route_message", return_value=RouteResult("openai", "qwen3.5")),
+            mock.patch.object(
+                conversation, "chat",
+                side_effect=[self._oai_connection_error(), "fallback reply"],
+            ),
+        ):
+            reply = process_message(conv, "hello")
+        self.assertEqual(reply, "fallback reply")
+
+    def test_openai_timeout_falls_back(self) -> None:
+        conv = Conversation(id="test", provider="ollama", model="llama3.1:8b")
+        with (
+            mock.patch.object(conversation, "route_message", return_value=RouteResult("openai", "qwen3.5")),
+            mock.patch.object(
+                conversation, "chat",
+                side_effect=[self._oai_timeout_error(), "fallback reply"],
+            ),
+        ):
+            reply = process_message(conv, "hello")
+        self.assertEqual(reply, "fallback reply")
+
+    def test_openai_bad_request_does_not_fall_back(self) -> None:
+        conv = Conversation(id="test", provider="ollama", model="llama3.1:8b")
+        with (
+            mock.patch.object(conversation, "route_message", return_value=RouteResult("openai", "qwen3.5")),
+            mock.patch.object(
+                conversation, "chat",
+                side_effect=self._oai_error(400),
+            ),
+        ):
+            _openai = sys.modules["openai"]
+            with self.assertRaises(_openai.APIStatusError):
+                process_message(conv, "hello")
+
+    def test_stream_openai_rate_limit_falls_back(self) -> None:
+        conv = Conversation(id="test", provider="ollama", model="llama3.1:8b")
+        with (
+            mock.patch.object(conversation, "route_message", return_value=RouteResult("openai", "qwen3.5")),
+            mock.patch.object(conversation, "chat", side_effect=self._oai_error(429)),
+            mock.patch.object(conversation, "chat_stream", return_value=iter(["fall", "back"])),
+        ):
+            deltas = list(process_message_stream(conv, "hello"))
+        self.assertEqual(deltas, ["fall", "back"])
 
 
 if __name__ == "__main__":
