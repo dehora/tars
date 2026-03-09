@@ -47,11 +47,13 @@ Tars is a personal AI assistant with CLI, web, email, and Telegram channels. Rou
 - Validate filenames from external input — reject path separators (`..`, `/`, `\`) and use `resolve().is_relative_to()` to prevent traversal.
 - Use `hmac.compare_digest()` for token/secret comparisons — never use `==` which is timing-vulnerable.
 - Clamp user-supplied numeric parameters (limit, offset) to sane ranges — never pass unbounded values to queries.
-- Validate enum-like parameters against an explicit allowlist — never pass user strings directly to mode/type selectors.
+- Validate enum-like parameters against an explicit allowlist — never pass user strings directly to mode/type selectors. For optional enum params, reject invalid values with an error instead of falling through to a broad default (an invalid section shouldn't silently search all sections).
 - Bound all tool-calling loops — never use `while True` for model→tool→model cycles; cap iterations and return a fallback.
 - Use `chmod 0o600` on generated config files that contain secrets (plists, systemd units, `.env` copies).
 - Quote and escape values in generated config files (systemd `Environment=`) — strip newlines to prevent injection.
 - Shared startup/teardown lives in `services.py` — use `start_services()`/`stop_services()` instead of inlining MCP + TaskRunner setup.
+- When refactoring an API endpoint to reuse shared code, preserve the external response schema — map internal names back to the documented API keys so clients don't break silently.
+- State-setting functions must compute full state, not just set-to-true — a `configure(enable)` that only acts when `enable=True` creates sticky state that survives across calls. Assign the complete value unconditionally (e.g. `VERBOSE = enable or env_on`).
 - Comments:
       - Write self-documenting code and prefer clear names over comments.
       - Never add comments that restate what code does.
