@@ -315,9 +315,9 @@ class ChatEndpointTests(unittest.TestCase):
             resp = self.client.get("/brief")
         self.assertEqual(resp.status_code, 200)
         data = resp.json()
-        self.assertIn("tasks", data["sections"])
-        self.assertIn("weather", data["sections"])
-        self.assertIn("forecast", data["sections"])
+        self.assertIn("todoist_today", data["sections"])
+        self.assertIn("weather_now", data["sections"])
+        self.assertIn("weather_forecast", data["sections"])
 
     def test_brief_endpoint_handles_failure(self) -> None:
         def fake_run_tool(name, args, *, quiet=False):
@@ -334,8 +334,8 @@ class ChatEndpointTests(unittest.TestCase):
             resp = self.client.get("/brief")
         self.assertEqual(resp.status_code, 200)
         data = resp.json()
-        self.assertIn("unavailable", data["sections"]["tasks"])
-        self.assertNotIn("unavailable", data["sections"]["weather"])
+        self.assertIn("unavailable", data["sections"]["todoist_today"])
+        self.assertNotIn("unavailable", data["sections"]["weather_now"])
 
     def test_brief_endpoint_pinned_load_failure(self) -> None:
         with (

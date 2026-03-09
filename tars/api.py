@@ -311,11 +311,21 @@ def find_endpoint(q: str = "", limit: int = 10) -> dict:
     }
 
 
+_BRIEF_LABEL_TO_API_KEY = {
+    "tasks": "todoist_today",
+    "weather": "weather_now",
+    "forecast": "weather_forecast",
+}
+
+
 @app.get("/brief")
 def brief_endpoint() -> dict:
     from tars.brief import build_brief_sections
 
-    sections = {label: content for label, content in build_brief_sections()}
+    sections = {
+        _BRIEF_LABEL_TO_API_KEY.get(label, label): content
+        for label, content in build_brief_sections()
+    }
     return {"sections": sections}
 
 

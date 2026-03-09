@@ -461,8 +461,7 @@ def main():
     args = parser.parse_args(raw_args)
     args.message = message_args
 
-    if args.verbose:
-        debug.configure(enable=True)
+    debug.configure(from_env=True, enable=args.verbose)
 
     if args.command == "index":
         _run_index(args.embedding_model)
