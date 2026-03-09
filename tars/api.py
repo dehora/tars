@@ -313,18 +313,9 @@ def find_endpoint(q: str = "", limit: int = 10) -> dict:
 
 @app.get("/brief")
 def brief_endpoint() -> dict:
-    from tars.memory import _load_pinned
+    from tars.brief import build_brief_sections
 
-    sections = {}
-    pinned = _load_pinned()
-    if pinned.strip():
-        sections["pinned"] = pinned.strip()
-    for name in ("todoist_today", "weather_now", "weather_forecast"):
-        try:
-            raw = run_tool(name, {}, quiet=True)
-            sections[name] = format_tool_result(name, raw)
-        except Exception as e:
-            sections[name] = f"unavailable: {e}"
+    sections = {label: content for label, content in build_brief_sections()}
     return {"sections": sections}
 
 

@@ -35,10 +35,16 @@ class ConfigureTests(unittest.TestCase):
         debug.configure(enable=True)
         self.assertTrue(debug.VERBOSE)
 
-    def test_configure_enable_false_does_not_change(self) -> None:
+    def test_configure_enable_false_clears(self) -> None:
         debug.VERBOSE = True
         debug.configure(enable=False)
-        self.assertTrue(debug.VERBOSE)
+        self.assertFalse(debug.VERBOSE)
+
+    def test_configure_from_env_unset_clears(self) -> None:
+        debug.VERBOSE = True
+        with mock.patch.dict(os.environ, {}, clear=True):
+            debug.configure(from_env=True)
+        self.assertFalse(debug.VERBOSE)
 
     def test_default_verbose_is_false(self) -> None:
         debug.VERBOSE = False

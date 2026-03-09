@@ -307,6 +307,16 @@ class PinnedMemoryTests(unittest.TestCase):
             self.assertNotIn("item to remove", text)
             self.assertIn("- keep this", text)
 
+    def test_memory_forget_invalid_section_returns_error(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            (Path(tmpdir) / "Pinned.md").write_text("- item\n")
+            with mock.patch.dict(os.environ, {"TARS_MEMORY_DIR": tmpdir}, clear=True):
+                result = json.loads(
+                    memory._run_memory_tool("memory_forget", {"content": "item", "section": "pinnd"})
+                )
+            self.assertIn("Invalid section", result.get("error", ""))
+            self.assertIn("- item", (Path(tmpdir) / "Pinned.md").read_text())
+
     def test_memory_forget_pinned_section_only(self) -> None:
         """memory_forget with section='pinned' only removes from Pinned.md, not semantic."""
         with tempfile.TemporaryDirectory() as tmpdir:

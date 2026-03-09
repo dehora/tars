@@ -13,10 +13,8 @@ _active_spinner = None
 def configure(*, from_env: bool = False, enable: bool = False):
     """Set VERBOSE from env and/or explicit flag. Call after load_dotenv()."""
     global VERBOSE
-    if from_env and os.environ.get("TARS_VERBOSE", "").strip() == "1":
-        VERBOSE = True
-    if enable:
-        VERBOSE = True
+    env_on = from_env and os.environ.get("TARS_VERBOSE", "").strip() == "1"
+    VERBOSE = enable or env_on
 
 
 def set_spinner(spinner):

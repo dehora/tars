@@ -308,13 +308,16 @@ class ChatEndpointTests(unittest.TestCase):
                 return '{"hourly": []}'
             return '{}'
 
-        with mock.patch.object(api, "run_tool", side_effect=fake_run_tool):
+        with (
+            mock.patch("tars.brief.run_tool", side_effect=fake_run_tool),
+            mock.patch("tars.brief._load_pinned", return_value=""),
+        ):
             resp = self.client.get("/brief")
         self.assertEqual(resp.status_code, 200)
         data = resp.json()
-        self.assertIn("todoist_today", data["sections"])
-        self.assertIn("weather_now", data["sections"])
-        self.assertIn("weather_forecast", data["sections"])
+        self.assertIn("tasks", data["sections"])
+        self.assertIn("weather", data["sections"])
+        self.assertIn("forecast", data["sections"])
 
     def test_brief_endpoint_handles_failure(self) -> None:
         def fake_run_tool(name, args, *, quiet=False):
@@ -324,12 +327,25 @@ class ChatEndpointTests(unittest.TestCase):
                 return '{"current": {"temperature_c": 10, "conditions": "Clear", "wind_speed_kmh": 5, "precipitation_mm": 0}}'
             return '{"hourly": []}'
 
-        with mock.patch.object(api, "run_tool", side_effect=fake_run_tool):
+        with (
+            mock.patch("tars.brief.run_tool", side_effect=fake_run_tool),
+            mock.patch("tars.brief._load_pinned", return_value=""),
+        ):
             resp = self.client.get("/brief")
         self.assertEqual(resp.status_code, 200)
         data = resp.json()
-        self.assertIn("unavailable", data["sections"]["todoist_today"])
-        self.assertNotIn("unavailable", data["sections"]["weather_now"])
+        self.assertIn("unavailable", data["sections"]["tasks"])
+        self.assertNotIn("unavailable", data["sections"]["weather"])
+
+    def test_brief_endpoint_pinned_load_failure(self) -> None:
+        with (
+            mock.patch("tars.brief._load_pinned", side_effect=OSError("disk")),
+            mock.patch("tars.brief.run_tool", return_value='{}'),
+        ):
+            resp = self.client.get("/brief")
+        self.assertEqual(resp.status_code, 200)
+        data = resp.json()
+        self.assertNotIn("pinned", data["sections"])
 
 
     def test_mcp_endpoint_no_client(self) -> None:

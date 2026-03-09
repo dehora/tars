@@ -223,7 +223,9 @@ def _run_memory_tool(name: str, args: dict) -> str:
             return json.dumps({"error": "Memory not configured (TARS_MEMORY_DIR not set)"})
         target = f"- {args['content'].strip()}"
         section = args.get("section")
-        if section and section in _MEMORY_FILES:
+        if section is not None:
+            if section not in _MEMORY_FILES:
+                return json.dumps({"error": f"Invalid section; must be one of {', '.join(_MEMORY_FILES)}"})
             files_to_search = {section: _MEMORY_FILES[section]}
         else:
             files_to_search = _MEMORY_FILES
