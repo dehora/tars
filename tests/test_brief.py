@@ -37,6 +37,15 @@ class BuildBriefSectionsTests(unittest.TestCase):
         self.assertNotIn("pinned", labels)
 
 
+    @mock.patch("tars.brief._load_pinned", side_effect=OSError("disk error"))
+    @mock.patch("tars.brief.run_tool", return_value='{"tasks": []}')
+    def test_pinned_load_failure_degrades(self, mock_run, mock_pinned) -> None:
+        sections = build_brief_sections()
+        labels = [s[0] for s in sections]
+        self.assertNotIn("pinned", labels)
+        self.assertIn("tasks", labels)
+
+
 class FormatBriefTextTests(unittest.TestCase):
     def test_pinned_section_formatted(self) -> None:
         sections = [("pinned", "- watching Severance S2"), ("tasks", "no tasks")]

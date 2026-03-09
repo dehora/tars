@@ -458,7 +458,7 @@ class PinCommandTests(unittest.TestCase):
         self.assertIsNotNone(result)
         mock_run.assert_called_once_with(
             "memory_forget",
-            {"content": "watching Severance S2"},
+            {"content": "watching Severance S2", "section": "pinned"},
             quiet=True,
         )
 

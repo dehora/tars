@@ -40,8 +40,7 @@ Memory is assembled into the system prompt in layers:
 
 1. `Memory.md` and `Procedural.md` are always loaded (small, high-signal)
 2. Today's daily file loads as `<daily-context>` (cross-session awareness within the day)
-3. Recent session logs load as `<recent-sessions>` on first message
-4. Hybrid search (FTS5 + vector KNN) auto-retrieves relevant context on first message using [two-pass packing](search.md#two-pass-context-packing) — anchors for breadth, then windowed expansion for depth, under a token budget
+3. Hybrid search (FTS5 + vector KNN) auto-retrieves relevant context on first message using [two-pass packing](search.md#two-pass-context-packing) — anchors for breadth, then windowed expansion for depth, under a token budget
 
 All memory blocks are wrapped with an untrusted-data preface to prevent prompt injection from user-edited vault files.
 

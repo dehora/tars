@@ -11,9 +11,12 @@ from tars.tools import run_tool
 def build_brief_sections() -> list[tuple[str, str]]:
     """Run briefing tools and return (label, content) sections."""
     sections: list[tuple[str, str]] = []
-    pinned = _load_pinned()
-    if pinned.strip():
-        sections.append(("pinned", pinned.strip()))
+    try:
+        pinned = _load_pinned()
+        if pinned.strip():
+            sections.append(("pinned", pinned.strip()))
+    except OSError:
+        pass
     for label, tool_name in [
         ("tasks", "todoist_today"),
         ("weather", "weather_now"),

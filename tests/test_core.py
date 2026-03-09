@@ -582,6 +582,29 @@ class WeakResultExpansionTests(unittest.TestCase):
         self.assertEqual(kwargs["min_score"], 0.0)
 
 
+class ParseToolArgumentsTests(unittest.TestCase):
+    def test_dict_passthrough(self) -> None:
+        self.assertEqual(core._parse_tool_arguments({"a": 1}), {"a": 1})
+
+    def test_json_string(self) -> None:
+        self.assertEqual(core._parse_tool_arguments('{"a": 1}'), {"a": 1})
+
+    def test_invalid_json_returns_empty(self) -> None:
+        self.assertEqual(core._parse_tool_arguments("not json"), {})
+
+    def test_list_returns_empty(self) -> None:
+        self.assertEqual(core._parse_tool_arguments('[1, 2, 3]'), {})
+
+    def test_scalar_returns_empty(self) -> None:
+        self.assertEqual(core._parse_tool_arguments('42'), {})
+
+    def test_string_json_returns_empty(self) -> None:
+        self.assertEqual(core._parse_tool_arguments('"hello"'), {})
+
+    def test_null_json_returns_empty(self) -> None:
+        self.assertEqual(core._parse_tool_arguments('null'), {})
+
+
 class ParseModelTests(unittest.TestCase):
     def test_valid_format(self) -> None:
         provider, model = core.parse_model("ollama:llama3")

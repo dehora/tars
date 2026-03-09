@@ -117,6 +117,11 @@ ANTHROPIC_TOOLS = [
             "type": "object",
             "properties": {
                 "content": {"type": "string", "description": "The exact memory line to remove"},
+                "section": {
+                    "type": "string",
+                    "description": "Limit removal to a specific section (semantic, procedural, pinned). If omitted, searches all sections.",
+                    "enum": ["semantic", "procedural", "pinned"],
+                },
             },
             "required": ["content"],
         },

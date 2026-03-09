@@ -180,6 +180,35 @@ class SearchFtsTests(unittest.TestCase):
 
 
 @unittest.skipUnless(_HAS_SQLITE_VEC, "sqlite-vec not installed")
+class FtsOrSemanticsTests(unittest.TestCase):
+    """FTS queries join terms with OR — a multi-word query should match chunks containing any term."""
+
+    def test_multi_word_query_matches_both_terms_via_or(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            with mock.patch.dict(os.environ, {"TARS_MEMORY_DIR": tmpdir}, clear=True):
+                conn = db.init_db(dim=_DIM)
+                cid = db.ensure_collection(conn)
+                fid, _ = db.upsert_file(
+                    conn, collection_id=cid, path="/test.md", title="test",
+                    memory_type="semantic", content_hash="fts_or",
+                    mtime=1.0, size=100,
+                )
+                chunks = [
+                    Chunk(content="the quick brown fox", sequence=0,
+                          start_line=1, end_line=1, content_hash="f1"),
+                    Chunk(content="lazy dog sleeps all day", sequence=1,
+                          start_line=2, end_line=2, content_hash="f2"),
+                ]
+                embs = [[0.1] * _DIM, [0.2] * _DIM]
+                db.insert_chunks(conn, fid, chunks, embs)
+                conn.commit()
+
+                rowids = search_fts(conn, "fox dog", limit=10)
+                self.assertEqual(len(rowids), 2)
+                conn.close()
+
+
+@unittest.skipUnless(_HAS_SQLITE_VEC, "sqlite-vec not installed")
 class SearchHybridTests(unittest.TestCase):
     def setUp(self) -> None:
         self._patcher = mock.patch.object(embeddings, "ollama")

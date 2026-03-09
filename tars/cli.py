@@ -22,6 +22,7 @@ from tars.search import search
 from tars.sessions import _session_path
 
 load_dotenv()
+debug.configure(from_env=True)
 
 
 def _preview_lines(content: str, max_lines: int = 3) -> list[str]:
@@ -461,7 +462,7 @@ def main():
     args.message = message_args
 
     if args.verbose:
-        debug.VERBOSE = True
+        debug.configure(enable=True)
 
     if args.command == "index":
         _run_index(args.embedding_model)

@@ -18,6 +18,7 @@ from starlette.middleware.base import BaseHTTPMiddleware
 
 from tars.config import load_model_config, model_summary
 from tars.conversation import Conversation, process_message, process_message_stream, save_session
+import tars.debug as debug
 from tars.format import format_tool_result
 from tars.indexer import build_index
 from tars.memory import save_correction, save_reward
@@ -26,6 +27,7 @@ from tars.sessions import _session_path, list_sessions
 from tars.tools import run_tool
 
 load_dotenv()
+debug.configure(from_env=True)
 
 _API_TOKEN = os.environ.get("TARS_API_TOKEN", "")
 

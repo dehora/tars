@@ -241,7 +241,7 @@ def dispatch(
                 return "Usage: /unpin <text>"
             return _run_tool(
                 "memory_forget",
-                {"content": " ".join(parts[1:])},
+                {"content": " ".join(parts[1:]), "section": "pinned"},
             )
         if cmd == "/pins":
             content = _load_pinned()

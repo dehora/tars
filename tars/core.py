@@ -347,7 +347,8 @@ def _parse_tool_arguments(raw: str | dict) -> dict:
     if isinstance(raw, dict):
         return raw
     try:
-        return json.loads(raw)
+        parsed = json.loads(raw)
+        return parsed if isinstance(parsed, dict) else {}
     except (json.JSONDecodeError, TypeError):
         return {}
 
@@ -363,7 +364,7 @@ def chat_openai(
     tools = _get_tools("ollama") if use_tools else []
 
     for _round in range(_MAX_TOOL_ROUNDS):
-        kwargs: dict = dict(model=model, messages=local_messages, max_completion_tokens=_max_tokens())
+        kwargs: dict = dict(model=model, messages=local_messages, max_tokens=_max_tokens())
         if tools:
             kwargs["tools"] = tools
         response = client.chat.completions.create(**kwargs)
@@ -535,7 +536,7 @@ def chat_openai_stream(
         for _round in range(_MAX_TOOL_ROUNDS):
             response = client.chat.completions.create(
                 model=model, messages=local_messages,
-                max_completion_tokens=_max_tokens(), tools=tools,
+                max_tokens=_max_tokens(), tools=tools,
             )
             choice = response.choices[0]
 
@@ -561,7 +562,7 @@ def chat_openai_stream(
 
     with client.chat.completions.create(
         model=model, messages=local_messages,
-        max_completion_tokens=_max_tokens(), stream=True,
+        max_tokens=_max_tokens(), stream=True,
     ) as stream:
         for chunk in stream:
             if chunk.choices and chunk.choices[0].delta.content:
