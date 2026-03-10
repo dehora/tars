@@ -4,6 +4,7 @@ import json
 import os
 import re
 import time
+from collections import defaultdict
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
@@ -27,7 +28,20 @@ _VALID_USER_SECTIONS = {"profile", "stats", "zones", "gear"}
 
 _WORKOUT_TYPE_LABELS = {1: "race", 2: "long_run", 3: "workout", 11: "race", 12: "workout"}
 
+_PACE_TYPES = {"Run", "Walk", "Hike"}
+_SPEED_TYPES = {"Ride", "VirtualRide", "EBikeRide"}
+
 _TOKEN_FILE = "strava_tokens.json"
+
+
+def _safe_float(val, default=0.0) -> float:
+    """Coerce a value to float, returning default if None."""
+    return float(val) if val is not None else default
+
+
+def _safe_int(val, default=0) -> int:
+    """Coerce a value to int, returning default if None."""
+    return int(val) if val is not None else default
 
 
 def _token_path() -> Path | None:
@@ -190,13 +204,15 @@ def _type_str(atype) -> str:
 
 def _activity_to_dict(a) -> dict:
     """Extract activity summary fields into a plain dict."""
-    distance_m = float(a.distance) if a.distance is not None else 0.0
+    distance_m = _safe_float(a.distance)
     distance_km = round(distance_m / 1000, 2)
-    moving_secs = int(a.moving_time) if a.moving_time is not None else 0
-    elapsed_secs = int(a.elapsed_time) if a.elapsed_time is not None else 0
+    moving_secs = _safe_int(a.moving_time)
+    elapsed_secs = _safe_int(a.elapsed_time)
     moving_min = round(moving_secs / 60, 1)
     elapsed_min = round(elapsed_secs / 60, 1)
-    elev_m = round(float(a.total_elevation_gain), 1) if a.total_elevation_gain is not None else None
+    elev_m = round(_safe_float(a.total_elevation_gain), 1) if a.total_elevation_gain is not None else None
+    avg_hr = _safe_float(a.average_heartrate) if a.average_heartrate is not None else None
+    max_hr = _safe_float(a.max_heartrate) if a.max_heartrate is not None else None
 
     result = {
         "id": a.id,
@@ -206,8 +222,8 @@ def _activity_to_dict(a) -> dict:
         "moving_time_min": moving_min,
         "elapsed_time_min": elapsed_min,
         "elevation_gain_m": elev_m,
-        "average_heartrate": a.average_heartrate,
-        "max_heartrate": a.max_heartrate,
+        "average_heartrate": avg_hr,
+        "max_heartrate": max_hr,
         "start_date": a.start_date_local.isoformat() if a.start_date_local else None,
         "suffer_score": a.suffer_score,
     }
@@ -230,10 +246,10 @@ def _activity_to_dict(a) -> dict:
         result["weighted_average_watts"] = int(w_avg)
 
     activity_type = _type_str(a.type) if a.type else ""
-    if activity_type in ("Run", "Walk", "Hike"):
+    if activity_type in _PACE_TYPES:
         if distance_km > 0 and moving_secs > 0:
             result["pace_min_per_km"] = round(moving_secs / 60 / distance_km, 2)
-    elif activity_type in ("Ride", "VirtualRide", "EBikeRide"):
+    elif activity_type in _SPEED_TYPES:
         if moving_secs > 0:
             result["speed_kmh"] = round(distance_km / (moving_secs / 3600), 1)
 
@@ -241,35 +257,37 @@ def _activity_to_dict(a) -> dict:
 
 
 def _lap_to_dict(lap) -> dict:
-    distance_m = float(lap.distance) if lap.distance is not None else 0.0
-    moving_secs = int(lap.moving_time) if lap.moving_time is not None else 0
+    distance_m = _safe_float(lap.distance)
+    moving_secs = _safe_int(lap.moving_time)
     return {
         "name": lap.name,
         "distance_km": round(distance_m / 1000, 2),
         "moving_time_min": round(moving_secs / 60, 1),
-        "average_heartrate": lap.average_heartrate,
-        "max_heartrate": lap.max_heartrate,
+        "average_heartrate": _safe_float(lap.average_heartrate) if lap.average_heartrate is not None else None,
+        "max_heartrate": _safe_float(lap.max_heartrate) if lap.max_heartrate is not None else None,
     }
 
 
 def _split_to_dict(split) -> dict:
-    distance_m = float(split.distance) if split.distance is not None else 0.0
-    moving_secs = int(split.moving_time) if split.moving_time is not None else 0
+    distance_m = _safe_float(split.distance)
+    moving_secs = _safe_int(split.moving_time)
+    avg_hr = getattr(split, "average_heartrate", None)
+    elev_diff = getattr(split, "elevation_difference", None)
     return {
         "split": split.split,
         "distance_km": round(distance_m / 1000, 2),
         "moving_time_min": round(moving_secs / 60, 1),
-        "average_heartrate": split.average_heartrate if hasattr(split, "average_heartrate") else None,
-        "elevation_difference_m": split.elevation_difference,
+        "average_heartrate": _safe_float(avg_hr) if avg_hr is not None else None,
+        "elevation_difference_m": _safe_float(elev_diff) if elev_diff is not None else None,
     }
 
 
 def _totals_to_dict(totals) -> dict:
     if totals is None:
         return {}
-    distance_m = float(totals.distance) if totals.distance is not None else 0.0
-    moving_secs = int(totals.moving_time) if totals.moving_time is not None else 0
-    elev_m = float(totals.elevation_gain) if totals.elevation_gain is not None else 0.0
+    distance_m = _safe_float(totals.distance)
+    moving_secs = _safe_int(totals.moving_time)
+    elev_m = _safe_float(totals.elevation_gain)
     return {
         "count": totals.count,
         "distance_km": round(distance_m / 1000, 1),
@@ -362,8 +380,10 @@ def _handle_user(client, args: dict) -> str:
 
         result = {}
 
+        needs_athlete = {"profile", "stats", "gear"} & set(include)
+        athlete = client.get_athlete() if needs_athlete else None
+
         if "profile" in include:
-            athlete = client.get_athlete()
             result["profile"] = {
                 "name": f"{athlete.firstname} {athlete.lastname}".strip(),
                 "city": athlete.city,
@@ -372,15 +392,9 @@ def _handle_user(client, args: dict) -> str:
                 "weight_kg": athlete.weight,
                 "premium": athlete.premium,
             }
-            athlete_id = athlete.id
-        else:
-            athlete_id = None
 
         if "stats" in include:
-            if athlete_id is None:
-                athlete = client.get_athlete()
-                athlete_id = athlete.id
-            stats = client.get_athlete_stats(athlete_id)
+            stats = client.get_athlete_stats(athlete.id)
             result["stats"] = {
                 "ytd_run": _totals_to_dict(stats.ytd_run_totals),
                 "ytd_ride": _totals_to_dict(stats.ytd_ride_totals),
@@ -412,28 +426,20 @@ def _handle_user(client, args: dict) -> str:
             result["zones"] = {"heart_rate": zone_list}
 
         if "gear" in include:
-            if athlete_id is None:
-                athlete = client.get_athlete()
-                athlete_id = athlete.id
-            else:
-                if "profile" not in include:
-                    athlete = client.get_athlete()
             gear = []
             if hasattr(athlete, "bikes") and athlete.bikes:
                 for b in athlete.bikes:
-                    dist_m = float(b.distance) if b.distance is not None else 0.0
                     gear.append({
                         "type": "bike",
                         "name": b.name,
-                        "distance_km": round(dist_m / 1000, 0),
+                        "distance_km": round(_safe_float(b.distance) / 1000, 0),
                     })
             if hasattr(athlete, "shoes") and athlete.shoes:
                 for s in athlete.shoes:
-                    dist_m = float(s.distance) if s.distance is not None else 0.0
                     gear.append({
                         "type": "shoe",
                         "name": s.name,
-                        "distance_km": round(dist_m / 1000, 0),
+                        "distance_km": round(_safe_float(s.distance) / 1000, 0),
                     })
             result["gear"] = gear
 
@@ -456,9 +462,9 @@ def _summarise_group(atype: str, activities: list) -> dict:
     suffer_count = 0
 
     for a in activities:
-        total_dist_m += float(a.distance) if a.distance is not None else 0.0
-        total_moving_secs += int(a.moving_time) if a.moving_time is not None else 0
-        total_elev_m += float(a.total_elevation_gain) if a.total_elevation_gain is not None else 0.0
+        total_dist_m += _safe_float(a.distance)
+        total_moving_secs += _safe_int(a.moving_time)
+        total_elev_m += _safe_float(a.total_elevation_gain)
 
         if a.average_heartrate is not None:
             hr_sum += float(a.average_heartrate)
@@ -483,9 +489,9 @@ def _summarise_group(atype: str, activities: list) -> dict:
         "total_elevation_m": int(round(total_elev_m, 0)),
     }
 
-    if atype in ("Run", "Walk", "Hike") and total_dist_km > 0 and total_moving_secs > 0:
+    if atype in _PACE_TYPES and total_dist_km > 0 and total_moving_secs > 0:
         out["avg_pace_min_per_km"] = round(total_moving_secs / 60 / total_dist_km, 2)
-    elif atype in ("Ride", "VirtualRide", "EBikeRide") and total_moving_secs > 0:
+    elif atype in _SPEED_TYPES and total_moving_secs > 0:
         out["avg_speed_kmh"] = round(total_dist_km / (total_moving_secs / 3600), 1)
 
     if hr_count > 0:
@@ -520,7 +526,6 @@ def _handle_summary(client, args: dict) -> str:
         if not activities:
             return json.dumps({"summary": {}, "period": period, "count": 0})
 
-        from collections import defaultdict
         groups: dict[str, list] = defaultdict(list)
         for a in activities:
             groups[_type_str(a.type)].append(a)

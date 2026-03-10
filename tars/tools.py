@@ -243,6 +243,29 @@ ANTHROPIC_TOOLS = [
         },
     },
     {
+        "name": "strava_summary",
+        "description": (
+            "Aggregate Strava activities for a period into computed summaries: "
+            "totals (distance, time, elevation), averages (pace, HR, cadence), "
+            "and effort scores grouped by activity type. Use for fitness analysis, "
+            "training load, trend questions, and 'how am I doing?' queries. "
+            "Results are capped at 200 activities per period."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "period": {
+                    "type": "string",
+                    "description": "Time period: '7d', '30d', '3m', 'this-week', 'last-week', 'this-month', 'last-month', 'this-year', 'ytd' (default: 'this-month')",
+                },
+                "type": {
+                    "type": "string",
+                    "description": "Optional activity type filter: 'Run', 'Ride', 'Swim', etc.",
+                },
+            },
+        },
+    },
+    {
         "name": "strava_user",
         "description": (
             "Fetch Strava athlete profile, stats, zones, and gear. Use when the user asks "
@@ -370,7 +393,7 @@ def run_tool(name: str, args: dict, *, quiet: bool = False) -> str:
             return _run_note_tool(name, args)
         if name == "web_read":
             return _run_web_tool(name, args)
-        if name in ("strava_activities", "strava_user"):
+        if name in ("strava_activities", "strava_user", "strava_summary"):
             return _run_strava_tool(name, args)
         if name.startswith("todoist_"):
             td_bin = _resolve_td()

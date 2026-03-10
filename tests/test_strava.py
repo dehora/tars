@@ -184,6 +184,22 @@ class ActivitiesToolTests(unittest.TestCase):
         self.assertEqual(result[0]["type"], "Run")
 
     @mock.patch.object(strava, "_get_client")
+    def test_activities_type_filter_root_model(self, mock_get):
+        """Type filter works when stravalib wraps types in RootModel on the list path."""
+        mock_get.return_value = self.client
+        rm_run = mock.Mock()
+        rm_run.root = "Run"
+        rm_ride = mock.Mock()
+        rm_ride.root = "Ride"
+        run = _mock_activity(id=1, type=rm_run)
+        ride = _mock_activity(id=2, type=rm_ride)
+        self.client.get_activities.return_value = [run, ride]
+
+        result = json.loads(strava._run_strava_tool("strava_activities", {"type": "Run"}))
+        self.assertEqual(len(result), 1)
+        self.assertEqual(result[0]["type"], "Run")
+
+    @mock.patch.object(strava, "_get_client")
     def test_activities_invalid_type(self, mock_get):
         mock_get.return_value = self.client
         result = json.loads(strava._run_strava_tool("strava_activities", {"type": "InvalidSport"}))
@@ -390,6 +406,48 @@ class UserToolTests(unittest.TestCase):
         result = json.loads(strava._run_strava_tool("strava_user", {"include": ["gear"]}))
         self.assertIn("gear", result)
         self.assertEqual(len(result["gear"]), 2)
+
+    @mock.patch.object(strava, "_get_client")
+    def test_stats_and_gear_single_athlete_fetch(self, mock_get):
+        """include=['stats', 'gear'] fetches athlete only once."""
+        client = mock.Mock()
+        mock_get.return_value = client
+        bike = mock.Mock(distance=1000000.0)
+        bike.name = "Bike"
+        athlete = _mock_athlete(bikes=[bike])
+        client.get_athlete.return_value = athlete
+        stats = mock.Mock()
+        stats.ytd_run_totals = _mock_totals(count=5)
+        stats.ytd_ride_totals = _mock_totals(count=0)
+        stats.ytd_swim_totals = _mock_totals(count=0)
+        stats.all_run_totals = _mock_totals(count=0)
+        stats.all_ride_totals = _mock_totals(count=0)
+        stats.all_swim_totals = _mock_totals(count=0)
+        stats.recent_run_totals = _mock_totals(count=0)
+        stats.recent_ride_totals = _mock_totals(count=0)
+        stats.recent_swim_totals = _mock_totals(count=0)
+        client.get_athlete_stats.return_value = stats
+
+        result = json.loads(strava._run_strava_tool("strava_user", {"include": ["stats", "gear"]}))
+        self.assertIn("stats", result)
+        self.assertIn("gear", result)
+        self.assertEqual(len(result["gear"]), 1)
+        client.get_athlete.assert_called_once()
+
+    @mock.patch.object(strava, "_get_client")
+    def test_include_as_string(self, mock_get):
+        """include param as a plain string is coerced to list."""
+        client = mock.Mock()
+        mock_get.return_value = client
+        zones = mock.Mock()
+        hr = mock.Mock()
+        hr.zones = [mock.Mock(min=0, max=120)]
+        zones.heart_rate = hr
+        client.get_athlete_zones.return_value = zones
+
+        result = json.loads(strava._run_strava_tool("strava_user", {"include": "zones"}))
+        self.assertIn("zones", result)
+        self.assertEqual(len(result["zones"]["heart_rate"]), 1)
 
     @mock.patch.object(strava, "_get_client")
     def test_invalid_section(self, mock_get):
