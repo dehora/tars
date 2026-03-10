@@ -426,6 +426,8 @@ def main():
     sub.add_parser("telegram", help="start Telegram bot channel")
     sub.add_parser("telegram-brief", help="send the daily brief via Telegram")
 
+    sub.add_parser("strava-auth", help="one-time Strava OAuth setup")
+
     sched = sub.add_parser("schedule", help="manage scheduled commands")
     sched_sub = sched.add_subparsers(dest="schedule_command")
     sched_add = sched_sub.add_parser("add", help="add a scheduled command")
@@ -445,7 +447,7 @@ def main():
     # greedily match the first positional arg as a subcommand, so
     # `tars "hello"` fails with "invalid choice".  If argv[1] isn't a known
     # subcommand or flag, treat everything after flags as a message.
-    _subcommands = {"index", "notes-index", "search", "sgrep", "svec", "serve", "email", "email-brief", "telegram", "telegram-brief", "schedule"}
+    _subcommands = {"index", "notes-index", "search", "sgrep", "svec", "serve", "email", "email-brief", "telegram", "telegram-brief", "schedule", "strava-auth"}
     raw_args = sys.argv[1:]
     message_args: list[str] = []
     # Skip leading flags (-v, --verbose, -m, --model, --remote-model and their values)
@@ -479,6 +481,17 @@ def main():
             _print_search_results(results, mode)
         except Exception as e:
             print(f"  {red('[error]')} search failed: {e}", file=sys.stderr)
+        return
+
+    if args.command == "strava-auth":
+        from tars.strava import strava_auth_flow
+
+        client_id = os.environ.get("TARS_STRAVA_CLIENT_ID", "").strip()
+        client_secret = os.environ.get("TARS_STRAVA_CLIENT_SECRET", "").strip()
+        if not client_id or not client_secret:
+            print(f"  {red('[error]')} TARS_STRAVA_CLIENT_ID and TARS_STRAVA_CLIENT_SECRET must be set", file=sys.stderr)
+            return
+        strava_auth_flow(client_id, client_secret)
         return
 
     if args.command == "serve":

@@ -13,6 +13,7 @@ dependencies = [
     "python-telegram-bot>=22.6",
     "mcp>=1.26.0",
     "openai>=2.24.0",
+    "stravalib>=2.4",
 ]
 
 [project.scripts]

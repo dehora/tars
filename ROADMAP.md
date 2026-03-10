@@ -2,7 +2,19 @@
 
 ## Next
 
-(empty)
+### 38. Strava Phase 2
+
+Builds on the Phase 1 Strava integration (tools `strava_activities`, `strava_user`).
+
+- `/strava-*` slash commands (CLI, web, Telegram, email parity)
+- Brief integration (yesterday's activity in daily brief)
+- `strava-analysis` tool (training load, weekly/monthly summaries)
+- `strava-compare` tool (period-over-period comparison)
+- `strava-routes` tool (route/segment data)
+- `strava-analysis-polarised` tool (HR zone distribution analysis)
+- Prompt templates for multi-step analysis
+- Chart/visualization rendering
+- MCP server extraction (optional)
 
 ## Fixes
 
@@ -143,6 +155,10 @@ Conversation history sidebar (active conversations + session history, click to v
 ### 34. Web UI command parity
 
 Wired up all slash commands missing from the web UI: `/find`, `/read`, `/mcp`, `/schedule`, `/export`. Added API endpoints for `/find` (notes search), `/mcp` (server list), `/schedule` (OS + in-process), and `/export`. Updated web `/help` text to match CLI.
+
+### 38a. Strava Phase 1
+
+Native Strava integration via stravalib. OAuth token lifecycle (auto-refresh), `strava_activities` tool (period filters, type filters, by-ID with laps/splits), `strava_user` tool (profile, stats, zones, gear). CLI `strava-auth` subcommand for one-time OAuth setup. Tokens stored in memory dir with `0o600`.
 
 ### 35. Security hardening and bug fixes
 

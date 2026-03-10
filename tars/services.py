@@ -42,3 +42,9 @@ def stop_services(mcp_client: MCPClient | None, runner: TaskRunner) -> None:
     if mcp_client:
         mcp_client.stop()
         set_mcp_client(None)
+    try:
+        import ollama
+        if hasattr(ollama, "_client") and hasattr(ollama._client, "_client"):
+            ollama._client._client.close()
+    except Exception:
+        pass

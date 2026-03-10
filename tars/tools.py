@@ -11,6 +11,7 @@ from tars.memory import _run_memory_tool
 from tars.notes import _run_note_tool
 from tars.search import _run_notes_search_tool, _run_search_tool
 from tars.weather import _run_weather_tool
+from tars.strava import _run_strava_tool
 from tars.web import _run_web_tool
 
 if TYPE_CHECKING:
@@ -208,6 +209,59 @@ ANTHROPIC_TOOLS = [
             "required": ["url"],
         },
     },
+    {
+        "name": "strava_activities",
+        "description": (
+            "Fetch Strava activities with optional filters. Use when the user asks about "
+            "runs, rides, workouts, training, or exercise activities."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "period": {
+                    "type": "string",
+                    "description": "Time period: '7d', '30d', '3m', 'this-week', 'last-week', 'this-month', 'last-month', 'this-year', 'ytd'",
+                },
+                "type": {
+                    "type": "string",
+                    "description": "Activity type filter: 'Run', 'Ride', 'Swim', 'Walk', 'Hike', etc.",
+                },
+                "limit": {
+                    "type": "integer",
+                    "description": "Max results (default 20, max 100)",
+                },
+                "id": {
+                    "type": "integer",
+                    "description": "Fetch a single activity by ID (overrides other params)",
+                },
+                "sort": {
+                    "type": "string",
+                    "description": "Sort order: 'recent' (default) or 'oldest'",
+                    "enum": ["recent", "oldest"],
+                },
+            },
+        },
+    },
+    {
+        "name": "strava_user",
+        "description": (
+            "Fetch Strava athlete profile, stats, zones, and gear. Use when the user asks "
+            "about their running/cycling stats, fitness profile, or training totals."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "include": {
+                    "type": "array",
+                    "items": {
+                        "type": "string",
+                        "enum": ["profile", "stats", "zones", "gear"],
+                    },
+                    "description": "Sections to include (default: ['profile', 'stats'])",
+                },
+            },
+        },
+    },
 ]
 
 OLLAMA_TOOLS = [
@@ -316,6 +370,8 @@ def run_tool(name: str, args: dict, *, quiet: bool = False) -> str:
             return _run_note_tool(name, args)
         if name == "web_read":
             return _run_web_tool(name, args)
+        if name in ("strava_activities", "strava_user"):
+            return _run_strava_tool(name, args)
         if name.startswith("todoist_"):
             td_bin = _resolve_td()
             if not td_bin:

@@ -85,6 +85,8 @@ Tars is a personal AI assistant with CLI, web, email, and Telegram channels. Rou
 | `TARS_AUTO_EXTRACT` | `true` | Enable automatic fact extraction on session save/compact |
 | `TARS_SCHEDULES` | — | JSON array of in-process scheduled tasks (alternative to `schedules.json` in memory dir) |
 | `TARS_MCP_SERVERS` | — | JSON object of MCP server configs (alternative to `mcp_servers.json` in memory dir) |
+| `TARS_STRAVA_CLIENT_ID` | — | Strava OAuth app client ID |
+| `TARS_STRAVA_CLIENT_SECRET` | — | Strava OAuth app client secret |
 | `DEFAULT_LAT` / `DEFAULT_LON` | — | Weather location |
 
 ## Git commits
