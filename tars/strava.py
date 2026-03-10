@@ -25,6 +25,8 @@ _VALID_SORT = {"recent", "oldest"}
 
 _VALID_USER_SECTIONS = {"profile", "stats", "zones", "gear"}
 
+_WORKOUT_TYPE_LABELS = {1: "race", 2: "long_run", 3: "workout", 11: "race", 12: "workout"}
+
 _TOKEN_FILE = "strava_tokens.json"
 
 
@@ -93,7 +95,7 @@ def strava_auth_flow(client_id: str, client_secret: str) -> None:
     url = client.authorization_url(
         client_id=int(client_id),
         redirect_uri="http://localhost",
-        scope=["read", "activity:read_all", "profile:read_all"],
+        scope=["read_all", "activity:read_all", "profile:read_all"],
     )
     print(f"\n  Open this URL in your browser:\n\n  {url}\n")
     print("  After authorizing, paste the 'code' parameter from the redirect URL:")
@@ -177,6 +179,15 @@ def _parse_period(period: str) -> tuple[datetime, datetime] | str:
     return (after, now)
 
 
+def _type_str(atype) -> str:
+    """Extract activity type string, unwrapping stravalib RootModel if needed."""
+    if atype is None:
+        return ""
+    if hasattr(atype, "root"):
+        return str(atype.root)
+    return str(atype)
+
+
 def _activity_to_dict(a) -> dict:
     """Extract activity summary fields into a plain dict."""
     distance_m = float(a.distance) if a.distance is not None else 0.0
@@ -190,7 +201,7 @@ def _activity_to_dict(a) -> dict:
     result = {
         "id": a.id,
         "name": a.name,
-        "type": str(a.type) if a.type else None,
+        "type": _type_str(a.type) if a.type else None,
         "distance_km": distance_km,
         "moving_time_min": moving_min,
         "elapsed_time_min": elapsed_min,
@@ -201,7 +212,24 @@ def _activity_to_dict(a) -> dict:
         "suffer_score": a.suffer_score,
     }
 
-    activity_type = str(a.type) if a.type else ""
+    wt = getattr(a, "workout_type", None)
+    if wt is not None and wt != 0:
+        label = _WORKOUT_TYPE_LABELS.get(wt)
+        if label:
+            result["workout_type"] = label
+
+    cad = getattr(a, "average_cadence", None)
+    if cad is not None:
+        result["average_cadence"] = round(float(cad), 1)
+
+    watts = getattr(a, "average_watts", None)
+    if watts is not None:
+        result["average_watts"] = round(float(watts), 0)
+    w_avg = getattr(a, "weighted_average_watts", None)
+    if w_avg is not None:
+        result["weighted_average_watts"] = int(w_avg)
+
+    activity_type = _type_str(a.type) if a.type else ""
     if activity_type in ("Run", "Walk", "Hike"):
         if distance_km > 0 and moving_secs > 0:
             result["pace_min_per_km"] = round(moving_secs / 60 / distance_km, 2)
@@ -262,6 +290,8 @@ def _run_strava_tool(name: str, args: dict) -> str:
             return _handle_activities(client, args)
         elif name == "strava_user":
             return _handle_user(client, args)
+        elif name == "strava_summary":
+            return _handle_summary(client, args)
         else:
             return json.dumps({"error": f"unknown strava tool: {name}"})
     finally:
@@ -275,6 +305,14 @@ def _handle_activities(client, args: dict) -> str:
         if activity_id is not None:
             a = client.get_activity(int(activity_id))
             result = _activity_to_dict(a)
+            # DetailedActivity-only fields (not on SummaryActivity)
+            if getattr(a, "calories", None) is not None:
+                result["calories"] = int(a.calories)
+            desc = getattr(a, "description", None)
+            if desc:
+                result["description"] = desc
+            if getattr(a, "perceived_exertion", None) is not None:
+                result["perceived_exertion"] = a.perceived_exertion
             if hasattr(a, "laps") and a.laps:
                 result["laps"] = [_lap_to_dict(lap) for lap in a.laps]
             if hasattr(a, "splits_metric") and a.splits_metric:
@@ -302,7 +340,7 @@ def _handle_activities(client, args: dict) -> str:
         activities = list(client.get_activities(**kwargs))
 
         if activity_type:
-            activities = [a for a in activities if str(a.type) == activity_type]
+            activities = [a for a in activities if _type_str(a.type) == activity_type]
 
         if sort == "oldest":
             activities.reverse()
@@ -360,12 +398,17 @@ def _handle_user(client, args: dict) -> str:
             zone_list = []
             if hasattr(zones, "heart_rate") and zones.heart_rate:
                 hr = zones.heart_rate
-                if hasattr(hr, "zones") and hr.zones:
-                    for z in hr.zones:
-                        zone_list.append({
-                            "min": z.min,
-                            "max": z.max,
-                        })
+                hr_zones = getattr(hr, "zones", None) or getattr(hr, "root", None)
+                if hasattr(hr_zones, "root"):
+                    hr_zones = hr_zones.root
+                if hr_zones:
+                    for z in hr_zones:
+                        if isinstance(z, (tuple, list)):
+                            zone_list.append({"min": z[0], "max": z[1]})
+                        elif hasattr(z, "min"):
+                            zone_list.append({"min": z.min, "max": z.max})
+                        else:
+                            zone_list.append({"min": z.root[0], "max": z.root[1]})
             result["zones"] = {"heart_rate": zone_list}
 
         if "gear" in include:
@@ -393,6 +436,98 @@ def _handle_user(client, args: dict) -> str:
                         "distance_km": round(dist_m / 1000, 0),
                     })
             result["gear"] = gear
+
+        return json.dumps(result)
+
+    except Exception as e:
+        return json.dumps({"error": f"Strava API error: {e}"})
+
+
+def _summarise_group(atype: str, activities: list) -> dict:
+    """Compute aggregate stats for a list of same-type activities."""
+    total_dist_m = 0.0
+    total_moving_secs = 0
+    total_elev_m = 0.0
+    hr_sum = 0.0
+    hr_count = 0
+    cad_sum = 0.0
+    cad_count = 0
+    suffer_total = 0
+    suffer_count = 0
+
+    for a in activities:
+        total_dist_m += float(a.distance) if a.distance is not None else 0.0
+        total_moving_secs += int(a.moving_time) if a.moving_time is not None else 0
+        total_elev_m += float(a.total_elevation_gain) if a.total_elevation_gain is not None else 0.0
+
+        if a.average_heartrate is not None:
+            hr_sum += float(a.average_heartrate)
+            hr_count += 1
+        cad = getattr(a, "average_cadence", None)
+        if cad is not None:
+            cad_sum += float(cad)
+            cad_count += 1
+        ss = a.suffer_score
+        if ss is not None:
+            suffer_total += int(ss)
+            suffer_count += 1
+
+    count = len(activities)
+    total_dist_km = round(total_dist_m / 1000, 1)
+    total_hours = round(total_moving_secs / 3600, 1)
+
+    out: dict = {
+        "count": count,
+        "total_distance_km": total_dist_km,
+        "total_time_hours": total_hours,
+        "total_elevation_m": int(round(total_elev_m, 0)),
+    }
+
+    if atype in ("Run", "Walk", "Hike") and total_dist_km > 0 and total_moving_secs > 0:
+        out["avg_pace_min_per_km"] = round(total_moving_secs / 60 / total_dist_km, 2)
+    elif atype in ("Ride", "VirtualRide", "EBikeRide") and total_moving_secs > 0:
+        out["avg_speed_kmh"] = round(total_dist_km / (total_moving_secs / 3600), 1)
+
+    if hr_count > 0:
+        out["avg_heartrate"] = round(hr_sum / hr_count, 1)
+    if cad_count > 0:
+        out["avg_cadence"] = round(cad_sum / cad_count, 1)
+    if suffer_count > 0:
+        out["avg_suffer_score"] = round(suffer_total / suffer_count, 1)
+        out["total_suffer_score"] = suffer_total
+
+    return out
+
+
+def _handle_summary(client, args: dict) -> str:
+    """Aggregate activities for a period into per-type summaries."""
+    try:
+        period = args.get("period", "this-month")
+        parsed = _parse_period(period)
+        if isinstance(parsed, str):
+            return json.dumps({"error": parsed})
+        after, before = parsed
+
+        activity_type = args.get("type")
+        if activity_type is not None and activity_type not in _VALID_ACTIVITY_TYPES:
+            return json.dumps({"error": f"invalid activity type: {activity_type!r}"})
+
+        activities = list(client.get_activities(after=after, before=before, limit=200))
+
+        if activity_type:
+            activities = [a for a in activities if _type_str(a.type) == activity_type]
+
+        if not activities:
+            return json.dumps({"summary": {}, "period": period, "count": 0})
+
+        from collections import defaultdict
+        groups: dict[str, list] = defaultdict(list)
+        for a in activities:
+            groups[_type_str(a.type)].append(a)
+
+        result: dict = {"period": period, "count": len(activities), "by_type": {}}
+        for gtype, acts in groups.items():
+            result["by_type"][gtype] = _summarise_group(gtype, acts)
 
         return json.dumps(result)
 

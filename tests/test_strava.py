@@ -30,6 +30,10 @@ def _mock_activity(**overrides):
         "start_date_local": datetime(2026, 3, 1, 8, 0, 0),
         "suffer_score": 42,
         "sport_type": "Run",
+        "average_cadence": None,
+        "workout_type": None,
+        "average_watts": None,
+        "weighted_average_watts": None,
     }
     defaults.update(overrides)
     a = mock.Mock()
@@ -195,6 +199,9 @@ class ActivitiesToolTests(unittest.TestCase):
     def test_activity_by_id(self, mock_get):
         mock_get.return_value = self.client
         detail = _mock_activity(id=99)
+        detail.calories = None
+        detail.description = None
+        detail.perceived_exertion = None
         lap = mock.Mock()
         lap.name = "Lap 1"
         lap.distance = 1000.0
@@ -313,6 +320,63 @@ class UserToolTests(unittest.TestCase):
         self.assertEqual(len(result["zones"]["heart_rate"]), 5)
 
     @mock.patch.object(strava, "_get_client")
+    def test_zones_tuple_format(self, mock_get):
+        """Stravalib v2 returns zones as tuples (min, max) instead of objects."""
+        client = mock.Mock()
+        mock_get.return_value = client
+        zones = mock.Mock()
+        hr = mock.Mock()
+        hr.zones = [(0, 120), (120, 150), (150, 170), (170, 185), (185, -1)]
+        zones.heart_rate = hr
+        client.get_athlete_zones.return_value = zones
+
+        result = json.loads(strava._run_strava_tool("strava_user", {"include": ["zones"]}))
+        self.assertIn("zones", result)
+        hr_zones = result["zones"]["heart_rate"]
+        self.assertEqual(len(hr_zones), 5)
+        self.assertEqual(hr_zones[0], {"min": 0, "max": 120})
+        self.assertEqual(hr_zones[4], {"min": 185, "max": -1})
+
+    @mock.patch.object(strava, "_get_client")
+    def test_zones_root_model_wrapped(self, mock_get):
+        """hr has no .zones attr, falls back to hr.root."""
+        client = mock.Mock()
+        mock_get.return_value = client
+        zones = mock.Mock()
+        hr = mock.Mock(spec=[])
+        hr.root = [(0, 120), (120, 150)]
+        zones.heart_rate = hr
+        client.get_athlete_zones.return_value = zones
+
+        result = json.loads(strava._run_strava_tool("strava_user", {"include": ["zones"]}))
+        hr_zones = result["zones"]["heart_rate"]
+        self.assertEqual(len(hr_zones), 2)
+        self.assertEqual(hr_zones[0], {"min": 0, "max": 120})
+
+    @mock.patch.object(strava, "_get_client")
+    def test_zones_stravalib_v2_model(self, mock_get):
+        """Stravalib v2: hr.zones is a ZoneRanges RootModel wrapping ZoneRange objects."""
+        client = mock.Mock()
+        mock_get.return_value = client
+        zones = mock.Mock()
+        hr = mock.Mock()
+        zone_ranges = mock.Mock(spec=["root"])
+        zone_ranges.root = [
+            mock.Mock(spec=["min", "max"], min=0, max=120),
+            mock.Mock(spec=["min", "max"], min=120, max=150),
+            mock.Mock(spec=["min", "max"], min=150, max=170),
+        ]
+        hr.zones = zone_ranges
+        zones.heart_rate = hr
+        client.get_athlete_zones.return_value = zones
+
+        result = json.loads(strava._run_strava_tool("strava_user", {"include": ["zones"]}))
+        hr_zones = result["zones"]["heart_rate"]
+        self.assertEqual(len(hr_zones), 3)
+        self.assertEqual(hr_zones[0], {"min": 0, "max": 120})
+        self.assertEqual(hr_zones[2], {"min": 150, "max": 170})
+
+    @mock.patch.object(strava, "_get_client")
     def test_gear(self, mock_get):
         client = mock.Mock()
         mock_get.return_value = client
@@ -387,6 +451,228 @@ class TokenTests(unittest.TestCase):
             with mock.patch.object(strava, "_token_path", return_value=token_file):
                 strava._save_tokens({"access_token": "test", "refresh_token": "r", "expires_at": 0})
             self.assertEqual(oct(token_file.stat().st_mode & 0o777), oct(0o600))
+
+
+class TypeStrTests(unittest.TestCase):
+    def test_plain_string(self):
+        self.assertEqual(strava._type_str("Run"), "Run")
+
+    def test_none(self):
+        self.assertEqual(strava._type_str(None), "")
+
+    def test_root_model(self):
+        rm = mock.Mock()
+        rm.root = "WeightTraining"
+        self.assertEqual(strava._type_str(rm), "WeightTraining")
+
+    def test_type_filter_with_root_model(self):
+        """Type filter works when stravalib wraps types in RootModel."""
+        rm_run = mock.Mock()
+        rm_run.root = "Run"
+        rm_ride = mock.Mock()
+        rm_ride.root = "Ride"
+        run = _mock_activity(id=1, type=rm_run)
+        ride = _mock_activity(id=2, type=rm_ride)
+        result_run = strava._activity_to_dict(run)
+        result_ride = strava._activity_to_dict(ride)
+        self.assertEqual(result_run["type"], "Run")
+        self.assertEqual(result_ride["type"], "Ride")
+
+
+class ActivityEnrichmentTests(unittest.TestCase):
+    def test_cadence_included(self):
+        a = _mock_activity(average_cadence=172.5)
+        result = strava._activity_to_dict(a)
+        self.assertEqual(result["average_cadence"], 172.5)
+
+    def test_cadence_omitted_when_none(self):
+        a = _mock_activity(average_cadence=None)
+        result = strava._activity_to_dict(a)
+        self.assertNotIn("average_cadence", result)
+
+    def test_workout_type_long_run(self):
+        a = _mock_activity(workout_type=2)
+        result = strava._activity_to_dict(a)
+        self.assertEqual(result["workout_type"], "long_run")
+
+    def test_workout_type_race(self):
+        a = _mock_activity(workout_type=1)
+        result = strava._activity_to_dict(a)
+        self.assertEqual(result["workout_type"], "race")
+
+    def test_workout_type_default_omitted(self):
+        a = _mock_activity(workout_type=0)
+        result = strava._activity_to_dict(a)
+        self.assertNotIn("workout_type", result)
+
+    def test_workout_type_none_omitted(self):
+        a = _mock_activity(workout_type=None)
+        result = strava._activity_to_dict(a)
+        self.assertNotIn("workout_type", result)
+
+    def test_watts_included(self):
+        a = _mock_activity(type="Ride", average_watts=200.0, weighted_average_watts=210)
+        result = strava._activity_to_dict(a)
+        self.assertEqual(result["average_watts"], 200.0)
+        self.assertEqual(result["weighted_average_watts"], 210)
+
+    @mock.patch.object(strava, "_get_client")
+    def test_detail_includes_calories_description_rpe(self, mock_get):
+        client = mock.Mock()
+        mock_get.return_value = client
+        detail = _mock_activity(id=99)
+        detail.calories = 450.0
+        detail.description = "Easy morning run"
+        detail.perceived_exertion = 6
+        detail.laps = []
+        detail.splits_metric = []
+        client.get_activity.return_value = detail
+
+        result = json.loads(strava._run_strava_tool("strava_activities", {"id": 99}))
+        self.assertEqual(result["calories"], 450)
+        self.assertEqual(result["description"], "Easy morning run")
+        self.assertEqual(result["perceived_exertion"], 6)
+
+    @mock.patch.object(strava, "_get_client")
+    def test_detail_omits_none_calories(self, mock_get):
+        client = mock.Mock()
+        mock_get.return_value = client
+        detail = _mock_activity(id=99)
+        detail.calories = None
+        detail.description = ""
+        detail.perceived_exertion = None
+        detail.laps = []
+        detail.splits_metric = []
+        client.get_activity.return_value = detail
+
+        result = json.loads(strava._run_strava_tool("strava_activities", {"id": 99}))
+        self.assertNotIn("calories", result)
+        self.assertNotIn("description", result)
+        self.assertNotIn("perceived_exertion", result)
+
+
+class SummaryToolTests(unittest.TestCase):
+    def setUp(self):
+        self.client = mock.Mock()
+
+    @mock.patch.object(strava, "_get_client")
+    def test_summary_basic(self, mock_get):
+        mock_get.return_value = self.client
+        acts = [
+            _mock_activity(type="Run", distance=5000.0, moving_time=1500,
+                           total_elevation_gain=50.0, average_heartrate=145.0,
+                           average_cadence=172.0, suffer_score=40),
+            _mock_activity(type="Run", distance=8000.0, moving_time=2400,
+                           total_elevation_gain=80.0, average_heartrate=150.0,
+                           average_cadence=174.0, suffer_score=60),
+        ]
+        self.client.get_activities.return_value = acts
+
+        result = json.loads(strava._run_strava_tool("strava_summary", {"period": "this-month"}))
+        self.assertEqual(result["count"], 2)
+        self.assertEqual(result["period"], "this-month")
+        self.assertIn("Run", result["by_type"])
+        run = result["by_type"]["Run"]
+        self.assertEqual(run["count"], 2)
+        self.assertAlmostEqual(run["total_distance_km"], 13.0, places=0)
+        self.assertIn("avg_pace_min_per_km", run)
+        self.assertIn("avg_heartrate", run)
+        self.assertIn("avg_cadence", run)
+        self.assertIn("avg_suffer_score", run)
+        self.assertEqual(run["total_suffer_score"], 100)
+
+    @mock.patch.object(strava, "_get_client")
+    def test_summary_groups_by_type(self, mock_get):
+        mock_get.return_value = self.client
+        acts = [
+            _mock_activity(type="Run", distance=5000.0, moving_time=1500),
+            _mock_activity(type="WeightTraining", distance=0.0, moving_time=1800,
+                           total_elevation_gain=0.0, average_heartrate=95.0),
+        ]
+        self.client.get_activities.return_value = acts
+
+        result = json.loads(strava._run_strava_tool("strava_summary", {"period": "this-month"}))
+        self.assertEqual(result["count"], 2)
+        self.assertIn("Run", result["by_type"])
+        self.assertIn("WeightTraining", result["by_type"])
+
+    @mock.patch.object(strava, "_get_client")
+    def test_summary_type_filter(self, mock_get):
+        mock_get.return_value = self.client
+        run = _mock_activity(type="Run", distance=5000.0, moving_time=1500)
+        ride = _mock_activity(type="Ride", distance=20000.0, moving_time=3600)
+        self.client.get_activities.return_value = [run, ride]
+
+        result = json.loads(strava._run_strava_tool("strava_summary", {"period": "this-month", "type": "Run"}))
+        self.assertEqual(result["count"], 1)
+        self.assertIn("Run", result["by_type"])
+        self.assertNotIn("Ride", result["by_type"])
+
+    @mock.patch.object(strava, "_get_client")
+    def test_summary_empty_period(self, mock_get):
+        mock_get.return_value = self.client
+        self.client.get_activities.return_value = []
+
+        result = json.loads(strava._run_strava_tool("strava_summary", {}))
+        self.assertEqual(result["count"], 0)
+
+    @mock.patch.object(strava, "_get_client")
+    def test_summary_invalid_period(self, mock_get):
+        mock_get.return_value = self.client
+        result = json.loads(strava._run_strava_tool("strava_summary", {"period": "garbage"}))
+        self.assertIn("error", result)
+
+    @mock.patch.object(strava, "_get_client")
+    def test_summary_invalid_type(self, mock_get):
+        mock_get.return_value = self.client
+        result = json.loads(strava._run_strava_tool("strava_summary", {"type": "InvalidSport"}))
+        self.assertIn("error", result)
+
+    @mock.patch.object(strava, "_get_client")
+    def test_summary_ride_speed(self, mock_get):
+        mock_get.return_value = self.client
+        ride = _mock_activity(type="Ride", distance=20000.0, moving_time=3600,
+                              total_elevation_gain=100.0)
+        self.client.get_activities.return_value = [ride]
+
+        result = json.loads(strava._run_strava_tool("strava_summary", {"period": "this-month"}))
+        self.assertIn("avg_speed_kmh", result["by_type"]["Ride"])
+        self.assertAlmostEqual(result["by_type"]["Ride"]["avg_speed_kmh"], 20.0, places=0)
+
+
+class FormatSummaryTests(unittest.TestCase):
+    def test_format_summary_basic(self):
+        from tars.format import format_strava_summary
+        raw = json.dumps({
+            "period": "this-month",
+            "count": 2,
+            "by_type": {
+                "Run": {
+                    "count": 2,
+                    "total_distance_km": 13.0,
+                    "total_time_hours": 1.1,
+                    "total_elevation_m": 130,
+                    "avg_pace_min_per_km": 5.0,
+                    "avg_heartrate": 147.5,
+                    "avg_cadence": 173.0,
+                    "avg_suffer_score": 50.0,
+                    "total_suffer_score": 100,
+                }
+            },
+        })
+        out = format_strava_summary(raw)
+        self.assertIn("this-month", out)
+        self.assertIn("Run x2", out)
+        self.assertIn("13.0km", out)
+        self.assertIn("hr:147", out)
+        self.assertIn("cad:173", out)
+        self.assertIn("effort:50", out)
+
+    def test_format_summary_empty(self):
+        from tars.format import format_strava_summary
+        raw = json.dumps({"period": "this-month", "count": 0, "by_type": {}})
+        out = format_strava_summary(raw)
+        self.assertIn("no activities", out)
 
 
 class UnknownToolTests(unittest.TestCase):
