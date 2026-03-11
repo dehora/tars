@@ -8,11 +8,11 @@ Builds on the Phase 1 Strava integration (tools `strava_activities`, `strava_use
 
 - `/strava-*` slash commands (CLI, web, Telegram, email parity)
 - ~~Brief integration (yesterday's activity in daily brief)~~
-- `strava-analysis` tool (training load, weekly/monthly summaries)
+- ~~`strava-analysis` tool (training load, weekly/monthly summaries)~~
 - ~~`strava-compare` tool (period-over-period comparison)~~
 - ~~`strava-routes` tool (route/segment data)~~
-- `strava-analysis-polarised` tool (HR zone distribution analysis)
-- Prompt templates for multi-step analysis
+- `strava-analysis-polarised` tool (HR zone distribution analysis, assess domain prompt template for derived analysis)
+- ~~Prompt templates for multi-step analysis~~ (reassessed: model handles multi-tool orchestration from tool descriptions; domain prompts to be evaluated as part of polarised feature where derived analysis needs steering)
 - Chart/visualization rendering
 - MCP server extraction (optional)
 
@@ -68,7 +68,7 @@ Presentation within Web, CLI (TUI), Email, and Telegram channels
 
 ## Fixes
 
-(empty)
+- Router missing Strava keyword patterns — Strava queries don't trigger escalation when running a local model with Claude remote
 
 <details>
 <summary>Parked</summary>

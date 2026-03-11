@@ -20,6 +20,8 @@ _TOOL_NAMES = {
     "todoist_complete_task", "weather_now", "weather_forecast",
     "memory_remember", "memory_update", "memory_forget", "memory_recall",
     "memory_search", "notes_search", "note_daily", "web_read",
+    "strava_activities", "strava_user", "strava_summary",
+    "strava_compare", "strava_analysis", "strava_routes",
 }
 
 # Keyword patterns that suggest tool intent, mapped to relevant tool names.
@@ -57,6 +59,26 @@ _TOOL_HINT_PATTERNS: list[tuple[str, list[str]]] = [
     # Web
     (r"https?://",                     ["web_read"]),
     (r"\bread\s+this\b",             ["web_read"]),
+    # Strava
+    (r"\bstrava\b",                    ["strava_activities", "strava_summary", "strava_user"]),
+    (r"\bmy\s+(?:\w+\s+)*run\b",      ["strava_activities"]),
+    (r"\bmy\s+(?:\w+\s+)*ride\b",     ["strava_activities"]),
+    (r"\brunning\b",                   ["strava_activities", "strava_summary"]),
+    (r"\bcycling\b",                   ["strava_activities", "strava_summary"]),
+    (r"\bswimming\b",                  ["strava_activities", "strava_summary"]),
+    (r"\bworkout\b",                   ["strava_activities"]),
+    (r"\btraining\b",                  ["strava_activities", "strava_analysis"]),
+    (r"\bpace\b",                      ["strava_activities", "strava_analysis"]),
+    (r"\bheart\s*rate\b",             ["strava_activities", "strava_user"]),
+    (r"\bhr\s+zone",                   ["strava_user"]),
+    (r"\bsplits?\b",                   ["strava_activities"]),
+    (r"\blaps?\b",                     ["strava_activities"]),
+    (r"\bkilomet(?:re|er)s?\b",       ["strava_activities", "strava_summary"]),
+    (r"\bmileage\b",                   ["strava_summary"]),
+    (r"\bfitness\b",                   ["strava_summary", "strava_analysis"]),
+    (r"\bactivit(?:y|ies)\b",         ["strava_activities"]),
+    (r"\broutes?\b",                   ["strava_routes"]),
+    (r"\bsegments?\b",                ["strava_routes"]),
 ]
 
 _COMPILED_HINT_PATTERNS = [(re.compile(p, re.IGNORECASE), hints) for p, hints in _TOOL_HINT_PATTERNS]

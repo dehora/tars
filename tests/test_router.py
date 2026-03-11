@@ -100,6 +100,31 @@ class TestRouter(unittest.TestCase):
         result = route_message("use weather_now", _ESC_CONFIG)
         self.assertEqual(result.tool_hints, ["weather_now"])
 
+    def test_strava_my_night_run(self):
+        result = route_message("why did my night run feel easier", _ESC_CONFIG)
+        self.assertEqual(result.provider, "claude")
+        self.assertIn("strava_activities", result.tool_hints)
+
+    def test_strava_direct_mention(self):
+        result = route_message("strava activities", _ESC_CONFIG)
+        self.assertEqual(result.provider, "claude")
+        self.assertIn("strava_activities", result.tool_hints)
+
+    def test_strava_running_keyword(self):
+        result = route_message("how far did I go running this week", _ESC_CONFIG)
+        self.assertEqual(result.provider, "claude")
+        self.assertIn("strava_activities", result.tool_hints)
+
+    def test_strava_routes(self):
+        result = route_message("show my routes", _ESC_CONFIG)
+        self.assertEqual(result.provider, "claude")
+        self.assertIn("strava_routes", result.tool_hints)
+
+    def test_strava_pace(self):
+        result = route_message("what was my pace yesterday", _ESC_CONFIG)
+        self.assertEqual(result.provider, "claude")
+        self.assertIn("strava_activities", result.tool_hints)
+
     def test_route_result_not_iterable(self):
         result = route_message("hello", _ESC_CONFIG)
         self.assertIsInstance(result, RouteResult)
