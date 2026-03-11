@@ -20,6 +20,35 @@ def _openai_api_key() -> str:
 
 def _max_tokens() -> int:
     return int(os.environ.get("TARS_MAX_TOKENS", "").strip() or "1024")
+
+
+def _ollama_think() -> bool:
+    """Whether to enable thinking mode for models that support it (e.g. qwen3).
+
+    Defaults to False — tars queries are mostly tool dispatch + conversational,
+    and complex reasoning is escalated to Claude.
+    """
+    return (os.environ.get("TARS_OLLAMA_THINK", "").strip().lower() in ("1", "true", "yes"))
+
+
+def _apply_ollama_model_options(model: str, messages: list[dict]) -> None:
+    """Apply model-specific transforms to messages before ollama.chat().
+
+    Modifies messages in place.
+    """
+    if not model.startswith("qwen3"):
+        return
+    if _ollama_think():
+        return
+    # Prepend /no_think to the last user message to disable reasoning
+    for msg in reversed(messages):
+        if msg.get("role") == "user":
+            content = msg.get("content", "")
+            if not content.startswith("/no_think"):
+                msg["content"] = f"/no_think\n{content}"
+            break
+
+
 _MAX_DAILY_LINES = 50
 _MAX_TOOL_ROUNDS = 10
 CLAUDE_MODELS = {
@@ -322,6 +351,7 @@ def chat_ollama(
 ) -> str:
     local_messages = [{"role": "system", "content": _build_system_prompt(search_context=search_context, tool_hints=tool_hints)}]
     local_messages.extend(m.copy() for m in messages)
+    _apply_ollama_model_options(model, local_messages)
     tools = _get_tools("ollama") if use_tools else []
 
     for _round in range(_MAX_TOOL_ROUNDS):
@@ -497,6 +527,7 @@ def chat_ollama_stream(
     """Streaming version of chat_ollama. Yields text deltas."""
     local_messages = [{"role": "system", "content": _build_system_prompt(search_context=search_context, tool_hints=tool_hints)}]
     local_messages.extend(m.copy() for m in messages)
+    _apply_ollama_model_options(model, local_messages)
 
     tools = _get_tools("ollama") if use_tools else []
 

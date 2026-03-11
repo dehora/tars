@@ -1,3 +1,4 @@
+import os
 import sys
 import unittest
 from unittest import mock
@@ -614,6 +615,59 @@ class ParseModelTests(unittest.TestCase):
     def test_invalid_format_raises(self) -> None:
         with self.assertRaises(ValueError):
             core.parse_model("nocolon")
+
+
+class OllamaModelOptionsTests(unittest.TestCase):
+    def test_qwen3_no_think_default(self):
+        msgs = [
+            {"role": "system", "content": "system prompt"},
+            {"role": "user", "content": "hello"},
+        ]
+        core._apply_ollama_model_options("qwen3:14b", msgs)
+        self.assertTrue(msgs[1]["content"].startswith("/no_think"))
+        self.assertIn("hello", msgs[1]["content"])
+
+    def test_qwen3_no_think_idempotent(self):
+        msgs = [
+            {"role": "system", "content": "system prompt"},
+            {"role": "user", "content": "/no_think\nhello"},
+        ]
+        core._apply_ollama_model_options("qwen3:14b", msgs)
+        self.assertEqual(msgs[1]["content"].count("/no_think"), 1)
+
+    def test_qwen3_think_enabled(self):
+        msgs = [
+            {"role": "system", "content": "system prompt"},
+            {"role": "user", "content": "hello"},
+        ]
+        with mock.patch.dict(os.environ, {"TARS_OLLAMA_THINK": "true"}):
+            core._apply_ollama_model_options("qwen3:14b", msgs)
+        self.assertEqual(msgs[1]["content"], "hello")
+
+    def test_non_qwen_unchanged(self):
+        msgs = [
+            {"role": "system", "content": "system prompt"},
+            {"role": "user", "content": "hello"},
+        ]
+        core._apply_ollama_model_options("llama3:8b", msgs)
+        self.assertEqual(msgs[1]["content"], "hello")
+
+    def test_targets_last_user_message(self):
+        msgs = [
+            {"role": "system", "content": "system prompt"},
+            {"role": "user", "content": "first"},
+            {"role": "assistant", "content": "reply"},
+            {"role": "user", "content": "second"},
+        ]
+        core._apply_ollama_model_options("qwen3:14b", msgs)
+        self.assertEqual(msgs[1]["content"], "first")
+        self.assertTrue(msgs[3]["content"].startswith("/no_think"))
+
+    def test_qwen3_variant_names(self):
+        for model in ["qwen3:14b", "qwen3:4b", "qwen3.5:27b"]:
+            msgs = [{"role": "user", "content": "hello"}]
+            core._apply_ollama_model_options(model, msgs)
+            self.assertTrue(msgs[0]["content"].startswith("/no_think"), f"failed for {model}")
 
 
 if __name__ == "__main__":

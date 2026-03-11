@@ -190,6 +190,7 @@ Slash commands work in the bot chat. A persistent reply keyboard provides one-ta
 | `TARS_API_TOKEN` | — | Optional bearer token for API auth |
 | `TARS_SCHEDULES` | — | JSON array of scheduled tasks (alternative to `schedules.json`) |
 | `TARS_MCP_SERVERS` | — | JSON object of MCP server configs (alternative to `mcp_servers.json`) |
+| `TARS_OLLAMA_THINK` | `false` | Enable thinking mode for qwen3 models |
 | `TARS_STRAVA_CLIENT_ID` | — | Strava OAuth app client ID |
 | `TARS_STRAVA_CLIENT_SECRET` | — | Strava OAuth app client secret |
 | `DEFAULT_LAT` / `DEFAULT_LON` | — | Weather location coordinates |
