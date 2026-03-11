@@ -356,7 +356,10 @@ def _handle_activities(client, args: dict) -> str:
         if activity_type is not None and activity_type not in _VALID_ACTIVITY_TYPES:
             return json.dumps({"error": f"invalid activity type: {activity_type!r}"})
 
-        kwargs = {"limit": limit}
+        # Over-fetch when filtering by type so the limit applies to
+        # matching activities, not the raw API page.
+        fetch_limit = min(100, limit * 5) if activity_type else limit
+        kwargs = {"limit": fetch_limit}
         period = args.get("period")
         if period:
             parsed = _parse_period(period)
@@ -373,7 +376,7 @@ def _handle_activities(client, args: dict) -> str:
         if sort == "oldest":
             activities.reverse()
 
-        return json.dumps([_activity_to_dict(a) for a in activities])
+        return json.dumps([_activity_to_dict(a) for a in activities[:limit]])
 
     except Exception as e:
         return json.dumps({"error": f"Strava API error: {e}"})

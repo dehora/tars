@@ -254,6 +254,30 @@ class ActivitiesToolTests(unittest.TestCase):
         self.assertEqual(call_kwargs["limit"], 1)
 
     @mock.patch.object(strava, "_get_client")
+    def test_type_filter_overfetches(self, mock_get):
+        """When type filter is set, fetch more from API so limit applies after filtering."""
+        mock_get.return_value = self.client
+        runs = [_mock_activity(id=i, type="Run") for i in range(3)]
+        rides = [_mock_activity(id=i + 10, type="Ride") for i in range(7)]
+        self.client.get_activities.return_value = rides + runs
+
+        result = json.loads(strava._run_strava_tool("strava_activities", {"type": "Run", "limit": 2}))
+        self.assertEqual(len(result), 2)
+        self.assertTrue(all(a["type"] == "Run" for a in result))
+        fetch_limit = self.client.get_activities.call_args[1]["limit"]
+        self.assertGreater(fetch_limit, 2)
+
+    @mock.patch.object(strava, "_get_client")
+    def test_type_filter_respects_limit(self, mock_get):
+        """Result count is capped to the requested limit after type filtering."""
+        mock_get.return_value = self.client
+        runs = [_mock_activity(id=i, type="Run") for i in range(10)]
+        self.client.get_activities.return_value = runs
+
+        result = json.loads(strava._run_strava_tool("strava_activities", {"type": "Run", "limit": 3}))
+        self.assertEqual(len(result), 3)
+
+    @mock.patch.object(strava, "_get_client")
     def test_activities_oldest_sort(self, mock_get):
         mock_get.return_value = self.client
         a1 = _mock_activity(id=1)
