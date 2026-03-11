@@ -72,6 +72,23 @@ def _mock_totals(count=10, distance=100000.0, moving_time=36000, elevation_gain=
 
 
 class ParsePeriodTests(unittest.TestCase):
+    def test_today(self):
+        result = strava._parse_period("today")
+        self.assertIsInstance(result, tuple)
+        after, before = result
+        self.assertEqual(after.hour, 0)
+        self.assertEqual(after.minute, 0)
+        self.assertGreater(before, after)
+
+    def test_yesterday(self):
+        result = strava._parse_period("yesterday")
+        self.assertIsInstance(result, tuple)
+        after, before = result
+        self.assertAlmostEqual(
+            (before - after).total_seconds(), 86400, delta=5
+        )
+        self.assertEqual(before.hour, 0)
+
     def test_days(self):
         result = strava._parse_period("7d")
         self.assertIsInstance(result, tuple)
@@ -805,6 +822,24 @@ def _mock_segment(**overrides):
 
 
 class DefaultComparisonPeriodTests(unittest.TestCase):
+    def test_today(self):
+        parsed_a = strava._parse_period("today")
+        result = strava._default_comparison_period("today", parsed_a)
+        self.assertIsInstance(result, tuple)
+        after, before = result
+        self.assertAlmostEqual(
+            (before - after).total_seconds(), 86400, delta=5
+        )
+
+    def test_yesterday(self):
+        parsed_a = strava._parse_period("yesterday")
+        result = strava._default_comparison_period("yesterday", parsed_a)
+        self.assertIsInstance(result, tuple)
+        after, before = result
+        self.assertAlmostEqual(
+            (before - after).total_seconds(), 86400, delta=5
+        )
+
     def test_this_week(self):
         parsed_a = strava._parse_period("this-week")
         result = strava._default_comparison_period("this-week", parsed_a)

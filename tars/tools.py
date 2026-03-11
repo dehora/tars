@@ -220,7 +220,7 @@ ANTHROPIC_TOOLS = [
             "properties": {
                 "period": {
                     "type": "string",
-                    "description": "Time period: '7d', '30d', '3m', 'this-week', 'last-week', 'this-month', 'last-month', 'this-year', 'ytd'",
+                    "description": "Time period: 'today', 'yesterday', '7d', '30d', '3m', 'this-week', 'last-week', 'this-month', 'last-month', 'this-year', 'ytd'",
                 },
                 "type": {
                     "type": "string",
@@ -297,7 +297,7 @@ ANTHROPIC_TOOLS = [
             "properties": {
                 "period_a": {
                     "type": "string",
-                    "description": "The period to analyze: '7d', '30d', '3m', 'this-week', 'last-week', 'this-month', 'last-month', 'this-year', 'ytd'",
+                    "description": "The period to analyze: 'today', 'yesterday', '7d', '30d', '3m', 'this-week', 'last-week', 'this-month', 'last-month', 'this-year', 'ytd'",
                 },
                 "period_b": {
                     "type": "string",

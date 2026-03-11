@@ -153,6 +153,11 @@ def _parse_period(period: str) -> tuple[datetime, datetime] | str:
     now = datetime.now(timezone.utc)
     today = now.replace(hour=0, minute=0, second=0, microsecond=0)
 
+    if period == "today":
+        return (today, now)
+    if period == "yesterday":
+        return (today - timedelta(days=1), today)
+
     if period == "this-week":
         after = today - timedelta(days=today.weekday())
         return (after, now)
@@ -174,7 +179,7 @@ def _parse_period(period: str) -> tuple[datetime, datetime] | str:
 
     m = _PERIOD_RE.match(period)
     if not m:
-        return f"invalid period: {period!r} — use e.g. 7d, 3m, this-week, ytd"
+        return f"invalid period: {period!r} — use e.g. today, yesterday, 7d, 3m, this-week, ytd"
 
     n = int(m.group(1))
     unit = m.group(2)
@@ -465,6 +470,12 @@ def _handle_user(client, args: dict) -> str:
 def _default_comparison_period(period_a_str: str, parsed_a: tuple[datetime, datetime]) -> tuple[datetime, datetime] | str:
     """Derive the comparison period from period_a. Returns (after, before) or error string."""
     after_a, before_a = parsed_a
+
+    if period_a_str == "today":
+        return _parse_period("yesterday")
+    if period_a_str == "yesterday":
+        after = after_a - timedelta(days=1)
+        return (after, after_a)
 
     if period_a_str == "this-week":
         return _parse_period("last-week")
