@@ -670,5 +670,91 @@ class OllamaModelOptionsTests(unittest.TestCase):
             self.assertTrue(msgs[0]["content"].startswith("/no_think"), f"failed for {model}")
 
 
+class GemmaDetectionTests(unittest.TestCase):
+    def test_is_gemma(self):
+        self.assertTrue(core._is_gemma("gemma3:4b"))
+        self.assertTrue(core._is_gemma("gemma3:12b"))
+        self.assertFalse(core._is_gemma("qwen3:14b"))
+        self.assertFalse(core._is_gemma("llama3:8b"))
+
+
+class GemmaToolsPromptTests(unittest.TestCase):
+    def test_empty_tools(self):
+        self.assertEqual(core._gemma_tools_prompt([]), "")
+
+    def test_format_includes_tool_name(self):
+        tools = [{"function": {"name": "weather_now", "description": "Get weather", "parameters": {
+            "type": "object",
+            "properties": {"lat": {"type": "number", "description": "Latitude"}},
+            "required": ["lat"],
+        }}}]
+        result = core._gemma_tools_prompt(tools)
+        self.assertIn("weather_now", result)
+        self.assertIn("Get weather", result)
+        self.assertIn("lat", result)
+        self.assertIn("(required)", result)
+        self.assertIn("<tool_call>", result)
+
+    def test_format_shows_call_syntax(self):
+        tools = [{"function": {"name": "test", "description": "test", "parameters": {}}}]
+        result = core._gemma_tools_prompt(tools)
+        self.assertIn("<tool_calls>", result)
+        self.assertIn("</tool_calls>", result)
+
+
+class GemmaParseToolCallsTests(unittest.TestCase):
+    def test_single_call(self):
+        text = 'Sure!\n<tool_calls>\n<tool_call>{"name": "weather_now", "parameters": {"lat": 53.3}}</tool_call>\n</tool_calls>'
+        calls = core._gemma_parse_tool_calls(text)
+        self.assertEqual(len(calls), 1)
+        self.assertEqual(calls[0][0], "weather_now")
+        self.assertEqual(calls[0][1], {"lat": 53.3})
+
+    def test_multiple_calls(self):
+        text = '<tool_calls>\n<tool_call>{"name": "a", "parameters": {}}</tool_call>\n<tool_call>{"name": "b", "parameters": {"x": 1}}</tool_call>\n</tool_calls>'
+        calls = core._gemma_parse_tool_calls(text)
+        self.assertEqual(len(calls), 2)
+        self.assertEqual(calls[0][0], "a")
+        self.assertEqual(calls[1][0], "b")
+
+    def test_no_calls(self):
+        self.assertEqual(core._gemma_parse_tool_calls("just a regular response"), [])
+
+    def test_malformed_json_skipped(self):
+        text = '<tool_calls>\n<tool_call>{not json}</tool_call>\n</tool_calls>'
+        self.assertEqual(core._gemma_parse_tool_calls(text), [])
+
+    def test_arguments_alias(self):
+        text = '<tool_call>{"name": "test", "arguments": {"x": 1}}</tool_call>'
+        calls = core._gemma_parse_tool_calls(text)
+        self.assertEqual(len(calls), 1)
+        self.assertEqual(calls[0][1], {"x": 1})
+
+
+class GemmaStripToolXmlTests(unittest.TestCase):
+    def test_strips_tool_calls(self):
+        text = "Let me check.\n<tool_calls>\n<tool_call>{}</tool_call>\n</tool_calls>\nMore text."
+        result = core._gemma_strip_tool_xml(text)
+        self.assertEqual(result, "Let me check.\n\nMore text.")
+
+    def test_no_tool_calls(self):
+        self.assertEqual(core._gemma_strip_tool_xml("hello"), "hello")
+
+
+class GemmaToolResultMessageTests(unittest.TestCase):
+    def test_format(self):
+        msg = core._gemma_tool_result_message([("weather_now", '{"temp": 15}')])
+        self.assertEqual(msg["role"], "user")
+        self.assertIn("<tool_outputs>", msg["content"])
+        self.assertIn('name="weather_now"', msg["content"])
+        self.assertIn('{"temp": 15}', msg["content"])
+        self.assertIn("</tool_outputs>", msg["content"])
+
+    def test_multiple_results(self):
+        msg = core._gemma_tool_result_message([("a", "r1"), ("b", "r2")])
+        self.assertIn('name="a"', msg["content"])
+        self.assertIn('name="b"', msg["content"])
+
+
 if __name__ == "__main__":
     unittest.main()

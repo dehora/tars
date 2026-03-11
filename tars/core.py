@@ -1,5 +1,6 @@
 import json
 import os
+import re
 from collections.abc import Generator
 
 import anthropic
@@ -47,6 +48,84 @@ def _apply_ollama_model_options(model: str, messages: list[dict]) -> None:
             if not content.startswith("/no_think"):
                 msg["content"] = f"/no_think\n{content}"
             break
+
+
+def _is_gemma(model: str) -> bool:
+    return model.startswith("gemma")
+
+
+def _gemma_tools_prompt(tools: list[dict]) -> str:
+    """Format tools as XML for injection into gemma3 system prompt."""
+    if not tools:
+        return ""
+    lines = [
+        "\n\nThe following tools are available. Only use them when the task "
+        "specifically requires their functionality. For general questions, "
+        "respond directly without calling tools.",
+        "",
+        "To call a tool, output EXACTLY this format:",
+        "<tool_calls>",
+        '<tool_call>{"name": "tool_name", "parameters": {"key": "value"}}</tool_call>',
+        "</tool_calls>",
+        "",
+        "Available tools:",
+    ]
+    for tool in tools:
+        fn = tool.get("function", tool)
+        name = fn.get("name", "")
+        desc = fn.get("description", "")
+        params = fn.get("parameters", {})
+        lines.append(f"\n- {name}: {desc}")
+        props = params.get("properties", {})
+        required = set(params.get("required", []))
+        if props:
+            lines.append("  Parameters:")
+            for pname, pdef in props.items():
+                req = " (required)" if pname in required else ""
+                pdesc = pdef.get("description", "")
+                ptype = pdef.get("type", "")
+                lines.append(f"    - {pname} ({ptype}{req}): {pdesc}")
+    return "\n".join(lines)
+
+
+_TOOL_CALL_RE = re.compile(
+    r"<tool_call>\s*(\{.*?\})\s*</tool_call>", re.DOTALL
+)
+
+
+def _gemma_parse_tool_calls(text: str) -> list[tuple[str, dict]]:
+    """Parse <tool_call> XML from gemma3 response text.
+
+    Returns list of (name, arguments) tuples.
+    """
+    results = []
+    for m in _TOOL_CALL_RE.finditer(text):
+        try:
+            call = json.loads(m.group(1))
+            name = call.get("name", "")
+            params = call.get("parameters", call.get("arguments", {}))
+            if name and isinstance(params, dict):
+                results.append((name, params))
+        except (json.JSONDecodeError, TypeError):
+            continue
+    return results
+
+
+def _gemma_strip_tool_xml(text: str) -> str:
+    """Remove tool call XML from gemma3 response text to get the prose part."""
+    cleaned = re.sub(r"<tool_calls>.*?</tool_calls>", "", text, flags=re.DOTALL)
+    return cleaned.strip()
+
+
+def _gemma_tool_result_message(results: list[tuple[str, str]]) -> dict:
+    """Format tool results as XML for feeding back to gemma3."""
+    parts = ["<tool_outputs>"]
+    for name, result in results:
+        parts.append(f'<tool_output name="{name}">')
+        parts.append(result)
+        parts.append("</tool_output>")
+    parts.append("</tool_outputs>")
+    return {"role": "user", "content": "\n".join(parts)}
 
 
 _MAX_DAILY_LINES = 50
@@ -356,6 +435,11 @@ def chat_ollama(
     _apply_ollama_model_options(model, local_messages)
     tools = _get_tools("ollama") if use_tools else []
 
+    gemma = _is_gemma(model) and tools
+    if gemma:
+        local_messages[0]["content"] += _gemma_tools_prompt(tools)
+        return _chat_ollama_gemma(model, local_messages)
+
     for _round in range(_MAX_TOOL_ROUNDS):
         response = ollama.chat(model=model, messages=local_messages, tools=tools or None)
 
@@ -377,6 +461,36 @@ def chat_ollama(
                 append_daily(f"tool:{name} — {result[:80]}")
             except Exception:
                 pass
+
+    return "I've reached the maximum number of tool calls. Please try again."
+
+
+def _chat_ollama_gemma(model: str, local_messages: list[dict]) -> str:
+    """Tool-calling loop for gemma models using prompt-based tool injection."""
+    for _round in range(_MAX_TOOL_ROUNDS):
+        response = ollama.chat(model=model, messages=local_messages)
+        content = response.message.content or ""
+
+        tool_calls = _gemma_parse_tool_calls(content)
+        if not tool_calls:
+            return content
+
+        prose = _gemma_strip_tool_xml(content)
+        if prose:
+            local_messages.append({"role": "assistant", "content": prose})
+        verbose(f"  [gemma] parsed {len(tool_calls)} tool call(s)")
+
+        tool_results = []
+        for name, args in tool_calls:
+            verbose(f"  [tool] {name}({args})")
+            result = run_tool(name, args)
+            tool_results.append((name, result))
+            try:
+                append_daily(f"tool:{name} — {result[:80]}")
+            except Exception:
+                pass
+
+        local_messages.append(_gemma_tool_result_message(tool_results))
 
     return "I've reached the maximum number of tool calls. Please try again."
 
@@ -533,7 +647,11 @@ def chat_ollama_stream(
 
     tools = _get_tools("ollama") if use_tools else []
 
-    if tools:
+    gemma = _is_gemma(model) and tools
+    if gemma:
+        local_messages[0]["content"] += _gemma_tools_prompt(tools)
+
+    if tools and not gemma:
         # Step 1: tool-calling loop (non-streamed), same as chat_ollama.
         for _round in range(_MAX_TOOL_ROUNDS):
             response = ollama.chat(model=model, messages=local_messages, tools=tools)
@@ -550,6 +668,38 @@ def chat_ollama_stream(
                     append_daily(f"tool:{name} — {result[:80]}")
                 except Exception:
                     pass
+        else:
+            yield "I've reached the maximum number of tool calls. Please try again."
+            return
+    elif gemma:
+        # Gemma tool-calling loop (prompt-based)
+        for _round in range(_MAX_TOOL_ROUNDS):
+            response = ollama.chat(model=model, messages=local_messages)
+            content = response.message.content or ""
+
+            tool_calls = _gemma_parse_tool_calls(content)
+            if not tool_calls:
+                # No tool calls — content is the final answer, yield it and return
+                yield content
+                return
+
+            prose = _gemma_strip_tool_xml(content)
+            if prose:
+                local_messages.append({"role": "assistant", "content": prose})
+            verbose(f"  [gemma] parsed {len(tool_calls)} tool call(s)")
+
+            tool_results = []
+            for name, args in tool_calls:
+                verbose(f"  [tool] {name}({args})")
+                result = run_tool(name, args)
+                tool_results.append((name, result))
+                try:
+                    append_daily(f"tool:{name} — {result[:80]}")
+                except Exception:
+                    pass
+
+            local_messages.append(_gemma_tool_result_message(tool_results))
+            continue
         else:
             yield "I've reached the maximum number of tool calls. Please try again."
             return
