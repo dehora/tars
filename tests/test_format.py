@@ -3,12 +3,14 @@ import unittest
 
 from tars.format import (
     format_memory_recall,
+    format_strava_activities,
     format_todoist_action,
     format_todoist_list,
     format_tool_result,
     format_web_read,
     format_weather_forecast,
     format_weather_now,
+    sparkline,
 )
 
 
@@ -134,6 +136,65 @@ class FormatToolResultTests(unittest.TestCase):
 
     def test_unknown_tool_passthrough(self) -> None:
         self.assertEqual(format_tool_result("unknown_tool", "raw data"), "raw data")
+
+
+class SparklineTests(unittest.TestCase):
+    def test_basic(self) -> None:
+        result = sparkline([1, 2, 3, 4, 5])
+        self.assertEqual(len(result), 5)
+        self.assertEqual(result[0], "▁")
+        self.assertEqual(result[-1], "█")
+
+    def test_equal_values(self) -> None:
+        result = sparkline([5, 5, 5])
+        self.assertEqual(result, "▄▄▄")
+
+    def test_single_value(self) -> None:
+        self.assertEqual(sparkline([42]), "")
+
+    def test_empty(self) -> None:
+        self.assertEqual(sparkline([]), "")
+
+    def test_nones_filtered(self) -> None:
+        result = sparkline([1, None, 3])
+        self.assertEqual(len(result), 2)
+
+    def test_two_values(self) -> None:
+        result = sparkline([0, 10])
+        self.assertEqual(result, "▁█")
+
+    def test_invert(self) -> None:
+        result = sparkline([0, 10], invert=True)
+        self.assertEqual(result, "█▁")
+
+    def test_invert_pace(self) -> None:
+        # Lower pace = faster = taller bar
+        result = sparkline([6.0, 5.5, 5.0], invert=True)
+        self.assertEqual(result[0], "▁")
+        self.assertEqual(result[-1], "█")
+
+
+class StravaActivitiesSparklineTests(unittest.TestCase):
+    def test_activities_with_pace_sparkline(self) -> None:
+        activities = [
+            {"name": f"Run {i}", "type": "Run", "distance_km": 5, "moving_time_min": 25,
+             "pace_min_per_km": pace, "average_heartrate": hr, "start_date": f"2026-03-0{i}"}
+            for i, (pace, hr) in enumerate([(5.5, 140), (5.3, 145), (5.0, 150)], 1)
+        ]
+        result = format_strava_activities(json.dumps(activities))
+        self.assertIn("pace:", result)
+        self.assertIn("hr:", result)
+        # Sparkline should be on the last line
+        last_line = result.strip().split("\n")[-1]
+        self.assertIn("▁", last_line)
+
+    def test_single_activity_no_sparkline(self) -> None:
+        activities = [
+            {"name": "Run", "type": "Run", "distance_km": 5, "moving_time_min": 25,
+             "pace_min_per_km": 5.5, "start_date": "2026-03-01"}
+        ]
+        result = format_strava_activities(json.dumps(activities))
+        self.assertNotIn("▁", result)
 
 
 if __name__ == "__main__":

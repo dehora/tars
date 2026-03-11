@@ -2,6 +2,29 @@
 
 import json
 
+_SPARK_BLOCKS = "▁▂▃▄▅▆▇█"
+
+
+def sparkline(values: list[float | int], invert: bool = False) -> str:
+    """Render a list of numeric values as a Unicode sparkline.
+
+    When invert=True, lower values get taller bars (useful for pace where
+    lower = faster = better).
+
+    Returns empty string if fewer than 2 values or all values are equal.
+    """
+    nums = [v for v in values if v is not None]
+    if len(nums) < 2:
+        return ""
+    lo, hi = min(nums), max(nums)
+    if lo == hi:
+        return _SPARK_BLOCKS[3] * len(nums)
+    span = hi - lo
+    last = len(_SPARK_BLOCKS) - 1
+    if invert:
+        return "".join(_SPARK_BLOCKS[min(int((hi - v) / span * last), last)] for v in nums)
+    return "".join(_SPARK_BLOCKS[min(int((v - lo) / span * last), last)] for v in nums)
+
 
 def _precip_icon(prob: int) -> str:
     if prob >= 70:
@@ -229,6 +252,20 @@ def format_strava_activities(raw: str) -> str:
         if date:
             parts.append(date)
         lines.append(" ".join(parts))
+
+    # Sparklines for trends across activities (oldest→newest)
+    sparks = []
+    paces = [a.get("pace_min_per_km") for a in reversed(data)]
+    pace_spark = sparkline(paces, invert=True)
+    if pace_spark:
+        sparks.append(f"pace: {pace_spark}")
+    hrs = [a.get("average_heartrate") for a in reversed(data)]
+    hr_spark = sparkline(hrs)
+    if hr_spark:
+        sparks.append(f"hr: {hr_spark}")
+    if sparks:
+        lines.append("  " + "  ".join(sparks))
+
     return "\n".join(lines)
 
 
@@ -306,6 +343,17 @@ def _format_single_activity(data: dict) -> str:
             if shr:
                 split_line += f" hr:{int(shr)}"
             lines.append(split_line)
+        split_paces = [s.get("moving_time_min") for s in splits if s.get("distance_km", 0) > 0]
+        split_hrs = [s.get("average_heartrate") for s in splits]
+        sparks = []
+        sp = sparkline(split_paces, invert=True)
+        if sp:
+            sparks.append(f"pace: {sp}")
+        sh = sparkline(split_hrs)
+        if sh:
+            sparks.append(f"hr: {sh}")
+        if sparks:
+            lines.append("    " + "  ".join(sparks))
     return "\n".join(lines)
 
 
