@@ -1,6 +1,6 @@
 # tars
 
-A personal AI assistant with CLI, web, email, and Telegram channels. Routes messages to configurable AI providers (ollama, claude), manages persistent memory in an Obsidian vault, and integrates with Todoist, weather APIs, and Obsidian daily notes. Uses uv for package management with Python 3.14.
+A personal AI assistant with CLI, web, email, and Telegram channels. Routes messages to configurable AI providers (ollama, claude), manages persistent memory in an Obsidian vault, and integrates with Todoist, weather, Strava, and Obsidian daily notes. Uses uv for package management with Python 3.14.
 
 ## What it does
 
@@ -18,6 +18,7 @@ tars is a conversational assistant that remembers things across sessions, manage
 - **Memory** — persistent facts and preferences in an Obsidian vault
 - **Daily notes** — append thoughts to today's Obsidian journal entry
 - **Search** — hybrid keyword + semantic search across all memory types, with windowed context retrieval
+- **Strava** — activities, summaries, training analysis, HR zones, routes, and gear via Strava API
 - **Web read** — fetch and extract text content from web pages for discussion
 - **Capture** — save web pages to your Obsidian vault with AI summarization (context-aware when mid-conversation)
 - **MCP** — extend with external tool servers via the Model Context Protocol (fetch, GitHub, filesystem, etc.)
@@ -39,7 +40,7 @@ tars is a conversational assistant that remembers things across sessions, manage
 ```
 [CLI / Web / Email / Telegram] → [conversation.py] → [core.py] → ollama / claude
                                                ↕
-                                         [tools.py] → todoist, weather, memory, notes, search, web
+                                         [tools.py] → todoist, weather, memory, notes, search, web, strava
                                                ↕                                    ↕
                               [memory.py] ← obsidian vault (TARS_MEMORY_DIR)   [mcp.py] → external MCP servers
                               [notes.py]  ← obsidian vault (TARS_NOTES_DIR)
@@ -189,6 +190,8 @@ Slash commands work in the bot chat. A persistent reply keyboard provides one-ta
 | `TARS_API_TOKEN` | — | Optional bearer token for API auth |
 | `TARS_SCHEDULES` | — | JSON array of scheduled tasks (alternative to `schedules.json`) |
 | `TARS_MCP_SERVERS` | — | JSON object of MCP server configs (alternative to `mcp_servers.json`) |
+| `TARS_STRAVA_CLIENT_ID` | — | Strava OAuth app client ID |
+| `TARS_STRAVA_CLIENT_SECRET` | — | Strava OAuth app client secret |
 | `DEFAULT_LAT` / `DEFAULT_LON` | — | Weather location coordinates |
 
 ## Setup
