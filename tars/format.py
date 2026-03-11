@@ -202,9 +202,11 @@ def format_strava_activities(raw: str) -> str:
         dist = a.get("distance_km", 0)
         moving = a.get("moving_time_min", 0)
         date = (a.get("start_date") or "")[:10]
+        wt = a.get("workout_type")
         parts = [f"{i}. {name}"]
         if atype:
-            parts[0] = f"{i}. [{atype}] {name}"
+            tag = f"{atype}/{wt}" if wt else atype
+            parts[0] = f"{i}. [{tag}] {name}"
         details = [f"{dist}km", f"{moving}min"]
         pace = a.get("pace_min_per_km")
         speed = a.get("speed_kmh")
@@ -217,6 +219,9 @@ def format_strava_activities(raw: str) -> str:
         hr = a.get("average_heartrate")
         if hr:
             details.append(f"hr:{int(hr)}")
+        cad = a.get("average_cadence")
+        if cad:
+            details.append(f"cad:{cad}")
         elev = a.get("elevation_gain_m")
         if elev:
             details.append(f"+{int(elev)}m")
@@ -247,11 +252,36 @@ def _format_single_activity(data: dict) -> str:
     hr = data.get("average_heartrate")
     if hr:
         lines[-1] += f", hr:{int(hr)}"
+    cad = data.get("average_cadence")
+    if cad:
+        lines[-1] += f", cad:{cad}"
+    watts = data.get("average_watts")
+    if watts:
+        w_str = f", {int(watts)}w"
+        w_avg = data.get("weighted_average_watts")
+        if w_avg and w_avg != int(watts):
+            w_str += f" ({int(w_avg)}w NP)"
+        lines[-1] += w_str
     elev = data.get("elevation_gain_m")
     if elev:
         lines[-1] += f", +{int(elev)}m"
+    suffer = data.get("suffer_score")
+    if suffer:
+        lines[-1] += f", effort:{suffer}"
     if date:
         lines[-1] += f"  ({date})"
+    desc = data.get("description")
+    if desc:
+        lines.append(f"  note: {desc}")
+    extras = []
+    cal = data.get("calories")
+    if cal:
+        extras.append(f"{cal}kcal")
+    rpe = data.get("perceived_exertion")
+    if rpe:
+        extras.append(f"RPE:{rpe}")
+    if extras:
+        lines.append(f"  {', '.join(extras)}")
     laps = data.get("laps")
     if laps:
         lines.append("  laps:")
@@ -343,6 +373,364 @@ def format_strava_user(raw: str) -> str:
     return "\n".join(lines) if lines else raw
 
 
+def format_strava_summary(raw: str) -> str:
+    """Format strava_summary JSON into a compact per-type breakdown."""
+    try:
+        data = json.loads(raw)
+    except (json.JSONDecodeError, TypeError):
+        return raw
+    if "error" in data:
+        return data["error"]
+
+    period = data.get("period", "")
+    total_count = data.get("count", 0)
+    by_type = data.get("by_type", {})
+
+    if total_count == 0:
+        return f"no activities for {period}"
+
+    lines = [f"{period}: {total_count} activities"]
+
+    for atype, stats in by_type.items():
+        count = stats.get("count", 0)
+        dist = stats.get("total_distance_km", 0)
+        hours = stats.get("total_time_hours", 0)
+        elev = stats.get("total_elevation_m", 0)
+
+        parts = [f"{dist}km", f"{hours}h"]
+
+        pace = stats.get("avg_pace_min_per_km")
+        speed = stats.get("avg_speed_kmh")
+        if pace:
+            mins = int(pace)
+            secs = int((pace - mins) * 60)
+            parts.append(f"avg {mins}:{secs:02d}/km")
+        elif speed:
+            parts.append(f"avg {speed}km/h")
+
+        if elev:
+            parts.append(f"+{elev}m")
+
+        hr = stats.get("avg_heartrate")
+        if hr:
+            parts.append(f"hr:{int(hr)}")
+
+        cad = stats.get("avg_cadence")
+        if cad:
+            parts.append(f"cad:{cad}")
+
+        suffer = stats.get("avg_suffer_score")
+        if suffer:
+            parts.append(f"effort:{suffer:.0f}")
+
+        lines.append(f"  {atype} x{count}: {', '.join(parts)}")
+
+    return "\n".join(lines)
+
+
+def _delta_str(change: float, pct: float | None) -> str:
+    sign = "+" if change >= 0 else ""
+    s = f"{sign}{change:.1f}"
+    if pct is not None:
+        s += f" / {sign}{pct:.1f}%"
+    return s
+
+
+def _pace_fmt(pace: float) -> str:
+    mins = int(pace)
+    secs = int((pace - mins) * 60)
+    return f"{mins}:{secs:02d}"
+
+
+def format_strava_compare(raw: str) -> str:
+    """Format strava_compare JSON into a readable comparison."""
+    try:
+        data = json.loads(raw)
+    except (json.JSONDecodeError, TypeError):
+        return raw
+    if "error" in data:
+        return data["error"]
+
+    pa = data.get("period_a", "?")
+    pb = data.get("period_b", "?")
+    count_a = data.get("count_a", 0)
+    count_b = data.get("count_b", 0)
+    by_type = data.get("by_type", {})
+
+    if count_a == 0 and count_b == 0:
+        return f"{pa} vs {pb}: no activities in either period"
+
+    lines = [f"{pa} vs {pb} ({count_a} vs {count_b} activities)"]
+
+    for atype, entry in by_type.items():
+        sa = entry.get("period_a", {})
+        sb = entry.get("period_b", {})
+        delta = entry.get("delta", {})
+
+        ca = sa.get("count", 0)
+        cb = sb.get("count", 0)
+        lines.append(f"  {atype}: {ca} vs {cb}")
+
+        for label, key in [("distance", "total_distance_km"), ("time", "total_time_hours"),
+                           ("elevation", "total_elevation_m")]:
+            va = sa.get(key)
+            vb = sb.get(key)
+            if va is not None or vb is not None:
+                d = delta.get(key, {})
+                suffix = "km" if "distance" in key else ("h" if "time" in key else "m")
+                val_str = f"{va}{suffix}" if va is not None else "—"
+                change = d.get("change")
+                pct = d.get("pct")
+                if change is not None:
+                    lines.append(f"    {label}: {val_str} ({_delta_str(change, pct)})")
+                else:
+                    lines.append(f"    {label}: {val_str}")
+
+        pace_a = sa.get("avg_pace_min_per_km")
+        pace_b = sb.get("avg_pace_min_per_km")
+        if pace_a is not None:
+            d = delta.get("avg_pace_min_per_km", {})
+            change = d.get("change")
+            direction = ""
+            if change is not None:
+                direction = " faster" if change < 0 else " slower" if change > 0 else ""
+            lines.append(f"    pace: {_pace_fmt(pace_a)}/km{direction}")
+
+        speed_a = sa.get("avg_speed_kmh")
+        if speed_a is not None:
+            d = delta.get("avg_speed_kmh", {})
+            change = d.get("change")
+            pct = d.get("pct")
+            extra = ""
+            if change is not None:
+                extra = f" ({_delta_str(change, pct)})"
+            lines.append(f"    speed: {speed_a}km/h{extra}")
+
+        hr_a = sa.get("avg_heartrate")
+        if hr_a is not None:
+            d = delta.get("avg_heartrate", {})
+            change = d.get("change")
+            pct = d.get("pct")
+            extra = ""
+            if change is not None:
+                extra = f" ({_delta_str(change, pct)})"
+            lines.append(f"    hr: {int(hr_a)}{extra}")
+
+        cad_a = sa.get("avg_cadence")
+        if cad_a is not None:
+            lines.append(f"    cadence: {cad_a}")
+
+    return "\n".join(lines)
+
+
+def format_strava_analysis(raw: str) -> str:
+    """Format strava_analysis JSON into a compact analysis block."""
+    try:
+        data = json.loads(raw)
+    except (json.JSONDecodeError, TypeError):
+        return raw
+    if "error" in data:
+        return data["error"]
+
+    period = data.get("period", "?")
+    dates = data.get("period_dates", {})
+    count = data.get("count", 0)
+    overall = data.get("overall", {})
+    by_type = data.get("by_type", {})
+
+    if count == 0 and data.get("compare_count", 0) == 0:
+        return f"no activities for {period}"
+
+    # Period header with cross-type totals
+    date_range = ""
+    if dates.get("after") and dates.get("before"):
+        date_range = f" ({dates['after']} – {dates['before']})"
+    dist = overall.get("total_distance_km", 0)
+    hours = overall.get("total_time_hours", 0)
+    elev = overall.get("total_elevation_m", 0)
+    header_parts = [f"{count} activities", f"{dist}km", f"{hours}h"]
+    if elev:
+        header_parts.append(f"+{elev}m")
+    lines = [f"{period}{date_range}: {', '.join(header_parts)}"]
+
+    # Per-type lines
+    for atype, stats in by_type.items():
+        lines.append(_format_type_line(atype, stats))
+
+    # Compare period
+    compare_period = data.get("compare_period")
+    compare_dates = data.get("compare_period_dates", {})
+    compare_count = data.get("compare_count", 0)
+    compare_overall = data.get("compare_overall", {})
+    compare_by_type = data.get("compare_by_type", {})
+
+    if compare_period is not None:
+        date_range_b = ""
+        if compare_dates.get("after") and compare_dates.get("before"):
+            date_range_b = f" ({compare_dates['after']} – {compare_dates['before']})"
+        cdist = compare_overall.get("total_distance_km", 0)
+        chours = compare_overall.get("total_time_hours", 0)
+        celev = compare_overall.get("total_elevation_m", 0)
+        cparts = [f"{compare_count} activities", f"{cdist}km", f"{chours}h"]
+        if celev:
+            cparts.append(f"+{celev}m")
+        lines.append(f"{compare_period}{date_range_b}: {', '.join(cparts)}")
+
+        for atype, stats in compare_by_type.items():
+            lines.append(_format_type_line(atype, stats))
+
+    # Changes line
+    overall_delta = data.get("overall_delta", {})
+    if overall_delta:
+        change_parts = []
+        for label, key, suffix in [
+            ("distance", "total_distance_km", "km"),
+            ("time", "total_time_hours", "h"),
+            ("elevation", "total_elevation_m", "m"),
+        ]:
+            d = overall_delta.get(key)
+            if d:
+                change = d.get("change", 0)
+                pct = d.get("pct")
+                sign = "+" if change >= 0 else ""
+                s = f"{label} {sign}{change:.1f}{suffix}"
+                if pct is not None:
+                    s += f"/{sign}{pct:.0f}%"
+                change_parts.append(s)
+        if change_parts:
+            lines.append(f"Changes: {', '.join(change_parts)}")
+
+    return "\n".join(lines)
+
+
+def _format_type_line(atype: str, stats: dict) -> str:
+    """Format a single activity type summary line."""
+    count = stats.get("count", 0)
+    dist = stats.get("total_distance_km", 0)
+    hours = stats.get("total_time_hours", 0)
+    parts = [f"{dist}km", f"{hours}h"]
+
+    pace = stats.get("avg_pace_min_per_km")
+    speed = stats.get("avg_speed_kmh")
+    if pace:
+        parts.append(f"{_pace_fmt(pace)}/km")
+    elif speed:
+        parts.append(f"{speed}km/h")
+
+    hr = stats.get("avg_heartrate")
+    if hr:
+        parts.append(f"hr:{int(hr)}")
+
+    return f"  {atype} x{count}: {', '.join(parts)}"
+
+
+def format_strava_routes(raw: str) -> str:
+    """Format strava_routes JSON into a readable list or detail view."""
+    try:
+        data = json.loads(raw)
+    except (json.JSONDecodeError, TypeError):
+        return raw
+    if "error" in data:
+        return data["error"]
+
+    # Single route detail
+    if "id" in data and "name" in data:
+        return _format_route_detail(data)
+
+    # Route list
+    if "routes" in data:
+        routes = data["routes"]
+        if not routes:
+            return "no routes found"
+        lines = []
+        for i, r in enumerate(routes, 1):
+            rtype = r.get("type") or "?"
+            sub = r.get("sub_type") or ""
+            tag = f"{rtype}/{sub}" if sub else rtype
+            name = r.get("name", "")
+            dist = r.get("distance_km", 0)
+            elev = r.get("elevation_gain_m", 0)
+            est = r.get("estimated_time_min")
+            starred = " *" if r.get("starred") else ""
+            parts = [f"{dist}km", f"+{int(elev)}m"]
+            if est is not None:
+                parts.append(f"~{int(est)}min")
+            rid = r.get("id", "")
+            lines.append(f"{i}. [{tag}] {name}{starred} — {', '.join(parts)} (id:{rid})")
+        return "\n".join(lines)
+
+    # Starred segments
+    if "segments" in data:
+        segs = data["segments"]
+        if not segs:
+            return "no starred segments"
+        lines = []
+        for i, s in enumerate(segs, 1):
+            name = s.get("name", "")
+            dist = s.get("distance_km", 0)
+            grade = s.get("average_grade", 0)
+            cat = s.get("climb_category", 0)
+            parts = [f"{dist}km", f"{grade}% avg"]
+            if cat > 0:
+                parts.append(f"cat {cat}")
+            pr = s.get("pr")
+            if pr:
+                t = pr.get("time_sec", 0)
+                pr_min = int(t // 60)
+                pr_sec = int(t % 60)
+                parts.append(f"PR {pr_min}:{pr_sec:02d}")
+            loc_parts = [s.get(k) for k in ("city", "state", "country") if s.get(k)]
+            if loc_parts:
+                parts.append(", ".join(loc_parts))
+            lines.append(f"{i}. {name} — {', '.join(parts)}")
+        return "\n".join(lines)
+
+    return raw
+
+
+def _format_route_detail(data: dict) -> str:
+    """Format a single route with optional segments."""
+    rtype = data.get("type") or "?"
+    sub = data.get("sub_type") or ""
+    tag = f"{rtype}/{sub}" if sub else rtype
+    name = data.get("name", "")
+    dist = data.get("distance_km", 0)
+    elev = data.get("elevation_gain_m", 0)
+    est = data.get("estimated_time_min")
+    starred = " *" if data.get("starred") else ""
+
+    lines = [f"[{tag}] {name}{starred}"]
+    parts = [f"{dist}km", f"+{int(elev)}m"]
+    if est is not None:
+        parts.append(f"~{int(est)}min")
+    lines.append(f"  {', '.join(parts)}")
+
+    desc = data.get("description")
+    if desc:
+        lines.append(f"  {desc}")
+
+    segments = data.get("segments", [])
+    if segments:
+        lines.append("  segments:")
+        for s in segments:
+            sname = s.get("name", "")
+            sdist = s.get("distance_km", 0)
+            grade = s.get("average_grade", 0)
+            cat = s.get("climb_category", 0)
+            sparts = [f"{sdist}km", f"{grade}% avg"]
+            if cat > 0:
+                sparts.append(f"cat {cat}")
+            pr = s.get("pr")
+            if pr:
+                t = pr.get("time_sec", 0)
+                pr_min = int(t // 60)
+                pr_sec = int(t % 60)
+                sparts.append(f"PR {pr_min}:{pr_sec:02d}")
+            lines.append(f"    {sname}: {', '.join(sparts)}")
+
+    return "\n".join(lines)
+
+
 _FORMATTERS = {
     "todoist_today": format_todoist_list,
     "todoist_upcoming": format_todoist_list,
@@ -356,6 +744,10 @@ _FORMATTERS = {
     "capture": format_capture,
     "strava_activities": format_strava_activities,
     "strava_user": format_strava_user,
+    "strava_summary": format_strava_summary,
+    "strava_compare": format_strava_compare,
+    "strava_analysis": format_strava_analysis,
+    "strava_routes": format_strava_routes,
 }
 
 

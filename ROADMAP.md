@@ -7,14 +7,64 @@
 Builds on the Phase 1 Strava integration (tools `strava_activities`, `strava_user`).
 
 - `/strava-*` slash commands (CLI, web, Telegram, email parity)
-- Brief integration (yesterday's activity in daily brief)
+- ~~Brief integration (yesterday's activity in daily brief)~~
 - `strava-analysis` tool (training load, weekly/monthly summaries)
-- `strava-compare` tool (period-over-period comparison)
-- `strava-routes` tool (route/segment data)
+- ~~`strava-compare` tool (period-over-period comparison)~~
+- ~~`strava-routes` tool (route/segment data)~~
 - `strava-analysis-polarised` tool (HR zone distribution analysis)
 - Prompt templates for multi-step analysis
 - Chart/visualization rendering
 - MCP server extraction (optional)
+
+#### Strava Chat Examples
+
+“Show me my pace progression over the last 3 months”
+
+- Line chart showing pace over time, color-coded by run type
+- Summary statistics panel (avg pace, fastest, best tempo, total distance)
+- Insights panel highlighting key trends
+- v02/heart rate recovery
+
+Presentation within Web, CLI (TUI), Email, and Telegram channels
+
+“Why did yesterday's run feel so hard?”
+
+- synthesizes information and provide the reasons
+- also for further discussion
+
+"Show my latest Strava activity"
+
+- provides a summary of the last activity
+
+"Show my latest Strava running activity"
+
+- provides a summary of the last activity by the type
+
+"Show last weeks|N days Strava running activity"
+
+- provides a summary of the last activity by the type
+
+"From my longterm Strava stats, what do you recommend to improve my running performance?"
+
+- provides an analysis and identifies trends and provides detailed recommendations.
+
+"How does my current fitness compare to last month?"
+
+- provides an analysis and comparison trends.
+
+"How many kilometers did I run this month?"
+
+- shows KM to date for the month
+
+"Which goals do I need to focus on for this month"
+
+- analyses and determines which goals need to be worked on to avoid being missed
+
+"How did my heart rate zones | average pace | zones look during yesterday's run?"
+
+- break down the run with the details
+
+
 
 ## Fixes
 

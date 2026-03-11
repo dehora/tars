@@ -1,6 +1,7 @@
 import argparse
 import logging
 import os
+import re
 import readline
 import sys
 import threading
@@ -97,6 +98,11 @@ def _completer(text: str, state: int) -> str | None:
     else:
         options = [c for c in _SLASH_COMPLETIONS if c.startswith(text)]
     return options[state] if state < len(options) else None
+
+
+def _rl_prompt(s: str) -> str:
+    """Wrap ANSI escapes in readline markers so cursor position is correct."""
+    return re.sub(r'(\033\[[0-9;]*m)', r'\001\1\002', s)
 
 
 def _recolor_input(user_input: str) -> None:
@@ -261,7 +267,7 @@ def repl(config):
     try:
         while True:
             try:
-                user_input = input(bold(green("you> ")))
+                user_input = input(_rl_prompt(bold(green("you> "))))
             except (EOFError, KeyboardInterrupt):
                 print()
                 break
@@ -434,7 +440,7 @@ def main():
     sched_add.add_argument("schedule_name", help="schedule name (e.g. email-brief)")
     sched_add.add_argument("schedule_cmd", help="tars subcommand to run")
     sched_add.add_argument("schedule_args", nargs="*", help="subcommand arguments")
-    sched_add.add_argument("--hour", type=int, default=8)
+    sched_add.add_argument("--hour", type=int, default=6)
     sched_add.add_argument("--minute", type=int, default=0)
     sched_add.add_argument("--watch", help="watch a directory instead of using a timer")
     sched_sub.add_parser("list", help="show installed schedules")

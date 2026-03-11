@@ -1,10 +1,12 @@
 """Daily brief helpers (todoist + weather)."""
 
 import re
+from datetime import datetime, timezone
 
 from tars.colors import blue, bold, cyan, dim, red, yellow
 from tars.format import format_tool_result
 from tars.memory import _load_pinned
+from tars.strava import _load_tokens
 from tars.tools import run_tool
 
 
@@ -27,6 +29,19 @@ def build_brief_sections() -> list[tuple[str, str]]:
             sections.append((label, format_tool_result(tool_name, raw)))
         except Exception as e:
             sections.append((label, f"unavailable: {e}"))
+    if _load_tokens() is not None:
+        try:
+            is_monday = datetime.now(timezone.utc).weekday() == 0
+            if is_monday:
+                tool_name = "strava_analysis"
+                tool_args = {"period": "last-week"}
+            else:
+                tool_name = "strava_activities"
+                tool_args = {"period": "1d", "limit": 5}
+            raw = run_tool(tool_name, tool_args, quiet=True)
+            sections.append(("strava", format_tool_result(tool_name, raw)))
+        except Exception as e:
+            sections.append(("strava", f"unavailable: {e}"))
     return sections
 
 

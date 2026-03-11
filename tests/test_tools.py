@@ -48,5 +48,21 @@ class RequiredFieldValidationTests(unittest.TestCase):
         self.assertNotIn("missing required", result.get("error", ""))
 
 
+class StravaDispatchTests(unittest.TestCase):
+    """Verify run_tool() dispatches strava tools through to _run_strava_tool."""
+
+    @mock.patch("tars.tools._run_strava_tool", return_value='{"period": "this-month", "count": 0, "by_type": {}}')
+    def test_strava_summary_dispatches(self, mock_strava):
+        result = run_tool("strava_summary", {"period": "this-month"}, quiet=True)
+        mock_strava.assert_called_once_with("strava_summary", {"period": "this-month"})
+        self.assertIn("this-month", result)
+
+    @mock.patch("tars.tools._run_strava_tool", return_value='{"period": "this-week", "count": 0}')
+    def test_strava_analysis_dispatches(self, mock_strava):
+        result = run_tool("strava_analysis", {"period": "this-week"}, quiet=True)
+        mock_strava.assert_called_once_with("strava_analysis", {"period": "this-week"})
+        self.assertIn("this-week", result)
+
+
 if __name__ == "__main__":
     unittest.main()

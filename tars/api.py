@@ -250,6 +250,7 @@ _ALLOWED_TOOLS = {
     "note_daily",
     "notes_search",
     "web_read",
+    "strava_activities", "strava_user", "strava_summary", "strava_analysis",
 }
 
 
@@ -315,6 +316,7 @@ _BRIEF_LABEL_TO_API_KEY = {
     "tasks": "todoist_today",
     "weather": "weather_now",
     "forecast": "weather_forecast",
+    "strava": "strava",
 }
 
 

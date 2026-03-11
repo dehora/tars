@@ -245,10 +245,10 @@ ANTHROPIC_TOOLS = [
     {
         "name": "strava_summary",
         "description": (
-            "Aggregate Strava activities for a period into computed summaries: "
+            "Aggregate Strava activities for a single period into per-type summaries: "
             "totals (distance, time, elevation), averages (pace, HR, cadence), "
-            "and effort scores grouped by activity type. Use for fitness analysis, "
-            "training load, trend questions, and 'how am I doing?' queries. "
+            "and effort scores. Use for simple period breakdowns. "
+            "For trend comparison, use strava_analysis. "
             "Results are capped at 200 activities per period."
         ),
         "input_schema": {
@@ -283,6 +283,84 @@ ANTHROPIC_TOOLS = [
                     "description": "Sections to include (default: ['profile', 'stats'])",
                 },
             },
+        },
+    },
+    {
+        "name": "strava_compare",
+        "description": (
+            "Compare Strava activity summaries across two periods. Use for period-over-period "
+            "analysis like 'how does this month compare to last month?' or 'am I running more "
+            "than last year?'. Auto-derives comparison period if not specified."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "period_a": {
+                    "type": "string",
+                    "description": "The period to analyze: '7d', '30d', '3m', 'this-week', 'last-week', 'this-month', 'last-month', 'this-year', 'ytd'",
+                },
+                "period_b": {
+                    "type": "string",
+                    "description": "Comparison period (auto-derived if omitted — e.g. this-month auto-compares to last-month)",
+                },
+                "type": {
+                    "type": "string",
+                    "description": "Optional activity type filter: 'Run', 'Ride', 'Swim', etc.",
+                },
+            },
+            "required": ["period_a"],
+        },
+    },
+    {
+        "name": "strava_analysis",
+        "description": (
+            "Analyse Strava training for a period with automatic trend comparison "
+            "to the previous period. Returns overall totals across all activity types, "
+            "per-type breakdowns, and period-over-period deltas. Use for 'analyse my "
+            "training this week', 'how does this month compare?', or weekly summaries."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "period": {
+                    "type": "string",
+                    "description": "Time period: '7d', '30d', '3m', 'this-week', 'last-week', 'this-month', 'last-month', 'this-year', 'ytd' (default: 'this-week')",
+                },
+                "compare_period": {
+                    "type": "string",
+                    "description": "Comparison period (auto-derived if omitted — e.g. this-week auto-compares to last-week)",
+                },
+                "type": {
+                    "type": "string",
+                    "description": "Optional activity type filter: 'Run', 'Ride', 'Swim', etc.",
+                },
+            },
+        },
+    },
+    {
+        "name": "strava_routes",
+        "description": (
+            "Browse Strava routes and starred segments. Use when the user asks about "
+            "saved routes, route details, or starred/favourite segments."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "action": {
+                    "type": "string",
+                    "description": "What to do: 'list' routes, 'detail' for a specific route, 'starred' for starred segments",
+                    "enum": ["list", "detail", "starred"],
+                },
+                "id": {
+                    "type": "integer",
+                    "description": "Route ID — required for action 'detail'",
+                },
+                "limit": {
+                    "type": "integer",
+                    "description": "Max results (default 20, max 50)",
+                },
+            },
+            "required": ["action"],
         },
     },
 ]
@@ -393,7 +471,7 @@ def run_tool(name: str, args: dict, *, quiet: bool = False) -> str:
             return _run_note_tool(name, args)
         if name == "web_read":
             return _run_web_tool(name, args)
-        if name in ("strava_activities", "strava_user", "strava_summary"):
+        if name in ("strava_activities", "strava_user", "strava_summary", "strava_compare", "strava_analysis", "strava_routes"):
             return _run_strava_tool(name, args)
         if name.startswith("todoist_"):
             td_bin = _resolve_td()

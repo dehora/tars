@@ -31,6 +31,10 @@ _WORKOUT_TYPE_LABELS = {1: "race", 2: "long_run", 3: "workout", 11: "race", 12: 
 _PACE_TYPES = {"Run", "Walk", "Hike"}
 _SPEED_TYPES = {"Ride", "VirtualRide", "EBikeRide"}
 
+_ROUTE_TYPE = {1: "Ride", 2: "Run"}
+_ROUTE_SUB_TYPE = {1: "road", 2: "MTB", 3: "cross", 4: "trail", 5: "mixed"}
+_VALID_ROUTE_ACTIONS = {"list", "detail", "starred"}
+
 _TOKEN_FILE = "strava_tokens.json"
 
 
@@ -310,6 +314,12 @@ def _run_strava_tool(name: str, args: dict) -> str:
             return _handle_user(client, args)
         elif name == "strava_summary":
             return _handle_summary(client, args)
+        elif name == "strava_compare":
+            return _handle_compare(client, args)
+        elif name == "strava_analysis":
+            return _handle_analysis(client, args)
+        elif name == "strava_routes":
+            return _handle_routes(client, args)
         else:
             return json.dumps({"error": f"unknown strava tool: {name}"})
     finally:
@@ -449,6 +459,53 @@ def _handle_user(client, args: dict) -> str:
         return json.dumps({"error": f"Strava API error: {e}"})
 
 
+def _default_comparison_period(period_a_str: str, parsed_a: tuple[datetime, datetime]) -> tuple[datetime, datetime] | str:
+    """Derive the comparison period from period_a. Returns (after, before) or error string."""
+    after_a, before_a = parsed_a
+
+    if period_a_str == "this-week":
+        return _parse_period("last-week")
+    if period_a_str == "last-week":
+        after = after_a - timedelta(days=7)
+        before = after_a
+        return (after, before)
+    if period_a_str == "this-month":
+        return _parse_period("last-month")
+    if period_a_str == "last-month":
+        prev_last = after_a - timedelta(days=1)
+        after = prev_last.replace(day=1)
+        return (after, after_a)
+    if period_a_str in ("this-year", "ytd"):
+        after = after_a.replace(year=after_a.year - 1)
+        before = before_a.replace(year=before_a.year - 1)
+        return (after, before)
+
+    m = _PERIOD_RE.match(period_a_str)
+    if m:
+        span = before_a - after_a
+        after = after_a - span
+        before = after_a
+        return (after, before)
+
+    return f"cannot auto-derive comparison for {period_a_str!r}"
+
+
+def _compute_delta(a: dict, b: dict) -> dict:
+    """Compute absolute and percentage change between two summary dicts (a - b)."""
+    delta = {}
+    for key in a:
+        va = a[key]
+        vb = b.get(key)
+        if not isinstance(va, (int, float)) or vb is None or not isinstance(vb, (int, float)):
+            continue
+        change = round(va - vb, 2)
+        entry: dict = {"change": change}
+        if vb != 0:
+            entry["pct"] = round(change / abs(vb) * 100, 1)
+        delta[key] = entry
+    return delta
+
+
 def _summarise_group(atype: str, activities: list) -> dict:
     """Compute aggregate stats for a list of same-type activities."""
     total_dist_m = 0.0
@@ -479,7 +536,8 @@ def _summarise_group(atype: str, activities: list) -> dict:
             suffer_count += 1
 
     count = len(activities)
-    total_dist_km = round(total_dist_m / 1000, 1)
+    dist_km = total_dist_m / 1000
+    total_dist_km = round(dist_km, 1)
     total_hours = round(total_moving_secs / 3600, 1)
 
     out: dict = {
@@ -489,10 +547,10 @@ def _summarise_group(atype: str, activities: list) -> dict:
         "total_elevation_m": int(round(total_elev_m, 0)),
     }
 
-    if atype in _PACE_TYPES and total_dist_km > 0 and total_moving_secs > 0:
-        out["avg_pace_min_per_km"] = round(total_moving_secs / 60 / total_dist_km, 2)
+    if atype in _PACE_TYPES and dist_km > 0 and total_moving_secs > 0:
+        out["avg_pace_min_per_km"] = round(total_moving_secs / 60 / dist_km, 2)
     elif atype in _SPEED_TYPES and total_moving_secs > 0:
-        out["avg_speed_kmh"] = round(total_dist_km / (total_moving_secs / 3600), 1)
+        out["avg_speed_kmh"] = round(dist_km / (total_moving_secs / 3600), 1)
 
     if hr_count > 0:
         out["avg_heartrate"] = round(hr_sum / hr_count, 1)
@@ -503,6 +561,51 @@ def _summarise_group(atype: str, activities: list) -> dict:
         out["total_suffer_score"] = suffer_total
 
     return out
+
+
+def _format_dates(after: datetime, before: datetime) -> dict:
+    """Return date range as ISO strings."""
+    return {"after": after.strftime("%Y-%m-%d"), "before": before.strftime("%Y-%m-%d")}
+
+
+def _overall_totals(activities: list) -> dict:
+    """Cross-type sum of distance/time/elevation + avg_distance_km."""
+    total_dist_m = 0.0
+    total_moving_secs = 0
+    total_elev_m = 0.0
+    for a in activities:
+        total_dist_m += _safe_float(a.distance)
+        total_moving_secs += _safe_int(a.moving_time)
+        total_elev_m += _safe_float(a.total_elevation_gain)
+    count = len(activities)
+    total_dist_km = round(total_dist_m / 1000, 1)
+    total_hours = round(total_moving_secs / 3600, 1)
+    avg_dist = round(total_dist_km / count, 1) if count > 0 else 0.0
+    return {
+        "total_distance_km": total_dist_km,
+        "total_time_hours": total_hours,
+        "total_elevation_m": int(round(total_elev_m, 0)),
+        "avg_distance_km": avg_dist,
+    }
+
+
+def _compare_label(period_str: str) -> str:
+    """Map a period string to its natural comparison label."""
+    _MAP = {
+        "this-week": "last-week",
+        "last-week": "2-weeks-ago",
+        "this-month": "last-month",
+        "last-month": "2-months-ago",
+        "this-year": "last-year",
+        "ytd": "last-year-ytd",
+    }
+    label = _MAP.get(period_str)
+    if label:
+        return label
+    m = _PERIOD_RE.match(period_str)
+    if m:
+        return f"prior {period_str}"
+    return period_str
 
 
 def _handle_summary(client, args: dict) -> str:
@@ -524,7 +627,7 @@ def _handle_summary(client, args: dict) -> str:
             activities = [a for a in activities if _type_str(a.type) == activity_type]
 
         if not activities:
-            return json.dumps({"summary": {}, "period": period, "count": 0})
+            return json.dumps({"period": period, "count": 0, "by_type": {}})
 
         groups: dict[str, list] = defaultdict(list)
         for a in activities:
@@ -535,6 +638,233 @@ def _handle_summary(client, args: dict) -> str:
             result["by_type"][gtype] = _summarise_group(gtype, acts)
 
         return json.dumps(result)
+
+    except Exception as e:
+        return json.dumps({"error": f"Strava API error: {e}"})
+
+
+def _handle_compare(client, args: dict) -> str:
+    """Compare activity summaries across two periods."""
+    try:
+        period_a_str = args.get("period_a", "this-month")
+        parsed_a = _parse_period(period_a_str)
+        if isinstance(parsed_a, str):
+            return json.dumps({"error": parsed_a})
+
+        period_b_str = args.get("period_b")
+        if period_b_str:
+            parsed_b = _parse_period(period_b_str)
+            if isinstance(parsed_b, str):
+                return json.dumps({"error": parsed_b})
+        else:
+            parsed_b = _default_comparison_period(period_a_str, parsed_a)
+            if isinstance(parsed_b, str):
+                return json.dumps({"error": parsed_b})
+            period_b_str = "auto"
+
+        activity_type = args.get("type")
+        if activity_type is not None and activity_type not in _VALID_ACTIVITY_TYPES:
+            return json.dumps({"error": f"invalid activity type: {activity_type!r}"})
+
+        acts_a = list(client.get_activities(after=parsed_a[0], before=parsed_a[1], limit=200))
+        acts_b = list(client.get_activities(after=parsed_b[0], before=parsed_b[1], limit=200))
+
+        if activity_type:
+            acts_a = [a for a in acts_a if _type_str(a.type) == activity_type]
+            acts_b = [a for a in acts_b if _type_str(a.type) == activity_type]
+
+        groups_a: dict[str, list] = defaultdict(list)
+        for a in acts_a:
+            groups_a[_type_str(a.type)].append(a)
+
+        groups_b: dict[str, list] = defaultdict(list)
+        for a in acts_b:
+            groups_b[_type_str(a.type)].append(a)
+
+        all_types = sorted(set(groups_a) | set(groups_b))
+
+        by_type = {}
+        for atype in all_types:
+            entry: dict = {}
+            if atype in groups_a:
+                entry["period_a"] = _summarise_group(atype, groups_a[atype])
+            if atype in groups_b:
+                entry["period_b"] = _summarise_group(atype, groups_b[atype])
+            if "period_a" in entry and "period_b" in entry:
+                entry["delta"] = _compute_delta(entry["period_a"], entry["period_b"])
+            by_type[atype] = entry
+
+        return json.dumps({
+            "period_a": period_a_str,
+            "period_b": period_b_str,
+            "count_a": len(acts_a),
+            "count_b": len(acts_b),
+            "by_type": by_type,
+        })
+
+    except Exception as e:
+        return json.dumps({"error": f"Strava API error: {e}"})
+
+
+def _handle_analysis(client, args: dict) -> str:
+    """Analyse training for a period with automatic trend comparison."""
+    try:
+        period_str = args.get("period", "this-week")
+        parsed = _parse_period(period_str)
+        if isinstance(parsed, str):
+            return json.dumps({"error": parsed})
+        after, before = parsed
+
+        activity_type = args.get("type")
+        if activity_type is not None and activity_type not in _VALID_ACTIVITY_TYPES:
+            return json.dumps({"error": f"invalid activity type: {activity_type!r}"})
+
+        compare_period_str = args.get("compare_period")
+        if compare_period_str:
+            parsed_b = _parse_period(compare_period_str)
+            if isinstance(parsed_b, str):
+                return json.dumps({"error": parsed_b})
+            compare_label = compare_period_str
+        else:
+            parsed_b = _default_comparison_period(period_str, parsed)
+            if isinstance(parsed_b, str):
+                return json.dumps({"error": parsed_b})
+            compare_label = _compare_label(period_str)
+        after_b, before_b = parsed_b
+
+        activities = list(client.get_activities(after=after, before=before, limit=200))
+        compare_activities = list(client.get_activities(after=after_b, before=before_b, limit=200))
+
+        if activity_type:
+            activities = [a for a in activities if _type_str(a.type) == activity_type]
+            compare_activities = [a for a in compare_activities if _type_str(a.type) == activity_type]
+
+        # Group by type
+        groups: dict[str, list] = defaultdict(list)
+        for a in activities:
+            groups[_type_str(a.type)].append(a)
+
+        compare_groups: dict[str, list] = defaultdict(list)
+        for a in compare_activities:
+            compare_groups[_type_str(a.type)].append(a)
+
+        by_type = {}
+        for gtype, acts in groups.items():
+            by_type[gtype] = _summarise_group(gtype, acts)
+
+        compare_by_type = {}
+        for gtype, acts in compare_groups.items():
+            compare_by_type[gtype] = _summarise_group(gtype, acts)
+
+        overall = _overall_totals(activities)
+        compare_overall = _overall_totals(compare_activities)
+
+        overall_delta = _compute_delta(overall, compare_overall)
+
+        # Per-type deltas only for types present in both periods
+        by_type_delta = {}
+        for gtype in set(by_type) & set(compare_by_type):
+            by_type_delta[gtype] = _compute_delta(by_type[gtype], compare_by_type[gtype])
+
+        return json.dumps({
+            "period": period_str,
+            "period_dates": _format_dates(after, before),
+            "count": len(activities),
+            "overall": overall,
+            "by_type": by_type,
+            "compare_period": compare_label,
+            "compare_period_dates": _format_dates(after_b, before_b),
+            "compare_count": len(compare_activities),
+            "compare_overall": compare_overall,
+            "compare_by_type": compare_by_type,
+            "overall_delta": overall_delta,
+            "by_type_delta": by_type_delta,
+        })
+
+    except Exception as e:
+        return json.dumps({"error": f"Strava API error: {e}"})
+
+
+def _route_to_dict(route, include_segments: bool = False) -> dict:
+    """Extract route fields into a plain dict."""
+    distance_m = _safe_float(getattr(route, "distance", None))
+    elev_m = _safe_float(getattr(route, "elevation_gain", None))
+    est_time = getattr(route, "estimated_moving_time", None)
+
+    result: dict = {
+        "id": route.id,
+        "name": getattr(route, "name", None),
+        "type": _ROUTE_TYPE.get(getattr(route, "type", None)),
+        "sub_type": _ROUTE_SUB_TYPE.get(getattr(route, "sub_type", None)),
+        "distance_km": round(distance_m / 1000, 1),
+        "elevation_gain_m": round(elev_m, 0),
+        "estimated_time_min": round(_safe_int(est_time) / 60, 0) if est_time is not None else None,
+        "starred": getattr(route, "starred", None),
+        "private": getattr(route, "private", None),
+    }
+
+    desc = getattr(route, "description", None)
+    if desc:
+        result["description"] = desc
+
+    if include_segments and hasattr(route, "segments") and route.segments:
+        result["segments"] = [_segment_to_dict(s) for s in route.segments]
+
+    return result
+
+
+def _segment_to_dict(seg) -> dict:
+    """Extract segment fields into a plain dict."""
+    distance_m = _safe_float(getattr(seg, "distance", None))
+    result: dict = {
+        "id": seg.id,
+        "name": getattr(seg, "name", None),
+        "activity_type": _type_str(getattr(seg, "activity_type", None)),
+        "distance_km": round(distance_m / 1000, 1),
+        "average_grade": _safe_float(getattr(seg, "average_grade", None)),
+        "maximum_grade": _safe_float(getattr(seg, "maximum_grade", None)),
+        "elevation_high_m": _safe_float(getattr(seg, "elevation_high", None)),
+        "elevation_low_m": _safe_float(getattr(seg, "elevation_low", None)),
+        "climb_category": _safe_int(getattr(seg, "climb_category", None)),
+    }
+
+    for attr in ("city", "state", "country"):
+        val = getattr(seg, attr, None)
+        if val:
+            result[attr] = val
+
+    pr = getattr(seg, "athlete_pr_effort", None)
+    if pr is not None:
+        pr_time = getattr(pr, "elapsed_time", None) or getattr(pr, "moving_time", None)
+        if pr_time is not None:
+            result["pr"] = {"time_sec": _safe_int(pr_time)}
+
+    return result
+
+
+def _handle_routes(client, args: dict) -> str:
+    """Handle route listing, detail, and starred segments."""
+    try:
+        action = args.get("action", "list")
+        if action not in _VALID_ROUTE_ACTIONS:
+            return json.dumps({"error": f"invalid action: {action!r} — use 'list', 'detail', or 'starred'"})
+
+        limit = max(1, min(50, int(args.get("limit", 20))))
+
+        if action == "detail":
+            route_id = args.get("id")
+            if route_id is None:
+                return json.dumps({"error": "id is required for action 'detail'"})
+            route = client.get_route(int(route_id))
+            return json.dumps(_route_to_dict(route, include_segments=True))
+
+        if action == "starred":
+            segs = list(client.get_starred_segments(limit=limit))
+            return json.dumps({"segments": [_segment_to_dict(s) for s in segs]})
+
+        # list
+        routes = list(client.get_routes(limit=limit))
+        return json.dumps({"routes": [_route_to_dict(r) for r in routes]})
 
     except Exception as e:
         return json.dumps({"error": f"Strava API error: {e}"})

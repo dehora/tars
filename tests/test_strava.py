@@ -673,6 +673,7 @@ class SummaryToolTests(unittest.TestCase):
 
         result = json.loads(strava._run_strava_tool("strava_summary", {}))
         self.assertEqual(result["count"], 0)
+        self.assertEqual(result["by_type"], {})
 
     @mock.patch.object(strava, "_get_client")
     def test_summary_invalid_period(self, mock_get):
@@ -730,6 +731,718 @@ class FormatSummaryTests(unittest.TestCase):
         from tars.format import format_strava_summary
         raw = json.dumps({"period": "this-month", "count": 0, "by_type": {}})
         out = format_strava_summary(raw)
+        self.assertIn("no activities", out)
+
+
+def _mock_route(**overrides):
+    """Create a mock route with sensible defaults."""
+    defaults = {
+        "id": 1001,
+        "name": "Morning Loop",
+        "type": 2,  # Run
+        "sub_type": 4,  # trail
+        "distance": 10200.0,
+        "elevation_gain": 250.0,
+        "estimated_moving_time": 3900,
+        "starred": True,
+        "private": False,
+        "description": None,
+        "segments": [],
+    }
+    defaults.update(overrides)
+    r = mock.Mock()
+    for k, v in defaults.items():
+        setattr(r, k, v)
+    return r
+
+
+def _mock_segment(**overrides):
+    """Create a mock segment with sensible defaults."""
+    defaults = {
+        "id": 5001,
+        "name": "Hill Climb",
+        "activity_type": "Run",
+        "distance": 1500.0,
+        "average_grade": 6.5,
+        "maximum_grade": 12.0,
+        "elevation_high": 320.0,
+        "elevation_low": 220.0,
+        "climb_category": 3,
+        "city": "Dublin",
+        "state": "Leinster",
+        "country": "Ireland",
+        "athlete_pr_effort": None,
+    }
+    defaults.update(overrides)
+    s = mock.Mock()
+    for k, v in defaults.items():
+        setattr(s, k, v)
+    return s
+
+
+class DefaultComparisonPeriodTests(unittest.TestCase):
+    def test_this_week(self):
+        parsed_a = strava._parse_period("this-week")
+        result = strava._default_comparison_period("this-week", parsed_a)
+        self.assertIsInstance(result, tuple)
+        after, before = result
+        self.assertEqual(after.weekday(), 0)
+        self.assertEqual((before - after).days, 7)
+
+    def test_this_month(self):
+        parsed_a = strava._parse_period("this-month")
+        result = strava._default_comparison_period("this-month", parsed_a)
+        self.assertIsInstance(result, tuple)
+        after, before = result
+        self.assertEqual(after.day, 1)
+        self.assertEqual(before.day, 1)
+
+    def test_last_week(self):
+        parsed_a = strava._parse_period("last-week")
+        result = strava._default_comparison_period("last-week", parsed_a)
+        self.assertIsInstance(result, tuple)
+        after, before = result
+        self.assertEqual((before - after).days, 7)
+
+    def test_last_month(self):
+        parsed_a = strava._parse_period("last-month")
+        result = strava._default_comparison_period("last-month", parsed_a)
+        self.assertIsInstance(result, tuple)
+        after, before = result
+        self.assertEqual(after.day, 1)
+
+    def test_this_year(self):
+        parsed_a = strava._parse_period("this-year")
+        result = strava._default_comparison_period("this-year", parsed_a)
+        self.assertIsInstance(result, tuple)
+        after, before = result
+        self.assertEqual(after.year, parsed_a[0].year - 1)
+
+    def test_ytd(self):
+        parsed_a = strava._parse_period("ytd")
+        result = strava._default_comparison_period("ytd", parsed_a)
+        self.assertIsInstance(result, tuple)
+
+    def test_numeric_7d(self):
+        parsed_a = strava._parse_period("7d")
+        result = strava._default_comparison_period("7d", parsed_a)
+        self.assertIsInstance(result, tuple)
+        after, before = result
+        span = before - after
+        self.assertAlmostEqual(span.total_seconds(), 7 * 86400, delta=5)
+
+    def test_numeric_3m(self):
+        parsed_a = strava._parse_period("3m")
+        result = strava._default_comparison_period("3m", parsed_a)
+        self.assertIsInstance(result, tuple)
+        after, before = result
+        self.assertLess(after, before)
+
+    def test_invalid_returns_error(self):
+        result = strava._default_comparison_period("garbage", (datetime.now(timezone.utc), datetime.now(timezone.utc)))
+        self.assertIsInstance(result, str)
+        self.assertIn("cannot auto-derive", result)
+
+
+class ComputeDeltaTests(unittest.TestCase):
+    def test_basic_delta(self):
+        a = {"count": 10, "total_distance_km": 50.0}
+        b = {"count": 8, "total_distance_km": 40.0}
+        delta = strava._compute_delta(a, b)
+        self.assertEqual(delta["count"]["change"], 2)
+        self.assertAlmostEqual(delta["count"]["pct"], 25.0)
+        self.assertAlmostEqual(delta["total_distance_km"]["change"], 10.0)
+        self.assertAlmostEqual(delta["total_distance_km"]["pct"], 25.0)
+
+    def test_zero_denominator(self):
+        a = {"count": 5}
+        b = {"count": 0}
+        delta = strava._compute_delta(a, b)
+        self.assertEqual(delta["count"]["change"], 5)
+        self.assertNotIn("pct", delta["count"])
+
+    def test_negative_change(self):
+        a = {"total_distance_km": 30.0}
+        b = {"total_distance_km": 50.0}
+        delta = strava._compute_delta(a, b)
+        self.assertAlmostEqual(delta["total_distance_km"]["change"], -20.0)
+        self.assertAlmostEqual(delta["total_distance_km"]["pct"], -40.0)
+
+    def test_non_numeric_skipped(self):
+        a = {"count": 5, "label": "Run"}
+        b = {"count": 3, "label": "Run"}
+        delta = strava._compute_delta(a, b)
+        self.assertIn("count", delta)
+        self.assertNotIn("label", delta)
+
+    def test_missing_key_in_b(self):
+        a = {"count": 5, "extra": 10}
+        b = {"count": 3}
+        delta = strava._compute_delta(a, b)
+        self.assertIn("count", delta)
+        self.assertNotIn("extra", delta)
+
+
+class CompareToolTests(unittest.TestCase):
+    def setUp(self):
+        self.client = mock.Mock()
+
+    @mock.patch.object(strava, "_get_client")
+    def test_basic_comparison(self, mock_get):
+        mock_get.return_value = self.client
+        acts_a = [_mock_activity(type="Run", distance=5000.0, moving_time=1500)]
+        acts_b = [_mock_activity(type="Run", distance=4000.0, moving_time=1300)]
+        self.client.get_activities.side_effect = [acts_a, acts_b]
+
+        result = json.loads(strava._run_strava_tool("strava_compare", {"period_a": "this-month"}))
+        self.assertEqual(result["period_a"], "this-month")
+        self.assertEqual(result["period_b"], "auto")
+        self.assertEqual(result["count_a"], 1)
+        self.assertEqual(result["count_b"], 1)
+        self.assertIn("Run", result["by_type"])
+        self.assertIn("delta", result["by_type"]["Run"])
+
+    @mock.patch.object(strava, "_get_client")
+    def test_explicit_period_b(self, mock_get):
+        mock_get.return_value = self.client
+        self.client.get_activities.side_effect = [[], []]
+
+        result = json.loads(strava._run_strava_tool("strava_compare", {
+            "period_a": "this-month", "period_b": "last-month"
+        }))
+        self.assertEqual(result["period_b"], "last-month")
+
+    @mock.patch.object(strava, "_get_client")
+    def test_type_filter(self, mock_get):
+        mock_get.return_value = self.client
+        run = _mock_activity(type="Run", distance=5000.0, moving_time=1500)
+        ride = _mock_activity(type="Ride", distance=20000.0, moving_time=3600)
+        self.client.get_activities.side_effect = [[run, ride], [run]]
+
+        result = json.loads(strava._run_strava_tool("strava_compare", {
+            "period_a": "this-month", "type": "Run"
+        }))
+        self.assertEqual(result["count_a"], 1)
+        self.assertIn("Run", result["by_type"])
+        self.assertNotIn("Ride", result["by_type"])
+
+    @mock.patch.object(strava, "_get_client")
+    def test_invalid_type(self, mock_get):
+        mock_get.return_value = self.client
+        result = json.loads(strava._run_strava_tool("strava_compare", {
+            "period_a": "this-month", "type": "InvalidSport"
+        }))
+        self.assertIn("error", result)
+
+    @mock.patch.object(strava, "_get_client")
+    def test_invalid_period(self, mock_get):
+        mock_get.return_value = self.client
+        result = json.loads(strava._run_strava_tool("strava_compare", {"period_a": "garbage"}))
+        self.assertIn("error", result)
+
+    @mock.patch.object(strava, "_get_client")
+    def test_invalid_period_b(self, mock_get):
+        mock_get.return_value = self.client
+        result = json.loads(strava._run_strava_tool("strava_compare", {
+            "period_a": "this-month", "period_b": "garbage"
+        }))
+        self.assertIn("error", result)
+
+    @mock.patch.object(strava, "_get_client")
+    def test_empty_periods(self, mock_get):
+        mock_get.return_value = self.client
+        self.client.get_activities.side_effect = [[], []]
+
+        result = json.loads(strava._run_strava_tool("strava_compare", {"period_a": "this-month"}))
+        self.assertEqual(result["count_a"], 0)
+        self.assertEqual(result["count_b"], 0)
+        self.assertEqual(result["by_type"], {})
+
+    @mock.patch.object(strava, "_get_client")
+    def test_one_sided_comparison(self, mock_get):
+        mock_get.return_value = self.client
+        acts_a = [_mock_activity(type="Run", distance=5000.0, moving_time=1500)]
+        self.client.get_activities.side_effect = [acts_a, []]
+
+        result = json.loads(strava._run_strava_tool("strava_compare", {"period_a": "this-month"}))
+        self.assertEqual(result["count_a"], 1)
+        self.assertEqual(result["count_b"], 0)
+        run_entry = result["by_type"]["Run"]
+        self.assertIn("period_a", run_entry)
+        self.assertNotIn("period_b", run_entry)
+        self.assertNotIn("delta", run_entry)
+
+    @mock.patch.object(strava, "_get_client")
+    def test_delta_keys_present(self, mock_get):
+        mock_get.return_value = self.client
+        acts_a = [_mock_activity(type="Run", distance=5000.0, moving_time=1500,
+                                 average_heartrate=150.0)]
+        acts_b = [_mock_activity(type="Run", distance=4000.0, moving_time=1300,
+                                 average_heartrate=145.0)]
+        self.client.get_activities.side_effect = [acts_a, acts_b]
+
+        result = json.loads(strava._run_strava_tool("strava_compare", {"period_a": "this-month"}))
+        delta = result["by_type"]["Run"]["delta"]
+        self.assertIn("count", delta)
+        self.assertIn("total_distance_km", delta)
+        self.assertIn("total_time_hours", delta)
+        self.assertIn("avg_heartrate", delta)
+
+
+class RoutesToolTests(unittest.TestCase):
+    def setUp(self):
+        self.client = mock.Mock()
+
+    @mock.patch.object(strava, "_get_client")
+    def test_list_routes(self, mock_get):
+        mock_get.return_value = self.client
+        self.client.get_routes.return_value = [_mock_route(), _mock_route(id=1002, name="Evening Loop")]
+
+        result = json.loads(strava._run_strava_tool("strava_routes", {"action": "list"}))
+        self.assertIn("routes", result)
+        self.assertEqual(len(result["routes"]), 2)
+        self.assertEqual(result["routes"][0]["id"], 1001)
+        self.assertEqual(result["routes"][0]["type"], "Run")
+        self.assertEqual(result["routes"][0]["sub_type"], "trail")
+
+    @mock.patch.object(strava, "_get_client")
+    def test_route_detail(self, mock_get):
+        mock_get.return_value = self.client
+        seg = _mock_segment()
+        route = _mock_route(segments=[seg])
+        self.client.get_route.return_value = route
+
+        result = json.loads(strava._run_strava_tool("strava_routes", {"action": "detail", "id": 1001}))
+        self.assertEqual(result["id"], 1001)
+        self.assertIn("segments", result)
+        self.assertEqual(len(result["segments"]), 1)
+        self.assertEqual(result["segments"][0]["name"], "Hill Climb")
+
+    @mock.patch.object(strava, "_get_client")
+    def test_starred_segments(self, mock_get):
+        mock_get.return_value = self.client
+        seg = _mock_segment()
+        self.client.get_starred_segments.return_value = [seg]
+
+        result = json.loads(strava._run_strava_tool("strava_routes", {"action": "starred"}))
+        self.assertIn("segments", result)
+        self.assertEqual(len(result["segments"]), 1)
+
+    @mock.patch.object(strava, "_get_client")
+    def test_limit_clamped(self, mock_get):
+        mock_get.return_value = self.client
+        self.client.get_routes.return_value = []
+
+        strava._run_strava_tool("strava_routes", {"action": "list", "limit": 999})
+        self.client.get_routes.assert_called_once_with(limit=50)
+
+        self.client.get_routes.reset_mock()
+        strava._run_strava_tool("strava_routes", {"action": "list", "limit": -5})
+        self.client.get_routes.assert_called_once_with(limit=1)
+
+    @mock.patch.object(strava, "_get_client")
+    def test_missing_id_error(self, mock_get):
+        mock_get.return_value = self.client
+        result = json.loads(strava._run_strava_tool("strava_routes", {"action": "detail"}))
+        self.assertIn("error", result)
+        self.assertIn("id is required", result["error"])
+
+    @mock.patch.object(strava, "_get_client")
+    def test_invalid_action(self, mock_get):
+        mock_get.return_value = self.client
+        result = json.loads(strava._run_strava_tool("strava_routes", {"action": "delete"}))
+        self.assertIn("error", result)
+
+    @mock.patch.object(strava, "_get_client")
+    def test_type_sub_type_mapping(self, mock_get):
+        mock_get.return_value = self.client
+        route = _mock_route(type=1, sub_type=2)  # Ride / MTB
+        self.client.get_routes.return_value = [route]
+
+        result = json.loads(strava._run_strava_tool("strava_routes", {"action": "list"}))
+        self.assertEqual(result["routes"][0]["type"], "Ride")
+        self.assertEqual(result["routes"][0]["sub_type"], "MTB")
+
+    @mock.patch.object(strava, "_get_client")
+    def test_segment_pr_handling(self, mock_get):
+        mock_get.return_value = self.client
+        pr = mock.Mock()
+        pr.elapsed_time = 360
+        pr.moving_time = 350
+        seg = _mock_segment(athlete_pr_effort=pr)
+        self.client.get_starred_segments.return_value = [seg]
+
+        result = json.loads(strava._run_strava_tool("strava_routes", {"action": "starred"}))
+        self.assertIn("pr", result["segments"][0])
+        self.assertEqual(result["segments"][0]["pr"]["time_sec"], 360)
+
+
+class FormatCompareTests(unittest.TestCase):
+    def test_basic_output(self):
+        from tars.format import format_strava_compare
+        raw = json.dumps({
+            "period_a": "this-month", "period_b": "last-month",
+            "count_a": 10, "count_b": 8,
+            "by_type": {
+                "Run": {
+                    "period_a": {"count": 10, "total_distance_km": 50.0, "total_time_hours": 5.0,
+                                 "total_elevation_m": 500, "avg_pace_min_per_km": 5.0, "avg_heartrate": 150.0},
+                    "period_b": {"count": 8, "total_distance_km": 40.0, "total_time_hours": 4.0,
+                                 "total_elevation_m": 400, "avg_pace_min_per_km": 5.25, "avg_heartrate": 148.0},
+                    "delta": {
+                        "count": {"change": 2, "pct": 25.0},
+                        "total_distance_km": {"change": 10.0, "pct": 25.0},
+                        "total_time_hours": {"change": 1.0, "pct": 25.0},
+                        "total_elevation_m": {"change": 100, "pct": 25.0},
+                        "avg_pace_min_per_km": {"change": -0.25, "pct": -4.8},
+                        "avg_heartrate": {"change": 2.0, "pct": 1.4},
+                    },
+                }
+            },
+        })
+        out = format_strava_compare(raw)
+        self.assertIn("this-month vs last-month", out)
+        self.assertIn("Run: 10 vs 8", out)
+        self.assertIn("distance:", out)
+        self.assertIn("faster", out)
+
+    def test_empty_periods(self):
+        from tars.format import format_strava_compare
+        raw = json.dumps({
+            "period_a": "this-month", "period_b": "last-month",
+            "count_a": 0, "count_b": 0,
+            "by_type": {},
+        })
+        out = format_strava_compare(raw)
+        self.assertIn("no activities", out)
+
+    def test_error_passthrough(self):
+        from tars.format import format_strava_compare
+        raw = json.dumps({"error": "Strava API error: timeout"})
+        out = format_strava_compare(raw)
+        self.assertIn("timeout", out)
+
+
+class FormatRoutesTests(unittest.TestCase):
+    def test_route_list(self):
+        from tars.format import format_strava_routes
+        raw = json.dumps({"routes": [
+            {"id": 1001, "name": "Morning Loop", "type": "Run", "sub_type": "trail",
+             "distance_km": 10.2, "elevation_gain_m": 250, "estimated_time_min": 65,
+             "starred": True},
+        ]})
+        out = format_strava_routes(raw)
+        self.assertIn("[Run/trail]", out)
+        self.assertIn("Morning Loop", out)
+        self.assertIn("10.2km", out)
+        self.assertIn("id:1001", out)
+        self.assertIn("*", out)
+
+    def test_route_detail_with_segments(self):
+        from tars.format import format_strava_routes
+        raw = json.dumps({
+            "id": 1001, "name": "Morning Loop", "type": "Run", "sub_type": "trail",
+            "distance_km": 10.2, "elevation_gain_m": 250, "estimated_time_min": 65,
+            "starred": True, "segments": [
+                {"id": 5001, "name": "Hill Climb", "distance_km": 1.5,
+                 "average_grade": 6.5, "climb_category": 3,
+                 "pr": {"time_sec": 360}},
+            ],
+        })
+        out = format_strava_routes(raw)
+        self.assertIn("[Run/trail]", out)
+        self.assertIn("segments:", out)
+        self.assertIn("Hill Climb", out)
+        self.assertIn("cat 3", out)
+        self.assertIn("PR 6:00", out)
+
+    def test_starred_segments(self):
+        from tars.format import format_strava_routes
+        raw = json.dumps({"segments": [
+            {"id": 5001, "name": "Hill Climb", "distance_km": 1.5,
+             "average_grade": 6.5, "climb_category": 3, "city": "Dublin",
+             "pr": {"time_sec": 360}},
+        ]})
+        out = format_strava_routes(raw)
+        self.assertIn("Hill Climb", out)
+        self.assertIn("Dublin", out)
+        self.assertIn("PR 6:00", out)
+
+    def test_empty_list(self):
+        from tars.format import format_strava_routes
+        raw = json.dumps({"routes": []})
+        out = format_strava_routes(raw)
+        self.assertIn("no routes", out)
+
+    def test_empty_segments(self):
+        from tars.format import format_strava_routes
+        raw = json.dumps({"segments": []})
+        out = format_strava_routes(raw)
+        self.assertIn("no starred segments", out)
+
+    def test_error_passthrough(self):
+        from tars.format import format_strava_routes
+        raw = json.dumps({"error": "Strava API error: timeout"})
+        out = format_strava_routes(raw)
+        self.assertIn("timeout", out)
+
+
+class SummariseGroupPrecisionTests(unittest.TestCase):
+    def test_short_distance_pace_not_distorted_by_rounding(self):
+        """A 450m run (rounds to 0.5km) should compute pace from 0.45km, not 0.5km."""
+        a = _mock_activity(type="Run", distance=450.0, moving_time=180,
+                           total_elevation_gain=0.0, average_heartrate=None,
+                           suffer_score=None)
+        result = strava._summarise_group("Run", [a])
+        # 180s / 0.45km = 6.67 min/km (correct)
+        # 180s / 0.5km  = 6.00 min/km (wrong, from pre-rounded value)
+        self.assertAlmostEqual(result["avg_pace_min_per_km"], 6.67, places=1)
+
+    def test_short_distance_speed_not_distorted_by_rounding(self):
+        """A 450m ride (rounds to 0.5km) should compute speed from 0.45km."""
+        a = _mock_activity(type="Ride", distance=450.0, moving_time=60,
+                           total_elevation_gain=0.0, average_heartrate=None,
+                           suffer_score=None)
+        result = strava._summarise_group("Ride", [a])
+        # 0.45km / (60/3600)h = 27.0 km/h (correct)
+        # 0.5km  / (60/3600)h = 30.0 km/h (wrong)
+        self.assertAlmostEqual(result["avg_speed_kmh"], 27.0, places=0)
+
+
+class OverallTotalsTests(unittest.TestCase):
+    def test_empty_list_returns_zeros(self):
+        result = strava._overall_totals([])
+        self.assertEqual(result["total_distance_km"], 0.0)
+        self.assertEqual(result["total_time_hours"], 0.0)
+        self.assertEqual(result["total_elevation_m"], 0)
+        self.assertEqual(result["avg_distance_km"], 0.0)
+
+    def test_single_activity(self):
+        a = _mock_activity(distance=10000.0, moving_time=3600, total_elevation_gain=100.0)
+        result = strava._overall_totals([a])
+        self.assertEqual(result["total_distance_km"], 10.0)
+        self.assertEqual(result["total_time_hours"], 1.0)
+        self.assertEqual(result["total_elevation_m"], 100)
+        self.assertEqual(result["avg_distance_km"], 10.0)
+
+    def test_mixed_types_aggregate(self):
+        run = _mock_activity(type="Run", distance=5000.0, moving_time=1500, total_elevation_gain=50.0)
+        walk = _mock_activity(type="Walk", distance=3000.0, moving_time=1800, total_elevation_gain=20.0)
+        result = strava._overall_totals([run, walk])
+        self.assertEqual(result["total_distance_km"], 8.0)
+        self.assertEqual(result["avg_distance_km"], 4.0)
+
+    def test_avg_distance_div_by_count(self):
+        a1 = _mock_activity(distance=6000.0, moving_time=1800, total_elevation_gain=0.0)
+        a2 = _mock_activity(distance=4000.0, moving_time=1200, total_elevation_gain=0.0)
+        result = strava._overall_totals([a1, a2])
+        self.assertEqual(result["avg_distance_km"], 5.0)
+
+
+class AnalysisToolTests(unittest.TestCase):
+    def setUp(self):
+        self.client = mock.Mock()
+
+    @mock.patch.object(strava, "_get_client")
+    def test_basic_output_keys(self, mock_get):
+        mock_get.return_value = self.client
+        activities = [_mock_activity(id=1), _mock_activity(id=2)]
+        self.client.get_activities.return_value = activities
+
+        result = json.loads(strava._run_strava_tool("strava_analysis", {"period": "this-week"}))
+        for key in ("period", "period_dates", "count", "overall", "by_type",
+                     "compare_period", "compare_period_dates", "compare_count",
+                     "compare_overall", "compare_by_type", "overall_delta", "by_type_delta"):
+            self.assertIn(key, result, f"missing key: {key}")
+
+    @mock.patch.object(strava, "_get_client")
+    def test_overall_totals_match_activities(self, mock_get):
+        mock_get.return_value = self.client
+        a1 = _mock_activity(distance=5000.0, moving_time=1500, total_elevation_gain=50.0)
+        a2 = _mock_activity(distance=3000.0, moving_time=900, total_elevation_gain=30.0)
+        self.client.get_activities.return_value = [a1, a2]
+
+        result = json.loads(strava._run_strava_tool("strava_analysis", {"period": "this-week"}))
+        self.assertEqual(result["count"], 2)
+        self.assertEqual(result["overall"]["total_distance_km"], 8.0)
+
+    @mock.patch.object(strava, "_get_client")
+    def test_auto_derived_compare_period(self, mock_get):
+        mock_get.return_value = self.client
+        self.client.get_activities.return_value = []
+
+        result = json.loads(strava._run_strava_tool("strava_analysis", {"period": "this-week"}))
+        self.assertEqual(result["compare_period"], "last-week")
+
+    @mock.patch.object(strava, "_get_client")
+    def test_explicit_compare_period(self, mock_get):
+        mock_get.return_value = self.client
+        self.client.get_activities.return_value = []
+
+        result = json.loads(strava._run_strava_tool("strava_analysis", {
+            "period": "this-week", "compare_period": "last-month"
+        }))
+        self.assertEqual(result["compare_period"], "last-month")
+
+    @mock.patch.object(strava, "_get_client")
+    def test_type_filter_applied_both_periods(self, mock_get):
+        mock_get.return_value = self.client
+        run = _mock_activity(type="Run", distance=5000.0)
+        ride = _mock_activity(type="Ride", distance=10000.0)
+        self.client.get_activities.return_value = [run, ride]
+
+        result = json.loads(strava._run_strava_tool("strava_analysis", {
+            "period": "this-week", "type": "Run"
+        }))
+        self.assertEqual(result["count"], 1)
+        self.assertIn("Run", result["by_type"])
+        self.assertNotIn("Ride", result["by_type"])
+
+    @mock.patch.object(strava, "_get_client")
+    def test_invalid_period_returns_error(self, mock_get):
+        mock_get.return_value = self.client
+        result = json.loads(strava._run_strava_tool("strava_analysis", {"period": "garbage"}))
+        self.assertIn("error", result)
+
+    @mock.patch.object(strava, "_get_client")
+    def test_invalid_type_returns_error(self, mock_get):
+        mock_get.return_value = self.client
+        result = json.loads(strava._run_strava_tool("strava_analysis", {"type": "InvalidSport"}))
+        self.assertIn("error", result)
+
+    @mock.patch.object(strava, "_get_client")
+    def test_empty_period_returns_zero_overall(self, mock_get):
+        mock_get.return_value = self.client
+        self.client.get_activities.return_value = []
+
+        result = json.loads(strava._run_strava_tool("strava_analysis", {"period": "this-week"}))
+        self.assertEqual(result["count"], 0)
+        self.assertEqual(result["overall"]["total_distance_km"], 0.0)
+        self.assertEqual(result["by_type"], {})
+
+    @mock.patch.object(strava, "_get_client")
+    def test_by_type_delta_only_intersection(self, mock_get):
+        mock_get.return_value = self.client
+        run = _mock_activity(type="Run", distance=5000.0)
+        walk = _mock_activity(type="Walk", distance=3000.0)
+
+        call_count = [0]
+        def side_effect(**kwargs):
+            call_count[0] += 1
+            if call_count[0] == 1:
+                return [run, walk]
+            return [run]
+
+        self.client.get_activities.side_effect = side_effect
+
+        result = json.loads(strava._run_strava_tool("strava_analysis", {"period": "this-week"}))
+        self.assertIn("Run", result["by_type_delta"])
+        self.assertNotIn("Walk", result["by_type_delta"])
+
+    @mock.patch.object(strava, "_get_client")
+    def test_default_period_is_this_week(self, mock_get):
+        mock_get.return_value = self.client
+        self.client.get_activities.return_value = []
+
+        result = json.loads(strava._run_strava_tool("strava_analysis", {}))
+        self.assertEqual(result["period"], "this-week")
+
+
+class FormatAnalysisTests(unittest.TestCase):
+    def _make_analysis_json(self, **overrides):
+        data = {
+            "period": "this-week",
+            "period_dates": {"after": "2026-03-02", "before": "2026-03-08"},
+            "count": 3,
+            "overall": {
+                "total_distance_km": 15.0, "total_time_hours": 1.5,
+                "total_elevation_m": 100, "avg_distance_km": 5.0,
+            },
+            "by_type": {
+                "Run": {
+                    "count": 2, "total_distance_km": 10.0, "total_time_hours": 1.0,
+                    "total_elevation_m": 80, "avg_pace_min_per_km": 6.0, "avg_heartrate": 148.0,
+                },
+                "Walk": {
+                    "count": 1, "total_distance_km": 5.0, "total_time_hours": 0.5,
+                    "total_elevation_m": 20,
+                },
+            },
+            "compare_period": "last-week",
+            "compare_period_dates": {"after": "2026-02-23", "before": "2026-03-01"},
+            "compare_count": 2,
+            "compare_overall": {
+                "total_distance_km": 12.0, "total_time_hours": 1.2,
+                "total_elevation_m": 80, "avg_distance_km": 6.0,
+            },
+            "compare_by_type": {
+                "Run": {
+                    "count": 2, "total_distance_km": 12.0, "total_time_hours": 1.2,
+                    "total_elevation_m": 80, "avg_pace_min_per_km": 6.1, "avg_heartrate": 151.0,
+                },
+            },
+            "overall_delta": {
+                "total_distance_km": {"change": 3.0, "pct": 25.0},
+                "total_time_hours": {"change": 0.3, "pct": 25.0},
+                "total_elevation_m": {"change": 20, "pct": 25.0},
+            },
+            "by_type_delta": {
+                "Run": {
+                    "total_distance_km": {"change": -2.0, "pct": -16.7},
+                },
+            },
+        }
+        data.update(overrides)
+        return json.dumps(data)
+
+    def test_period_header_with_totals(self):
+        from tars.format import format_strava_analysis
+        out = format_strava_analysis(self._make_analysis_json())
+        self.assertIn("this-week", out)
+        self.assertIn("15.0km", out)
+        self.assertIn("3 activities", out)
+
+    def test_per_type_lines(self):
+        from tars.format import format_strava_analysis
+        out = format_strava_analysis(self._make_analysis_json())
+        self.assertIn("Run x2", out)
+        self.assertIn("Walk x1", out)
+
+    def test_compare_period_present(self):
+        from tars.format import format_strava_analysis
+        out = format_strava_analysis(self._make_analysis_json())
+        self.assertIn("last-week", out)
+        self.assertIn("2 activities", out)
+
+    def test_changes_line_with_deltas(self):
+        from tars.format import format_strava_analysis
+        out = format_strava_analysis(self._make_analysis_json())
+        self.assertIn("Changes:", out)
+        self.assertIn("distance", out)
+
+    def test_error_passthrough(self):
+        from tars.format import format_strava_analysis
+        out = format_strava_analysis(json.dumps({"error": "something broke"}))
+        self.assertEqual(out, "something broke")
+
+    def test_dates_displayed(self):
+        from tars.format import format_strava_analysis
+        out = format_strava_analysis(self._make_analysis_json())
+        self.assertIn("2026-03-02", out)
+        self.assertIn("2026-03-08", out)
+
+    def test_empty_data_no_activities(self):
+        from tars.format import format_strava_analysis
+        raw = json.dumps({
+            "period": "this-week", "period_dates": {}, "count": 0,
+            "overall": {"total_distance_km": 0, "total_time_hours": 0, "total_elevation_m": 0, "avg_distance_km": 0},
+            "by_type": {},
+            "compare_period": "last-week", "compare_period_dates": {}, "compare_count": 0,
+            "compare_overall": {"total_distance_km": 0, "total_time_hours": 0, "total_elevation_m": 0, "avg_distance_km": 0},
+            "compare_by_type": {},
+            "overall_delta": {}, "by_type_delta": {},
+        })
+        out = format_strava_analysis(raw)
         self.assertIn("no activities", out)
 
 
