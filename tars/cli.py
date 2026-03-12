@@ -267,7 +267,9 @@ def repl(config):
     try:
         while True:
             try:
-                user_input = input(_rl_prompt(bold(green("you> "))))
+                sys.stdout.write(bright_yellow("you> "))
+                sys.stdout.flush()
+                user_input = input()
             except (EOFError, KeyboardInterrupt):
                 print()
                 break
