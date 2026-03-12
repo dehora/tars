@@ -11,7 +11,7 @@ from pathlib import Path
 from dotenv import load_dotenv
 
 from tars.colors import _ENABLED as _COLORS_ENABLED
-from tars.colors import bold, cyan, dim, green, link, red, yellow
+from tars.colors import bold, bright_yellow, cyan, dim, green, link, red, yellow
 from tars.commands import command_names, dispatch
 import tars.debug as debug
 from tars.config import apply_cli_overrides, load_model_config, model_summary
@@ -113,7 +113,7 @@ def _recolor_input(user_input: str) -> None:
     if not _COLORS_ENABLED:
         return
     colored = user_input.replace(cmd, cyan(cmd), 1)
-    print(f"\033[A\033[2K{bold(cyan('you> '))}{colored}")
+    print(f"\033[A\033[2K{bright_yellow('you> ')}{colored}")
 
 
 _SPINNER_FRAMES = "⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏"

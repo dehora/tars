@@ -20,6 +20,7 @@ _YELLOW = "\033[33m" if _ENABLED else ""
 _RED = "\033[31m" if _ENABLED else ""
 _MAGENTA = "\033[35m" if _ENABLED else ""
 _BLUE = "\033[34m" if _ENABLED else ""
+_BRIGHT_YELLOW = "\033[93m" if _ENABLED else ""
 
 
 def bold(s: str) -> str:
@@ -52,6 +53,10 @@ def magenta(s: str) -> str:
 
 def blue(s: str) -> str:
     return f"{_BLUE}{s}{RESET}" if _ENABLED else s
+
+
+def bright_yellow(s: str) -> str:
+    return f"{BOLD}{_BRIGHT_YELLOW}{s}{RESET}" if _ENABLED else s
 
 
 _CONTROL_RE = re.compile(r"[\x00-\x1f\x7f-\x9f]")
