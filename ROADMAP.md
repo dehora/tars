@@ -2,73 +2,7 @@
 
 ## Next
 
-### 38. Strava Phase 2
-
-Builds on the Phase 1 Strava integration (tools `strava_activities`, `strava_user`).
-
-- `/strava-*` slash commands (CLI, web, Telegram, email parity)
-- ~~Brief integration (yesterday's activity in daily brief)~~
-- ~~`strava-analysis` tool (training load, weekly/monthly summaries)~~
-- ~~`strava-compare` tool (period-over-period comparison)~~
-- ~~`strava-routes` tool (route/segment data)~~
-- `strava-analysis-polarised` tool (HR zone distribution analysis, assess domain prompt template for derived analysis)
-- ~~Prompt templates for multi-step analysis~~ (reassessed: model handles multi-tool orchestration from tool descriptions; domain prompts to be evaluated as part of polarised feature where derived analysis needs steering)
-- Chart/visualization rendering
-- MCP server extraction (optional)
-
-#### Strava Chat Examples
-
-“Show me my pace progression over the last 3 months”
-
-- Line chart showing pace over time, color-coded by run type
-- Summary statistics panel (avg pace, fastest, best tempo, total distance)
-- Insights panel highlighting key trends
-- v02/heart rate recovery
-
-Presentation within Web, CLI (TUI), Email, and Telegram channels
-
-“Why did yesterday's run feel so hard?”
-
-- synthesizes information and provide the reasons
-- also for further discussion
-
-"Show my latest Strava activity"
-
-- provides a summary of the last activity
-
-"Show my latest Strava running activity"
-
-- provides a summary of the last activity by the type
-
-"Show last weeks|N days Strava running activity"
-
-- provides a summary of the last activity by the type
-
-"From my longterm Strava stats, what do you recommend to improve my running performance?"
-
-- provides an analysis and identifies trends and provides detailed recommendations.
-
-"How does my current fitness compare to last month?"
-
-- provides an analysis and comparison trends.
-
-"How many kilometers did I run this month?"
-
-- shows KM to date for the month
-
-"Which goals do I need to focus on for this month"
-
-- analyses and determines which goals need to be worked on to avoid being missed
-
-"How did my heart rate zones | average pace | zones look during yesterday's run?"
-
-- break down the run with the details
-
-
-
 ## Fixes
-
-- Router missing Strava keyword patterns — Strava queries don't trigger escalation when running a local model with Claude remote
 
 <details>
 <summary>Parked</summary>
@@ -209,6 +143,10 @@ Wired up all slash commands missing from the web UI: `/find`, `/read`, `/mcp`, `
 ### 38a. Strava Phase 1
 
 Native Strava integration via stravalib. OAuth token lifecycle (auto-refresh), `strava_activities` tool (period filters, type filters, by-ID with laps/splits), `strava_user` tool (profile, stats, zones, gear). CLI `strava-auth` subcommand for one-time OAuth setup. Tokens stored in memory dir with `0o600`.
+
+### 38b. Strava Phase 2
+
+`strava_summary` (period totals by type), `strava_compare` (period-over-period deltas), `strava_analysis` (trend comparison with auto-derived prior period), `strava_routes` (route listing, detail, starred segments), `strava_zones` (HR stream-based 3-zone distribution, polarised/pyramidal/threshold-heavy/unstructured classification). Format renderers with sparklines and zone bar charts. Router keyword patterns for all Strava tools. Domain prompt template assessed — model handles interpretation from tool descriptions; zone classification label + flag passed in data for steering.
 
 ### 35. Security hardening and bug fixes
 
