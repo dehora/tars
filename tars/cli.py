@@ -113,7 +113,7 @@ def _recolor_input(user_input: str) -> None:
     if not _COLORS_ENABLED:
         return
     colored = user_input.replace(cmd, cyan(cmd), 1)
-    print(f"\033[A\033[2K{bold(green('you> '))}{colored}")
+    print(f"\033[A\033[2K{bold(cyan('you> '))}{colored}")
 
 
 _SPINNER_FRAMES = "⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏"
