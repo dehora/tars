@@ -263,6 +263,10 @@ def format_strava_activities(raw: str) -> str:
     hr_spark = sparkline(hrs)
     if hr_spark:
         sparks.append(f"hr: {hr_spark}")
+    elevs = [a.get("elevation_gain_m") for a in reversed(data)]
+    elev_spark = sparkline(elevs)
+    if elev_spark:
+        sparks.append(f"elev: {elev_spark}")
     if sparks:
         lines.append("  " + "  ".join(sparks))
 
