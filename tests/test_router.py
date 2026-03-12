@@ -159,6 +159,22 @@ class TestRouter(unittest.TestCase):
         result = route_message("show my strava routes", _ESC_CONFIG)
         self.assertEqual(result.provider, "claude")
 
+    def test_analyse_my_training_escalates(self):
+        result = route_message("analyse my training this week", _ESC_CONFIG)
+        self.assertEqual(result.provider, "claude")
+
+    def test_favourite_segments_escalates(self):
+        result = route_message("show my favourite segments", _ESC_CONFIG)
+        self.assertEqual(result.provider, "claude")
+
+    def test_favorite_segments_escalates(self):
+        result = route_message("show my favorite segments", _ESC_CONFIG)
+        self.assertEqual(result.provider, "claude")
+
+    def test_training_this_week_escalates(self):
+        result = route_message("how was training this week", _ESC_CONFIG)
+        self.assertEqual(result.provider, "claude")
+
 
 if __name__ == "__main__":
     unittest.main()

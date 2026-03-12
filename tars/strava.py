@@ -370,28 +370,18 @@ def _handle_activities(client, args: dict) -> str:
             kwargs["after"] = parsed[0]
             kwargs["before"] = parsed[1]
 
+        _FETCH_CAP = 500
         if activity_type:
-            _FETCH_CAP = 500
-            _PAGE_SIZE = 100
+            # Over-fetch and filter: stravalib paginates internally,
+            # so a high limit lets us scan enough to fill the requested
+            # count of matching activities.
+            kwargs["limit"] = _FETCH_CAP
             collected = []
-            fetched = 0
-            page = 1
-            while len(collected) < limit and fetched < _FETCH_CAP:
-                page_kwargs = {"limit": _PAGE_SIZE, "page": page}
-                if "after" in kwargs:
-                    page_kwargs["after"] = kwargs["after"]
-                if "before" in kwargs:
-                    page_kwargs["before"] = kwargs["before"]
-                batch = list(client.get_activities(**page_kwargs))
-                if not batch:
-                    break
-                fetched += len(batch)
-                for a in batch:
-                    if _type_str(a.type) == activity_type:
-                        collected.append(a)
-                        if len(collected) >= limit:
-                            break
-                page += 1
+            for a in client.get_activities(**kwargs):
+                if _type_str(a.type) == activity_type:
+                    collected.append(a)
+                    if len(collected) >= limit:
+                        break
             activities = collected
         else:
             kwargs["limit"] = limit

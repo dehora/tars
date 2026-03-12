@@ -68,7 +68,8 @@ _TOOL_HINT_PATTERNS: list[tuple[str, list[str]]] = [
     (r"\bswimming\b",                  ["strava_activities", "strava_summary"]),
     (r"\bworkout\b",                   ["strava_activities"]),
     (r"\b(?:run(?:ning)?|cycling|swim|workout|weekly|base)\s+training\b", ["strava_activities", "strava_analysis"]),
-    (r"\btraining\s+(?:load|plan|block|week|volume|log)\b", ["strava_activities", "strava_analysis"]),
+    (r"\bmy\s+training\b",              ["strava_activities", "strava_analysis"]),
+    (r"\btraining\s+(?:load|plan|block|week|volume|log|this|last)\b", ["strava_activities", "strava_analysis"]),
     (r"\b(?:my|running|race|target|average|km)\s+pace\b", ["strava_activities", "strava_analysis"]),
     (r"\bpace\s+(?:per|min|zone|data|trend)\b", ["strava_activities", "strava_analysis"]),
     (r"\bheart\s*rate\b",             ["strava_activities", "strava_user"]),
@@ -80,7 +81,7 @@ _TOOL_HINT_PATTERNS: list[tuple[str, list[str]]] = [
     (r"\b(?:my|overall|current|cardio|aerobic)\s+fitness\b", ["strava_summary", "strava_analysis"]),
     (r"\bactivit(?:y|ies)\b",         ["strava_activities"]),
     (r"\b(?:my|saved|starred|strava)\s+routes?\b", ["strava_routes"]),
-    (r"\b(?:my|saved|starred|strava|popular)\s+segments?\b", ["strava_routes"]),
+    (r"\b(?:my|saved|starred|strava|popular|favo(?:u)?rite)\s+segments?\b", ["strava_routes"]),
 ]
 
 _COMPILED_HINT_PATTERNS = [(re.compile(p, re.IGNORECASE), hints) for p, hints in _TOOL_HINT_PATTERNS]
