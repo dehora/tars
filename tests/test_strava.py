@@ -194,7 +194,7 @@ class ActivitiesToolTests(unittest.TestCase):
         mock_get.return_value = self.client
         run = _mock_activity(id=1, type="Run")
         ride = _mock_activity(id=2, type="Ride")
-        self.client.get_activities.return_value = [run, ride]
+        self.client.get_activities.side_effect = [[run, ride], []]
 
         result = json.loads(strava._run_strava_tool("strava_activities", {"type": "Run"}))
         self.assertEqual(len(result), 1)
@@ -210,7 +210,7 @@ class ActivitiesToolTests(unittest.TestCase):
         rm_ride.root = "Ride"
         run = _mock_activity(id=1, type=rm_run)
         ride = _mock_activity(id=2, type=rm_ride)
-        self.client.get_activities.return_value = [run, ride]
+        self.client.get_activities.side_effect = [[run, ride], []]
 
         result = json.loads(strava._run_strava_tool("strava_activities", {"type": "Run"}))
         self.assertEqual(len(result), 1)
@@ -1503,6 +1503,62 @@ class FormatAnalysisTests(unittest.TestCase):
         })
         out = format_strava_analysis(raw)
         self.assertIn("no activities", out)
+
+
+class CompareLabelTests(unittest.TestCase):
+    def test_today(self):
+        self.assertEqual(strava._compare_label("today"), "yesterday")
+
+    def test_yesterday(self):
+        self.assertEqual(strava._compare_label("yesterday"), "2-days-ago")
+
+    def test_this_week(self):
+        self.assertEqual(strava._compare_label("this-week"), "last-week")
+
+    def test_numeric_period(self):
+        self.assertEqual(strava._compare_label("7d"), "prior 7d")
+
+
+class PaginatedTypeFetchTests(unittest.TestCase):
+    def setUp(self):
+        self.client = mock.Mock()
+
+    @mock.patch.object(strava, "_get_client")
+    def test_multi_page_collection(self, mock_get):
+        mock_get.return_value = self.client
+        page1 = [_mock_activity(type="Ride", distance=10000.0)]
+        page2 = [_mock_activity(type="Run", distance=5000.0)]
+        self.client.get_activities.side_effect = [page1, page2]
+
+        result = json.loads(strava._run_strava_tool("strava_activities", {
+            "type": "Run", "limit": 1
+        }))
+        self.assertEqual(len(result), 1)
+        self.assertEqual(result[0]["type"], "Run")
+
+    @mock.patch.object(strava, "_get_client")
+    def test_cap_bound_stops_pagination(self, mock_get):
+        mock_get.return_value = self.client
+        non_matching = [_mock_activity(type="Ride", distance=10000.0)] * 100
+        self.client.get_activities.return_value = non_matching
+
+        result = json.loads(strava._run_strava_tool("strava_activities", {
+            "type": "Run", "limit": 5
+        }))
+        self.assertEqual(len(result), 0)
+        # Should stop at _FETCH_CAP/100 = 5 pages
+        self.assertLessEqual(self.client.get_activities.call_count, 6)
+
+    @mock.patch.object(strava, "_get_client")
+    def test_mid_page_stop(self, mock_get):
+        mock_get.return_value = self.client
+        batch = [_mock_activity(type="Run", distance=5000.0)] * 10
+        self.client.get_activities.return_value = batch
+
+        result = json.loads(strava._run_strava_tool("strava_activities", {
+            "type": "Run", "limit": 3
+        }))
+        self.assertEqual(len(result), 3)
 
 
 class UnknownToolTests(unittest.TestCase):

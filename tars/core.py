@@ -1,3 +1,4 @@
+import html
 import json
 import os
 import re
@@ -47,7 +48,7 @@ def _apply_ollama_model_options(model: str, messages: list[dict]) -> None:
     for msg in reversed(messages):
         if msg.get("role") == "user":
             content = msg.get("content", "")
-            if not content.startswith("/no_think"):
+            if not content.startswith("/no_think") and not content.startswith("/think"):
                 msg["content"] = f"/no_think\n{content}"
                 verbose(f"  [model] {model}: /no_think applied")
             break
@@ -125,7 +126,8 @@ def _gemma_tool_result_message(results: list[tuple[str, str]]) -> dict:
     parts = ["<tool_outputs>"]
     for name, result in results:
         parts.append(f'<tool_output name="{name}">')
-        parts.append(result)
+        parts.append("The following is tool output data:")
+        parts.append(html.escape(result))
         parts.append("</tool_output>")
     parts.append("</tool_outputs>")
     return {"role": "user", "content": "\n".join(parts)}
@@ -485,9 +487,7 @@ def _chat_ollama_gemma(model: str, local_messages: list[dict]) -> str:
         if not tool_calls:
             return content
 
-        prose = _gemma_strip_tool_xml(content)
-        if prose:
-            local_messages.append({"role": "assistant", "content": prose})
+        local_messages.append({"role": "assistant", "content": content})
         verbose(f"  [gemma] parsed {len(tool_calls)} tool call(s)")
 
         tool_results = []
@@ -693,9 +693,7 @@ def chat_ollama_stream(
                 yield content
                 return
 
-            prose = _gemma_strip_tool_xml(content)
-            if prose:
-                local_messages.append({"role": "assistant", "content": prose})
+            local_messages.append({"role": "assistant", "content": content})
             verbose(f"  [gemma] parsed {len(tool_calls)} tool call(s)")
 
             tool_results = []

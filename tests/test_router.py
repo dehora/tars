@@ -131,6 +131,34 @@ class TestRouter(unittest.TestCase):
         with self.assertRaises(TypeError):
             _, _ = result
 
+    def test_false_positive_run_script(self):
+        result = route_message("run this script", _ESC_CONFIG)
+        self.assertEqual(result.provider, "ollama")
+
+    def test_false_positive_model_training(self):
+        result = route_message("model training takes time", _ESC_CONFIG)
+        self.assertEqual(result.provider, "ollama")
+
+    def test_false_positive_api_routes(self):
+        result = route_message("these API routes are slow", _ESC_CONFIG)
+        self.assertEqual(result.provider, "ollama")
+
+    def test_false_positive_pace_yourself(self):
+        result = route_message("pace yourself", _ESC_CONFIG)
+        self.assertEqual(result.provider, "ollama")
+
+    def test_qualified_training_escalates(self):
+        result = route_message("how is my running training going", _ESC_CONFIG)
+        self.assertEqual(result.provider, "claude")
+
+    def test_qualified_pace_escalates(self):
+        result = route_message("what was my running pace", _ESC_CONFIG)
+        self.assertEqual(result.provider, "claude")
+
+    def test_qualified_routes_escalates(self):
+        result = route_message("show my strava routes", _ESC_CONFIG)
+        self.assertEqual(result.provider, "claude")
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -113,7 +113,7 @@ def _recolor_input(user_input: str) -> None:
     if not _COLORS_ENABLED:
         return
     colored = user_input.replace(cmd, cyan(cmd), 1)
-    print(f"\033[A\033[2K{bright_yellow('you> ')}{colored}")
+    print(f"\033[A\033[2K{_rl_prompt(bright_yellow('you> '))}{colored}")
 
 
 _SPINNER_FRAMES = "⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏"
@@ -267,9 +267,7 @@ def repl(config):
     try:
         while True:
             try:
-                sys.stdout.write(bright_yellow("you> "))
-                sys.stdout.flush()
-                user_input = input()
+                user_input = input(_rl_prompt(bright_yellow("you> ")))
             except (EOFError, KeyboardInterrupt):
                 print()
                 break

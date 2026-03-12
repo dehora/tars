@@ -52,12 +52,15 @@ def format_todoist_list(raw: str) -> str:
         due = task.get("due", {})
         due_str = due.get("string", "") if due else ""
         duration = task.get("duration")
+        task_id = task.get("id", "")
         parts = [f"{i}. [p{priority}] {content}"]
         if due_str:
             parts.append(f"(due: {due_str}")
             if duration:
                 parts[-1] += f", {duration['amount']}{duration['unit'][0]}"
             parts[-1] += ")"
+        if task_id:
+            parts.append(f"(id:{task_id})")
         lines.append(" ".join(parts))
     return "\n".join(lines)
 
@@ -249,6 +252,9 @@ def format_strava_activities(raw: str) -> str:
         if elev:
             details.append(f"+{int(elev)}m")
         parts.append(f"({', '.join(details)})")
+        aid = a.get("id", "")
+        if aid:
+            parts.append(f"(id:{aid})")
         if date:
             parts.append(date)
         lines.append(" ".join(parts))
@@ -256,17 +262,20 @@ def format_strava_activities(raw: str) -> str:
     # Sparklines for trends across activities (oldest→newest)
     sparks = []
     paces = [a.get("pace_min_per_km") for a in reversed(data)]
-    pace_spark = sparkline(paces, invert=True)
-    if pace_spark:
-        sparks.append(f"pace: {pace_spark}")
+    if all(v is not None for v in paces):
+        pace_spark = sparkline(paces, invert=True)
+        if pace_spark:
+            sparks.append(f"pace: {pace_spark}")
     hrs = [a.get("average_heartrate") for a in reversed(data)]
-    hr_spark = sparkline(hrs)
-    if hr_spark:
-        sparks.append(f"hr: {hr_spark}")
+    if all(v is not None for v in hrs):
+        hr_spark = sparkline(hrs)
+        if hr_spark:
+            sparks.append(f"hr: {hr_spark}")
     elevs = [a.get("elevation_gain_m") for a in reversed(data)]
-    elev_spark = sparkline(elevs)
-    if elev_spark:
-        sparks.append(f"elev: {elev_spark}")
+    if all(v is not None for v in elevs):
+        elev_spark = sparkline(elevs)
+        if elev_spark:
+            sparks.append(f"elev: {elev_spark}")
     if sparks:
         lines.append("  " + "  ".join(sparks))
 
@@ -347,7 +356,11 @@ def _format_single_activity(data: dict) -> str:
             if shr:
                 split_line += f" hr:{int(shr)}"
             lines.append(split_line)
-        split_paces = [s.get("moving_time_min") for s in splits if s.get("distance_km", 0) > 0]
+        split_paces = [
+            s["moving_time_min"] / s["distance_km"]
+            for s in splits
+            if s.get("distance_km", 0) > 0 and s.get("moving_time_min") is not None
+        ]
         split_hrs = [s.get("average_heartrate") for s in splits]
         sparks = []
         sp = sparkline(split_paces, invert=True)

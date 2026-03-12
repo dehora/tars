@@ -197,5 +197,69 @@ class StravaActivitiesSparklineTests(unittest.TestCase):
         self.assertNotIn("▁", result)
 
 
+class SplitPaceNormalizationTests(unittest.TestCase):
+    def test_partial_split_same_pace_as_full(self) -> None:
+        """A 0.2km split in 1min should yield the same pace bar as a 1km split in 5min."""
+        from tars.format import _format_single_activity
+        data = {
+            "name": "Test Run", "type": "Run", "distance_km": 1.2, "moving_time_min": 6,
+            "pace_min_per_km": 5.0, "start_date": "2026-03-01",
+            "splits": [
+                {"split": 1, "distance_km": 1.0, "moving_time_min": 5.0},
+                {"split": 2, "distance_km": 0.2, "moving_time_min": 1.0},
+            ],
+        }
+        result = _format_single_activity(data)
+        # Both splits have pace 5.0 min/km → equal bars (mid-block since sparkline returns same char for equal)
+        self.assertIn("pace:", result)
+        # The sparkline chars should be identical since pace is the same
+        pace_line = [l for l in result.splitlines() if "pace:" in l][0]
+        spark_chars = pace_line.split("pace:")[1].strip().split()[0]
+        self.assertEqual(spark_chars[0], spark_chars[1])
+
+
+class ActivityListSparklineGapTests(unittest.TestCase):
+    def test_elevation_sparkline_present(self) -> None:
+        activities = [
+            {"name": f"Run {i}", "type": "Run", "distance_km": 5, "moving_time_min": 25,
+             "pace_min_per_km": 5.0, "average_heartrate": 140, "elevation_gain_m": elev,
+             "start_date": f"2026-03-0{i}"}
+            for i, elev in enumerate([50, 100, 75], 1)
+        ]
+        result = format_strava_activities(json.dumps(activities))
+        self.assertIn("elev:", result)
+
+    def test_mixed_type_no_pace_sparkline(self) -> None:
+        activities = [
+            {"name": "Run", "type": "Run", "distance_km": 5, "moving_time_min": 25,
+             "pace_min_per_km": 5.0, "start_date": "2026-03-01"},
+            {"name": "Ride", "type": "Ride", "distance_km": 20, "moving_time_min": 60,
+             "speed_kmh": 20.0, "start_date": "2026-03-02"},
+        ]
+        result = format_strava_activities(json.dumps(activities))
+        self.assertNotIn("pace:", result)
+
+
+class ActivityIDTests(unittest.TestCase):
+    def test_activity_id_in_output(self) -> None:
+        activities = [
+            {"id": 12345, "name": "Run", "type": "Run", "distance_km": 5,
+             "moving_time_min": 25, "start_date": "2026-03-01"}
+        ]
+        result = format_strava_activities(json.dumps(activities))
+        self.assertIn("(id:12345)", result)
+
+
+class TodoistIDTests(unittest.TestCase):
+    def test_todoist_id_in_output(self) -> None:
+        raw = json.dumps({
+            "results": [
+                {"id": "abc123", "content": "Buy milk", "priority": 1, "due": None}
+            ]
+        })
+        result = format_todoist_list(raw)
+        self.assertIn("(id:abc123)", result)
+
+
 if __name__ == "__main__":
     unittest.main()

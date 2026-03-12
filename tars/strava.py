@@ -361,10 +361,7 @@ def _handle_activities(client, args: dict) -> str:
         if activity_type is not None and activity_type not in _VALID_ACTIVITY_TYPES:
             return json.dumps({"error": f"invalid activity type: {activity_type!r}"})
 
-        # Over-fetch when filtering by type so the limit applies to
-        # matching activities, not the raw API page.
-        fetch_limit = min(100, limit * 5) if activity_type else limit
-        kwargs = {"limit": fetch_limit}
+        kwargs = {}
         period = args.get("period")
         if period:
             parsed = _parse_period(period)
@@ -373,10 +370,32 @@ def _handle_activities(client, args: dict) -> str:
             kwargs["after"] = parsed[0]
             kwargs["before"] = parsed[1]
 
-        activities = list(client.get_activities(**kwargs))
-
         if activity_type:
-            activities = [a for a in activities if _type_str(a.type) == activity_type]
+            _FETCH_CAP = 500
+            _PAGE_SIZE = 100
+            collected = []
+            fetched = 0
+            page = 1
+            while len(collected) < limit and fetched < _FETCH_CAP:
+                page_kwargs = {"limit": _PAGE_SIZE, "page": page}
+                if "after" in kwargs:
+                    page_kwargs["after"] = kwargs["after"]
+                if "before" in kwargs:
+                    page_kwargs["before"] = kwargs["before"]
+                batch = list(client.get_activities(**page_kwargs))
+                if not batch:
+                    break
+                fetched += len(batch)
+                for a in batch:
+                    if _type_str(a.type) == activity_type:
+                        collected.append(a)
+                        if len(collected) >= limit:
+                            break
+                page += 1
+            activities = collected
+        else:
+            kwargs["limit"] = limit
+            activities = list(client.get_activities(**kwargs))
 
         if sort == "oldest":
             activities.reverse()
@@ -606,6 +625,8 @@ def _overall_totals(activities: list) -> dict:
 def _compare_label(period_str: str) -> str:
     """Map a period string to its natural comparison label."""
     _MAP = {
+        "today": "yesterday",
+        "yesterday": "2-days-ago",
         "this-week": "last-week",
         "last-week": "2-weeks-ago",
         "this-month": "last-month",
