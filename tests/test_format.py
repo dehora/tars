@@ -284,6 +284,8 @@ class StravaZonesFormatTests(unittest.TestCase):
         self.assertIn("Threshold-Heavy", out)
         self.assertIn("\u2588", out)
         self.assertIn("<145", out)
+        self.assertIn("145-169", out)
+        self.assertIn(">=170", out)
 
     def test_error_passthrough(self) -> None:
         raw = json.dumps({"error": "HR zones not configured"})

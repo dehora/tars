@@ -1816,6 +1816,63 @@ class HandleZonesTests(unittest.TestCase):
         result = json.loads(strava._run_strava_tool("strava_zones", {"period": "4w"}))
         self.assertIn("error", result)
 
+    @mock.patch.object(strava, "_get_client")
+    def test_boundary_hr_exact(self, mock_get):
+        """HR exactly on boundary: low_max=145 → hr=145 is moderate, not low."""
+        mock_get.return_value = self.client
+        activities = [_mock_activity(id=1, moving_time=3600, average_heartrate=145)]
+        self.client.get_activities = _strict_get_activities(activities)
+        # 3 data points: hr exactly at low_max (145) and mod_max (175)
+        hr = [100, 145, 175]
+        time_data = [0, 1200, 2400]
+        self.client.get_activity_streams.return_value = _mock_stream(hr, time_data)
+
+        result = json.loads(strava._run_strava_tool("strava_zones", {"period": "4w"}))
+        pa = result["per_activity"][0]
+        # hr=145 at i=1: 145 is NOT < 145 (low_max), so it's moderate
+        # hr=175 at i=2: 175 is NOT < 175 (mod_max), so it's high
+        self.assertGreater(pa["mod_pct"], 0)
+        self.assertGreater(pa["high_pct"], 0)
+
+    @mock.patch.object(strava, "_get_client")
+    def test_stream_api_errors_surface(self, mock_get):
+        """Repeated non-data API errors should surface, not silently skip."""
+        mock_get.return_value = self.client
+        activities = [
+            _mock_activity(id=i, moving_time=3600, average_heartrate=140)
+            for i in range(5)
+        ]
+        self.client.get_activities = _strict_get_activities(activities)
+        self.client.get_activity_streams.side_effect = RuntimeError("rate limited")
+
+        result = json.loads(strava._run_strava_tool("strava_zones", {"period": "4w"}))
+        self.assertIn("error", result)
+        self.assertIn("API error", result["error"])
+
+    @mock.patch.object(strava, "_get_client")
+    def test_stream_data_errors_skipped(self, mock_get):
+        """KeyError/ValueError from missing stream data should skip, not error."""
+        mock_get.return_value = self.client
+        activities = [
+            _mock_activity(id=1, moving_time=3600, average_heartrate=140),
+            _mock_activity(id=2, moving_time=3600, average_heartrate=140),
+        ]
+        self.client.get_activities = _strict_get_activities(activities)
+        call_count = 0
+
+        def _side_effect(*args, **kwargs):
+            nonlocal call_count
+            call_count += 1
+            if call_count == 1:
+                raise KeyError("heartrate")
+            return _mock_stream([130] * 61, list(range(0, 3660, 60)))
+
+        self.client.get_activity_streams.side_effect = _side_effect
+
+        result = json.loads(strava._run_strava_tool("strava_zones", {"period": "4w"}))
+        self.assertEqual(result["activities_analysed"], 1)
+        self.assertEqual(result["activities_skipped"]["no_hr"], 1)
+
 
 if __name__ == "__main__":
     unittest.main()

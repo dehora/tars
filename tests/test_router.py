@@ -194,8 +194,13 @@ class TestRouter(unittest.TestCase):
         self.assertEqual(result.provider, "claude")
         self.assertIn("strava_zones", result.tool_hints)
 
-    def test_zone_number_escalates(self):
-        result = route_message("how much time in zone 2", _ESC_CONFIG)
+    def test_hr_zone_number_escalates(self):
+        result = route_message("how much time in hr zone 2", _ESC_CONFIG)
+        self.assertEqual(result.provider, "claude")
+        self.assertIn("strava_zones", result.tool_hints)
+
+    def test_zone_number_with_training_context(self):
+        result = route_message("zone 2 training this week", _ESC_CONFIG)
         self.assertEqual(result.provider, "claude")
         self.assertIn("strava_zones", result.tool_hints)
 
@@ -208,6 +213,14 @@ class TestRouter(unittest.TestCase):
         result = route_message("show my hr zone data", _ESC_CONFIG)
         self.assertEqual(result.provider, "claude")
         self.assertIn("strava_zones", result.tool_hints)
+
+    def test_false_positive_plant_zone(self):
+        result = route_message("what plants grow in zone 5", _ESC_CONFIG)
+        self.assertEqual(result.provider, "ollama")
+
+    def test_false_positive_fire_zone(self):
+        result = route_message("fire zone 2 evacuation", _ESC_CONFIG)
+        self.assertEqual(result.provider, "ollama")
 
 
 if __name__ == "__main__":

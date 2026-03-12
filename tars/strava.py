@@ -909,13 +909,19 @@ def _handle_zones(client, args: dict) -> str:
         total_high = 0
         per_activity = []
 
+        stream_errors = 0
         for a in qualifying:
             try:
                 streams = client.get_activity_streams(
                     a.id, types=["heartrate", "time"]
                 )
-            except Exception:
+            except (KeyError, ValueError, TypeError):
                 skipped_no_hr += 1
+                continue
+            except Exception:
+                stream_errors += 1
+                if stream_errors >= 3:
+                    return json.dumps({"error": "Strava API errors fetching activity streams — possible rate limit or auth issue"})
                 continue
 
             hr_stream = streams.get("heartrate")

@@ -849,7 +849,7 @@ def format_strava_zones(raw: str) -> str:
     low_max = boundaries.get("low_max")
     mod_max = boundaries.get("mod_max")
     if low_max and mod_max:
-        lines.append(f"  Low: <{low_max}  Mod: {low_max}-{mod_max}  High: >{mod_max}")
+        lines.append(f"  Low: <{low_max}  Mod: {low_max}-{mod_max - 1}  High: >={mod_max}")
 
     return "\n".join(lines)
 
