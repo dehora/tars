@@ -4,6 +4,7 @@ import unittest
 from tars.format import (
     format_memory_recall,
     format_strava_activities,
+    format_strava_zones,
     format_todoist_action,
     format_todoist_list,
     format_tool_result,
@@ -259,6 +260,51 @@ class TodoistIDTests(unittest.TestCase):
         })
         result = format_todoist_list(raw)
         self.assertIn("(id:abc123)", result)
+
+
+class StravaZonesFormatTests(unittest.TestCase):
+    def test_renders_chart(self) -> None:
+        raw = json.dumps({
+            "period": "4w",
+            "classification": "Threshold-Heavy",
+            "zone_pct": {"low": 72, "mod": 22, "high": 6},
+            "total_hours": 6.2,
+            "activities_analysed": 10,
+            "activities_skipped": {"no_hr": 4, "too_short": 0, "over_cap": 0},
+            "zone_boundaries": {"low_max": 145, "mod_max": 170},
+            "per_activity": [],
+        })
+        out = format_strava_zones(raw)
+        self.assertIn("Training Zones (4w)", out)
+        self.assertIn("10 activities", out)
+        self.assertIn("6.2h", out)
+        self.assertIn("Low", out)
+        self.assertIn("Mod", out)
+        self.assertIn("High", out)
+        self.assertIn("Threshold-Heavy", out)
+        self.assertIn("\u2588", out)
+        self.assertIn("<145", out)
+
+    def test_error_passthrough(self) -> None:
+        raw = json.dumps({"error": "HR zones not configured"})
+        self.assertEqual(format_strava_zones(raw), "HR zones not configured")
+
+    def test_non_json_passthrough(self) -> None:
+        self.assertEqual(format_strava_zones("not json"), "not json")
+
+    def test_tool_result_dispatch(self) -> None:
+        raw = json.dumps({
+            "period": "4w",
+            "classification": "Polarised",
+            "zone_pct": {"low": 80, "mod": 5, "high": 15},
+            "total_hours": 8.0,
+            "activities_analysed": 12,
+            "activities_skipped": {"no_hr": 0, "too_short": 0, "over_cap": 0},
+            "zone_boundaries": {"low_max": 145, "mod_max": 170},
+            "per_activity": [],
+        })
+        out = format_tool_result("strava_zones", raw)
+        self.assertIn("Polarised", out)
 
 
 if __name__ == "__main__":

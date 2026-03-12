@@ -338,6 +338,33 @@ ANTHROPIC_TOOLS = [
         },
     },
     {
+        "name": "strava_zones",
+        "description": (
+            "Analyse training intensity distribution across HR zones for a period. "
+            "Returns time-in-zone percentages using a 3-zone model (Low/Moderate/High), "
+            "classifies training pattern (Polarised/Pyramidal/Threshold-Heavy/Unstructured), "
+            "and flags common issues like excessive moderate-zone training. "
+            "Requires HR data from activities — activities without HR monitors are excluded."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "period": {
+                    "type": "string",
+                    "description": "Time period (default: '4w'). Accepts same formats as other strava tools.",
+                },
+                "type": {
+                    "type": "string",
+                    "description": "Optional activity type filter: 'Run', 'Ride', etc.",
+                },
+                "min_duration_min": {
+                    "type": "integer",
+                    "description": "Minimum activity duration in minutes to include (default: 20)",
+                },
+            },
+        },
+    },
+    {
         "name": "strava_routes",
         "description": (
             "Browse Strava routes and starred segments. Use when the user asks about "
@@ -471,7 +498,7 @@ def run_tool(name: str, args: dict, *, quiet: bool = False) -> str:
             return _run_note_tool(name, args)
         if name == "web_read":
             return _run_web_tool(name, args)
-        if name in ("strava_activities", "strava_user", "strava_summary", "strava_compare", "strava_analysis", "strava_routes"):
+        if name in ("strava_activities", "strava_user", "strava_summary", "strava_compare", "strava_analysis", "strava_zones", "strava_routes"):
             return _run_strava_tool(name, args)
         if name.startswith("todoist_"):
             td_bin = _resolve_td()

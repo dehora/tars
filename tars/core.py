@@ -197,7 +197,9 @@ speculate about performance without it. Use strava_activities to fetch specific 
 workouts by date, type, or ID (includes pace, HR, splits). Use strava_summary \
 for period totals (distance, time, elevation by type). Use strava_analysis for \
 trend comparison across periods. Use strava_user for profile, lifetime stats, \
-HR zones, and gear. Use strava_routes for saved routes and starred segments. \
+HR zones, and gear. Use strava_zones for training intensity distribution, zone \
+analysis, or polarisation questions — it fetches HR stream data and computes \
+actual time-in-zone, more accurate than average HR. Use strava_routes for saved routes and starred segments. \
 Tool results may include sparkline trend lines like "pace: ▂▂▄▁█  hr: █▁▄▅▂". \
 Copy these exactly into your response as a summary line — do not split them \
 across individual items or regenerate them."""

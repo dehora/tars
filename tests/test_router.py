@@ -179,6 +179,36 @@ class TestRouter(unittest.TestCase):
         result = route_message("help with training this model", _ESC_CONFIG)
         self.assertEqual(result.provider, "ollama")
 
+    def test_zone_distribution_escalates(self):
+        result = route_message("show me zone distribution", _ESC_CONFIG)
+        self.assertEqual(result.provider, "claude")
+        self.assertIn("strava_zones", result.tool_hints)
+
+    def test_polarised_escalates(self):
+        result = route_message("am I training polarised", _ESC_CONFIG)
+        self.assertEqual(result.provider, "claude")
+        self.assertIn("strava_zones", result.tool_hints)
+
+    def test_polarized_us_spelling_escalates(self):
+        result = route_message("is my training polarized", _ESC_CONFIG)
+        self.assertEqual(result.provider, "claude")
+        self.assertIn("strava_zones", result.tool_hints)
+
+    def test_zone_number_escalates(self):
+        result = route_message("how much time in zone 2", _ESC_CONFIG)
+        self.assertEqual(result.provider, "claude")
+        self.assertIn("strava_zones", result.tool_hints)
+
+    def test_time_in_zone_escalates(self):
+        result = route_message("what is my time in zone breakdown", _ESC_CONFIG)
+        self.assertEqual(result.provider, "claude")
+        self.assertIn("strava_zones", result.tool_hints)
+
+    def test_hr_zone_escalates_to_zones(self):
+        result = route_message("show my hr zone data", _ESC_CONFIG)
+        self.assertEqual(result.provider, "claude")
+        self.assertIn("strava_zones", result.tool_hints)
+
 
 if __name__ == "__main__":
     unittest.main()

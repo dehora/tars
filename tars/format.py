@@ -796,6 +796,64 @@ def _format_route_detail(data: dict) -> str:
     return "\n".join(lines)
 
 
+_ZONE_INSIGHTS = {
+    "Polarised": "classic polarised — most time easy, hard sessions are hard.",
+    "Pyramidal": "pyramidal — well-distributed, most time easy.",
+    "Threshold-Heavy": "moderate zone is elevated — check for zone 3 trap.",
+    "Unstructured": "no clear pattern — consider structuring intensity.",
+}
+
+
+def _zone_bar(pct: float, width: int = 20) -> str:
+    """Render a percentage as a bar of block characters."""
+    filled = round(pct / 100 * width)
+    filled = max(0, min(width, filled))
+    return "\u2588" * filled + "\u2591" * (width - filled)
+
+
+def format_strava_zones(raw: str) -> str:
+    """Format strava_zones JSON into a zone distribution chart."""
+    try:
+        data = json.loads(raw)
+    except (json.JSONDecodeError, TypeError):
+        return raw
+    if "error" in data and "classification" not in data:
+        return data["error"]
+
+    period = data.get("period", "?")
+    classification = data.get("classification", "?")
+    zone_pct = data.get("zone_pct", {})
+    total_hours = data.get("total_hours", 0)
+    analysed = data.get("activities_analysed", 0)
+    skipped = data.get("activities_skipped", {})
+    boundaries = data.get("zone_boundaries", {})
+
+    total_activities = analysed + skipped.get("no_hr", 0) + skipped.get("too_short", 0) + skipped.get("over_cap", 0)
+
+    lines = [f"Training Zones ({period})"]
+    lines.append(f"  {analysed} activities \u00b7 {total_hours}h \u00b7 HR data: {analysed}/{total_activities}")
+    lines.append("")
+
+    low = zone_pct.get("low", 0)
+    mod = zone_pct.get("mod", 0)
+    high = zone_pct.get("high", 0)
+
+    lines.append(f"  Low  {_zone_bar(low)} {low:4.0f}%")
+    lines.append(f"  Mod  {_zone_bar(mod)} {mod:4.0f}%")
+    lines.append(f"  High {_zone_bar(high)} {high:4.0f}%")
+
+    lines.append("")
+    insight = _ZONE_INSIGHTS.get(classification, "")
+    lines.append(f"  \u2192 {classification}: {insight}")
+
+    low_max = boundaries.get("low_max")
+    mod_max = boundaries.get("mod_max")
+    if low_max and mod_max:
+        lines.append(f"  Low: <{low_max}  Mod: {low_max}-{mod_max}  High: >{mod_max}")
+
+    return "\n".join(lines)
+
+
 _FORMATTERS = {
     "todoist_today": format_todoist_list,
     "todoist_upcoming": format_todoist_list,
@@ -813,6 +871,7 @@ _FORMATTERS = {
     "strava_compare": format_strava_compare,
     "strava_analysis": format_strava_analysis,
     "strava_routes": format_strava_routes,
+    "strava_zones": format_strava_zones,
 }
 
 

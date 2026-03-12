@@ -1617,5 +1617,205 @@ class UnknownToolTests(unittest.TestCase):
         self.assertIn("error", result)
 
 
+def _mock_hr_zones_5():
+    """Return a mock zones object with 5 HR zones."""
+    zones = mock.Mock()
+    hr = mock.Mock()
+    z_list = [
+        mock.Mock(min=0, max=120),
+        mock.Mock(min=120, max=145),
+        mock.Mock(min=145, max=160),
+        mock.Mock(min=160, max=175),
+        mock.Mock(min=175, max=-1),
+    ]
+    for z in z_list:
+        z.root = None
+    hr.zones = z_list
+    hr.root = None
+    zones.heart_rate = hr
+    return zones
+
+
+def _mock_stream(hr_data, time_data):
+    """Create a mock stream response dict."""
+    hr_stream = mock.Mock()
+    hr_stream.data = hr_data
+    time_stream = mock.Mock()
+    time_stream.data = time_data
+    return {"heartrate": hr_stream, "time": time_stream}
+
+
+class GetThreeZoneBoundariesTests(unittest.TestCase):
+    def test_returns_boundaries(self):
+        client = mock.Mock()
+        client.get_athlete_zones.return_value = _mock_hr_zones_5()
+        result = strava._get_3_zone_boundaries(client)
+        self.assertEqual(result, (145, 175))
+
+    def test_returns_error_no_zones(self):
+        client = mock.Mock()
+        zones = mock.Mock()
+        zones.heart_rate = None
+        client.get_athlete_zones.return_value = zones
+        result = strava._get_3_zone_boundaries(client)
+        self.assertIsInstance(result, str)
+        self.assertIn("not configured", result)
+
+    def test_returns_error_too_few_zones(self):
+        client = mock.Mock()
+        zones = mock.Mock()
+        hr = mock.Mock()
+        hr.zones = [mock.Mock(min=0, max=120)]
+        hr.root = None
+        zones.heart_rate = hr
+        client.get_athlete_zones.return_value = zones
+        result = strava._get_3_zone_boundaries(client)
+        self.assertIsInstance(result, str)
+
+
+class ClassifyZonesTests(unittest.TestCase):
+    def test_polarised(self):
+        self.assertEqual(strava._classify_zones(80, 5, 15), "Polarised")
+
+    def test_pyramidal(self):
+        self.assertEqual(strava._classify_zones(72, 18, 10), "Pyramidal")
+
+    def test_threshold_heavy(self):
+        self.assertEqual(strava._classify_zones(50, 30, 20), "Threshold-Heavy")
+
+    def test_unstructured(self):
+        self.assertEqual(strava._classify_zones(60, 15, 25), "Unstructured")
+
+
+class HandleZonesTests(unittest.TestCase):
+    def setUp(self):
+        self.client = mock.Mock()
+        self.client.get_athlete_zones.return_value = _mock_hr_zones_5()
+
+    @mock.patch.object(strava, "_get_client")
+    def test_basic_zone_analysis(self, mock_get):
+        mock_get.return_value = self.client
+        activities = [
+            _mock_activity(id=1, moving_time=3600, average_heartrate=140),
+            _mock_activity(id=2, moving_time=3600, average_heartrate=150),
+            _mock_activity(id=3, moving_time=3600, average_heartrate=170),
+        ]
+        self.client.get_activities = _strict_get_activities(activities)
+        self.client.get_activity_streams.return_value = _mock_stream(
+            [130] * 61, list(range(0, 3660, 60))
+        )
+
+        result = json.loads(strava._run_strava_tool("strava_zones", {"period": "4w"}))
+        self.assertIn("classification", result)
+        self.assertIn("zone_pct", result)
+        self.assertEqual(result["activities_analysed"], 3)
+        self.assertIn("zone_boundaries", result)
+        self.assertEqual(result["zone_boundaries"]["low_max"], 145)
+        self.assertEqual(result["zone_boundaries"]["mod_max"], 175)
+
+    @mock.patch.object(strava, "_get_client")
+    def test_skips_no_hr(self, mock_get):
+        mock_get.return_value = self.client
+        activities = [
+            _mock_activity(id=1, moving_time=3600, average_heartrate=None),
+            _mock_activity(id=2, moving_time=3600, average_heartrate=140),
+        ]
+        self.client.get_activities = _strict_get_activities(activities)
+        self.client.get_activity_streams.return_value = _mock_stream(
+            [130] * 61, list(range(0, 3660, 60))
+        )
+
+        result = json.loads(strava._run_strava_tool("strava_zones", {"period": "4w"}))
+        self.assertEqual(result["activities_analysed"], 1)
+        self.assertEqual(result["activities_skipped"]["no_hr"], 1)
+
+    @mock.patch.object(strava, "_get_client")
+    def test_skips_short_activities(self, mock_get):
+        mock_get.return_value = self.client
+        activities = [
+            _mock_activity(id=1, moving_time=600, average_heartrate=140),
+            _mock_activity(id=2, moving_time=3600, average_heartrate=140),
+        ]
+        self.client.get_activities = _strict_get_activities(activities)
+        self.client.get_activity_streams.return_value = _mock_stream(
+            [130] * 61, list(range(0, 3660, 60))
+        )
+
+        result = json.loads(strava._run_strava_tool("strava_zones", {"period": "4w"}))
+        self.assertEqual(result["activities_analysed"], 1)
+        self.assertEqual(result["activities_skipped"]["too_short"], 1)
+
+    @mock.patch.object(strava, "_get_client")
+    def test_type_filter(self, mock_get):
+        mock_get.return_value = self.client
+        activities = [
+            _mock_activity(id=1, type="Ride", moving_time=3600, average_heartrate=140),
+            _mock_activity(id=2, type="Run", moving_time=3600, average_heartrate=140),
+        ]
+        self.client.get_activities = _strict_get_activities(activities)
+        self.client.get_activity_streams.return_value = _mock_stream(
+            [130] * 61, list(range(0, 3660, 60))
+        )
+
+        result = json.loads(strava._run_strava_tool("strava_zones", {"period": "4w", "type": "Run"}))
+        self.assertEqual(result["activities_analysed"], 1)
+
+    @mock.patch.object(strava, "_get_client")
+    def test_stream_fetch_cap(self, mock_get):
+        mock_get.return_value = self.client
+        activities = [
+            _mock_activity(id=i, moving_time=3600, average_heartrate=140)
+            for i in range(60)
+        ]
+        self.client.get_activities = _strict_get_activities(activities)
+        self.client.get_activity_streams.return_value = _mock_stream(
+            [130] * 61, list(range(0, 3660, 60))
+        )
+
+        result = json.loads(strava._run_strava_tool("strava_zones", {"period": "4w"}))
+        self.assertEqual(self.client.get_activity_streams.call_count, 50)
+        self.assertEqual(result["activities_skipped"]["over_cap"], 10)
+
+    @mock.patch.object(strava, "_get_client")
+    def test_stream_types_requested(self, mock_get):
+        mock_get.return_value = self.client
+        activities = [_mock_activity(id=1, moving_time=3600, average_heartrate=140)]
+        self.client.get_activities = _strict_get_activities(activities)
+        self.client.get_activity_streams.return_value = _mock_stream(
+            [130] * 61, list(range(0, 3660, 60))
+        )
+
+        strava._run_strava_tool("strava_zones", {"period": "4w"})
+        self.client.get_activity_streams.assert_called_with(
+            1, types=["heartrate", "time"]
+        )
+
+    @mock.patch.object(strava, "_get_client")
+    def test_per_activity_detail(self, mock_get):
+        mock_get.return_value = self.client
+        activities = [_mock_activity(id=1, moving_time=3600, average_heartrate=140)]
+        self.client.get_activities = _strict_get_activities(activities)
+        hr = [130, 150, 180]
+        time_data = [0, 1200, 2400]
+        self.client.get_activity_streams.return_value = _mock_stream(hr, time_data)
+
+        result = json.loads(strava._run_strava_tool("strava_zones", {"period": "4w"}))
+        self.assertEqual(len(result["per_activity"]), 1)
+        pa = result["per_activity"][0]
+        self.assertIn("low_pct", pa)
+        self.assertIn("mod_pct", pa)
+        self.assertIn("high_pct", pa)
+
+    @mock.patch.object(strava, "_get_client")
+    def test_zones_unavailable_error(self, mock_get):
+        mock_get.return_value = self.client
+        zones = mock.Mock()
+        zones.heart_rate = None
+        self.client.get_athlete_zones.return_value = zones
+
+        result = json.loads(strava._run_strava_tool("strava_zones", {"period": "4w"}))
+        self.assertIn("error", result)
+
+
 if __name__ == "__main__":
     unittest.main()

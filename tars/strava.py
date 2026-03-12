@@ -323,6 +323,8 @@ def _run_strava_tool(name: str, args: dict) -> str:
             return _handle_compare(client, args)
         elif name == "strava_analysis":
             return _handle_analysis(client, args)
+        elif name == "strava_zones":
+            return _handle_zones(client, args)
         elif name == "strava_routes":
             return _handle_routes(client, args)
         else:
@@ -806,6 +808,182 @@ def _handle_analysis(client, args: dict) -> str:
             "compare_by_type": compare_by_type,
             "overall_delta": overall_delta,
             "by_type_delta": by_type_delta,
+        })
+
+    except Exception as e:
+        return json.dumps({"error": f"Strava API error: {e}"})
+
+
+def _get_3_zone_boundaries(client) -> tuple[int, int] | str:
+    """Return (low_max, mod_max) HR boundaries for 3-zone model.
+
+    Maps Strava 5-zone to 3-zone:
+      Low = Strava Z1+Z2 (below top of Z2)
+      Moderate = Strava Z3+Z4 (below top of Z4)
+      High = Strava Z5 (above top of Z4)
+
+    Returns error string if zones unavailable.
+    """
+    zones = client.get_athlete_zones()
+    if not hasattr(zones, "heart_rate") or not zones.heart_rate:
+        return "HR zones not configured in Strava"
+    hr = zones.heart_rate
+    hr_zones = getattr(hr, "zones", None) or getattr(hr, "root", None)
+    if hasattr(hr_zones, "root"):
+        hr_zones = hr_zones.root
+    if not hr_zones or len(hr_zones) < 5:
+        return "HR zones not configured in Strava"
+
+    zone_list = []
+    for z in hr_zones:
+        if isinstance(z, (tuple, list)):
+            zone_list.append({"min": z[0], "max": z[1]})
+        elif hasattr(z, "min"):
+            zone_list.append({"min": z.min, "max": z.max})
+        else:
+            zone_list.append({"min": z.root[0], "max": z.root[1]})
+
+    low_max = zone_list[1]["max"]
+    mod_max = zone_list[3]["max"]
+    return (low_max, mod_max)
+
+
+def _classify_zones(low_pct: float, mod_pct: float, high_pct: float) -> str:
+    """Classify training distribution pattern."""
+    if low_pct >= 75 and mod_pct <= 10 and high_pct >= 10:
+        return "Polarised"
+    if low_pct >= 70 and low_pct > mod_pct > high_pct:
+        return "Pyramidal"
+    if mod_pct >= 25:
+        return "Threshold-Heavy"
+    return "Unstructured"
+
+
+_STREAM_FETCH_CAP = 50
+
+
+def _handle_zones(client, args: dict) -> str:
+    """Analyse HR zone distribution across a training period."""
+    try:
+        period_str = args.get("period", "4w")
+        parsed = _parse_period(period_str)
+        if isinstance(parsed, str):
+            return json.dumps({"error": parsed})
+        after, before = parsed
+
+        activity_type = args.get("type")
+        if activity_type is not None and activity_type not in _VALID_ACTIVITY_TYPES:
+            return json.dumps({"error": f"invalid activity type: {activity_type!r}"})
+
+        min_duration_min = max(1, min(120, int(args.get("min_duration_min", 20))))
+
+        boundaries = _get_3_zone_boundaries(client)
+        if isinstance(boundaries, str):
+            return json.dumps({"error": boundaries})
+        low_max, mod_max = boundaries
+
+        activities = list(client.get_activities(after=after, before=before, limit=500))
+        if activity_type:
+            activities = [a for a in activities if _type_str(a.type) == activity_type]
+
+        qualifying = []
+        skipped_no_hr = 0
+        skipped_short = 0
+        for a in activities:
+            if a.average_heartrate is None:
+                skipped_no_hr += 1
+                continue
+            moving_secs = _safe_int(a.moving_time)
+            if moving_secs / 60 < min_duration_min:
+                skipped_short += 1
+                continue
+            qualifying.append(a)
+
+        skipped_cap = 0
+        if len(qualifying) > _STREAM_FETCH_CAP:
+            skipped_cap = len(qualifying) - _STREAM_FETCH_CAP
+            qualifying = qualifying[:_STREAM_FETCH_CAP]
+
+        total_low = 0
+        total_mod = 0
+        total_high = 0
+        per_activity = []
+
+        for a in qualifying:
+            try:
+                streams = client.get_activity_streams(
+                    a.id, types=["heartrate", "time"]
+                )
+            except Exception:
+                skipped_no_hr += 1
+                continue
+
+            hr_stream = streams.get("heartrate")
+            time_stream = streams.get("time")
+            if not hr_stream or not time_stream:
+                skipped_no_hr += 1
+                continue
+
+            hr_data = getattr(hr_stream, "data", hr_stream) if not isinstance(hr_stream, list) else hr_stream
+            time_data = getattr(time_stream, "data", time_stream) if not isinstance(time_stream, list) else time_stream
+
+            n = min(len(hr_data), len(time_data))
+            if n < 2:
+                skipped_no_hr += 1
+                continue
+
+            a_low = 0
+            a_mod = 0
+            a_high = 0
+            for i in range(1, n):
+                dt = time_data[i] - time_data[i - 1]
+                hr = hr_data[i]
+                if hr < low_max:
+                    a_low += dt
+                elif hr < mod_max:
+                    a_mod += dt
+                else:
+                    a_high += dt
+
+            total_low += a_low
+            total_mod += a_mod
+            total_high += a_high
+
+            a_total = a_low + a_mod + a_high
+            if a_total > 0:
+                per_activity.append({
+                    "id": a.id,
+                    "name": a.name,
+                    "type": _type_str(a.type) if a.type else None,
+                    "date": a.start_date_local.isoformat() if a.start_date_local else None,
+                    "low_pct": round(a_low / a_total * 100, 1),
+                    "mod_pct": round(a_mod / a_total * 100, 1),
+                    "high_pct": round(a_high / a_total * 100, 1),
+                    "duration_min": round(a_total / 60, 1),
+                })
+
+        grand_total = total_low + total_mod + total_high
+        if grand_total == 0:
+            return json.dumps({
+                "period": period_str,
+                "error": "no HR stream data available for the selected activities",
+                "activities_skipped": {"no_hr": skipped_no_hr, "too_short": skipped_short, "over_cap": skipped_cap},
+            })
+
+        low_pct = round(total_low / grand_total * 100, 1)
+        mod_pct = round(total_mod / grand_total * 100, 1)
+        high_pct = round(total_high / grand_total * 100, 1)
+        classification = _classify_zones(low_pct, mod_pct, high_pct)
+
+        return json.dumps({
+            "period": period_str,
+            "classification": classification,
+            "zone_pct": {"low": low_pct, "mod": mod_pct, "high": high_pct},
+            "total_hours": round(grand_total / 3600, 1),
+            "activities_analysed": len(per_activity),
+            "activities_skipped": {"no_hr": skipped_no_hr, "too_short": skipped_short, "over_cap": skipped_cap},
+            "zone_boundaries": {"low_max": low_max, "mod_max": mod_max},
+            "per_activity": per_activity,
         })
 
     except Exception as e:

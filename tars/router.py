@@ -21,7 +21,7 @@ _TOOL_NAMES = {
     "memory_remember", "memory_update", "memory_forget", "memory_recall",
     "memory_search", "notes_search", "note_daily", "web_read",
     "strava_activities", "strava_user", "strava_summary",
-    "strava_compare", "strava_analysis", "strava_routes",
+    "strava_compare", "strava_analysis", "strava_zones", "strava_routes",
 }
 
 # Keyword patterns that suggest tool intent, mapped to relevant tool names.
@@ -73,8 +73,14 @@ _TOOL_HINT_PATTERNS: list[tuple[str, list[str]]] = [
     (r"\btraining\s+(?:this|last)\s+(?:week|month|year)\b", ["strava_activities", "strava_analysis"]),
     (r"\b(?:my|running|race|target|average|km)\s+pace\b", ["strava_activities", "strava_analysis"]),
     (r"\bpace\s+(?:per|min|zone|data|trend)\b", ["strava_activities", "strava_analysis"]),
+    (r"\b(?:zone|zones)\s+(?:distribution|analysis|breakdown|split)\b", ["strava_zones"]),
+    (r"\bpolarised\b",                 ["strava_zones"]),
+    (r"\bpolarized\b",                 ["strava_zones"]),
+    (r"\btime.in.zone\b",             ["strava_zones"]),
+    (r"\bintensity\s+distribution\b", ["strava_zones"]),
+    (r"\bzone\s*[1-5]\b",            ["strava_zones", "strava_user"]),
     (r"\bheart\s*rate\b",             ["strava_activities", "strava_user"]),
-    (r"\bhr\s+zone",                   ["strava_user"]),
+    (r"\bhr\s+zone",                   ["strava_zones", "strava_user"]),
     (r"\bsplits?\b",                   ["strava_activities"]),
     (r"\blaps?\b",                     ["strava_activities"]),
     (r"\bkilomet(?:re|er)s?\b",       ["strava_activities", "strava_summary"]),
