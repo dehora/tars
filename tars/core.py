@@ -41,6 +41,7 @@ def _apply_ollama_model_options(model: str, messages: list[dict]) -> None:
     if not model.startswith("qwen3"):
         return
     if _ollama_think():
+        verbose(f"  [model] {model}: thinking enabled")
         return
     # Prepend /no_think to the last user message to disable reasoning
     for msg in reversed(messages):
@@ -48,6 +49,7 @@ def _apply_ollama_model_options(model: str, messages: list[dict]) -> None:
             content = msg.get("content", "")
             if not content.startswith("/no_think"):
                 msg["content"] = f"/no_think\n{content}"
+                verbose(f"  [model] {model}: /no_think applied")
             break
 
 
