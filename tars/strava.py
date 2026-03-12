@@ -374,13 +374,15 @@ def _handle_activities(client, args: dict) -> str:
         if activity_type:
             # Over-fetch and filter: stravalib paginates internally,
             # so a high limit lets us scan enough to fill the requested
-            # count of matching activities.
+            # count of matching activities. For "oldest" sort we must
+            # scan the full cap since the API yields newest-first.
+            scan_limit = limit if sort == "recent" else _FETCH_CAP
             kwargs["limit"] = _FETCH_CAP
             collected = []
             for a in client.get_activities(**kwargs):
                 if _type_str(a.type) == activity_type:
                     collected.append(a)
-                    if len(collected) >= limit:
+                    if len(collected) >= scan_limit:
                         break
             activities = collected
         else:

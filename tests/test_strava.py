@@ -1580,6 +1580,34 @@ class TypeFilteredFetchTests(unittest.TestCase):
         }))
         self.assertEqual(len(result), 0)
 
+    @mock.patch.object(strava, "_get_client")
+    def test_oldest_sort_returns_oldest_matches(self, mock_get):
+        """sort=oldest with type filter should return the oldest matching activities,
+        not just reverse the first N matches from newest-first iteration."""
+        mock_get.return_value = self.client
+        # API yields newest-first: ids 5,4,3,2,1
+        all_runs = [
+            _mock_activity(id=5, type="Run", distance=5000.0,
+                           start_date_local=datetime(2026, 3, 5, 8, 0)),
+            _mock_activity(id=4, type="Run", distance=5000.0,
+                           start_date_local=datetime(2026, 3, 4, 8, 0)),
+            _mock_activity(id=3, type="Run", distance=5000.0,
+                           start_date_local=datetime(2026, 3, 3, 8, 0)),
+            _mock_activity(id=2, type="Run", distance=5000.0,
+                           start_date_local=datetime(2026, 3, 2, 8, 0)),
+            _mock_activity(id=1, type="Run", distance=5000.0,
+                           start_date_local=datetime(2026, 3, 1, 8, 0)),
+        ]
+        self.client.get_activities = _strict_get_activities(all_runs)
+
+        result = json.loads(strava._run_strava_tool("strava_activities", {
+            "type": "Run", "sort": "oldest", "limit": 2
+        }))
+        self.assertEqual(len(result), 2)
+        # Should be the oldest 2 (ids 1, 2), not the newest 2 reversed
+        self.assertEqual(result[0]["id"], 1)
+        self.assertEqual(result[1]["id"], 2)
+
 
 class UnknownToolTests(unittest.TestCase):
     @mock.patch.object(strava, "_get_client")

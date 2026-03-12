@@ -175,6 +175,10 @@ class TestRouter(unittest.TestCase):
         result = route_message("how was training this week", _ESC_CONFIG)
         self.assertEqual(result.provider, "claude")
 
+    def test_false_positive_training_this_model(self):
+        result = route_message("help with training this model", _ESC_CONFIG)
+        self.assertEqual(result.provider, "ollama")
+
 
 if __name__ == "__main__":
     unittest.main()
