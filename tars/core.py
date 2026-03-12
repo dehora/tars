@@ -9,6 +9,7 @@ import openai
 
 from tars.debug import verbose
 from tars.memory import _load_memory, _load_pinned, _load_procedural, append_daily, load_daily
+from tars.format import format_tool_result
 from tars.tools import ANTHROPIC_TOOLS, OLLAMA_TOOLS, get_all_tools, run_tool
 
 def _openai_base_url() -> str:
@@ -126,6 +127,12 @@ def _gemma_tool_result_message(results: list[tuple[str, str]]) -> dict:
         parts.append("</tool_output>")
     parts.append("</tool_outputs>")
     return {"role": "user", "content": "\n".join(parts)}
+
+
+def _run_and_format(name: str, args: dict) -> str:
+    """Run a tool and return the formatted result for feeding back to the model."""
+    raw = run_tool(name, args)
+    return format_tool_result(name, raw)
 
 
 _MAX_DAILY_LINES = 50
@@ -452,7 +459,7 @@ def chat_ollama(
         # Execute each tool call and feed results back
         for tool_call in response.message.tool_calls:
             name = tool_call.function.name
-            result = run_tool(name, tool_call.function.arguments)
+            result = _run_and_format(name, tool_call.function.arguments)
             local_messages.append({
                 "role": "tool",
                 "content": result,
@@ -483,7 +490,7 @@ def _chat_ollama_gemma(model: str, local_messages: list[dict]) -> str:
         tool_results = []
         for name, args in tool_calls:
             verbose(f"  [tool] {name}({args})")
-            result = run_tool(name, args)
+            result = _run_and_format(name, args)
             tool_results.append((name, result))
             try:
                 append_daily(f"tool:{name} — {result[:80]}")
@@ -529,7 +536,7 @@ def chat_openai(
         local_messages.append(choice.message)
         for tc in choice.message.tool_calls:
             args = _parse_tool_arguments(tc.function.arguments)
-            result = run_tool(tc.function.name, args)
+            result = _run_and_format(tc.function.name, args)
             local_messages.append({
                 "role": "tool",
                 "tool_call_id": tc.id,
@@ -662,7 +669,7 @@ def chat_ollama_stream(
             local_messages.append(response.message)
             for tool_call in response.message.tool_calls:
                 name = tool_call.function.name
-                result = run_tool(name, tool_call.function.arguments)
+                result = _run_and_format(name, tool_call.function.arguments)
                 local_messages.append({"role": "tool", "content": result})
                 try:
                     append_daily(f"tool:{name} — {result[:80]}")
@@ -691,7 +698,7 @@ def chat_ollama_stream(
             tool_results = []
             for name, args in tool_calls:
                 verbose(f"  [tool] {name}({args})")
-                result = run_tool(name, args)
+                result = _run_and_format(name, args)
                 tool_results.append((name, result))
                 try:
                     append_daily(f"tool:{name} — {result[:80]}")
@@ -736,7 +743,7 @@ def chat_openai_stream(
             local_messages.append(choice.message)
             for tc in choice.message.tool_calls:
                 args = _parse_tool_arguments(tc.function.arguments)
-                result = run_tool(tc.function.name, args)
+                result = _run_and_format(tc.function.name, args)
                 local_messages.append({
                     "role": "tool",
                     "tool_call_id": tc.id,
