@@ -176,6 +176,17 @@ def load_session(filename: str) -> str | None:
         return None
 
 
+def load_recent_session() -> tuple[str, SessionInfo] | None:
+    """Return (content, info) for the most recent session, or None."""
+    sessions = list_sessions(limit=1)
+    if not sessions:
+        return None
+    content = load_session(sessions[0].filename)
+    if not content:
+        return None
+    return content, sessions[0]
+
+
 def _save_session(path: Path, summary: str, *, is_compaction: bool = False) -> None:
     """Write or append a session summary to the session file."""
     if path.exists():

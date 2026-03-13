@@ -434,6 +434,66 @@ class SessionCountTests(unittest.TestCase):
             self.assertEqual(sessions.session_count(), 0)
 
 
+class LoadRecentSessionTests(unittest.TestCase):
+    def test_returns_most_recent(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            sessions_dir = Path(tmpdir) / "sessions"
+            sessions_dir.mkdir()
+            (sessions_dir / "2026-01-01T10-00-00-cli.md").write_text("# Session\n\nold session")
+            (sessions_dir / "2026-01-02T10-00-00-web.md").write_text("# Session\n\nnew session")
+            with mock.patch.dict("os.environ", {"TARS_MEMORY_DIR": tmpdir}):
+                result = sessions.load_recent_session()
+            self.assertIsNotNone(result)
+            content, info = result
+            self.assertIn("new session", content)
+            self.assertEqual(info.channel, "web")
+
+    def test_returns_none_when_empty(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            sessions_dir = Path(tmpdir) / "sessions"
+            sessions_dir.mkdir()
+            with mock.patch.dict("os.environ", {"TARS_MEMORY_DIR": tmpdir}):
+                result = sessions.load_recent_session()
+            self.assertIsNone(result)
+
+    def test_returns_none_when_no_memory_dir(self) -> None:
+        with mock.patch.dict("os.environ", {}, clear=True):
+            with mock.patch.object(sessions, "_memory_dir", return_value=None):
+                result = sessions.load_recent_session()
+            self.assertIsNone(result)
+
+
+class InjectPriorContextTests(unittest.TestCase):
+    def test_injects_synthetic_exchange(self) -> None:
+        conv = conversation.Conversation(id="test", provider="ollama", model="test")
+        conversation.inject_prior_context(conv, "- discussed weather\n- checked todoist", label="2026-01-02")
+        self.assertEqual(len(conv.messages), 2)
+        self.assertEqual(conv.messages[0]["role"], "user")
+        self.assertIn("previous session", conv.messages[0]["content"])
+        self.assertEqual(conv.messages[1]["role"], "assistant")
+        self.assertIn("prior-session", conv.messages[1]["content"])
+        self.assertIn("discussed weather", conv.messages[1]["content"])
+        self.assertIn("2026-01-02", conv.messages[1]["content"])
+
+    def test_seeds_cumulative_summary(self) -> None:
+        conv = conversation.Conversation(id="test", provider="ollama", model="test")
+        conversation.inject_prior_context(conv, "summary text")
+        self.assertEqual(conv.cumulative_summary, "summary text")
+
+    def test_noop_when_messages_exist(self) -> None:
+        conv = conversation.Conversation(id="test", provider="ollama", model="test")
+        conv.messages.append({"role": "user", "content": "hello"})
+        conversation.inject_prior_context(conv, "summary")
+        self.assertEqual(len(conv.messages), 1)
+        self.assertEqual(conv.cumulative_summary, "")
+
+    def test_escapes_html_in_summary(self) -> None:
+        conv = conversation.Conversation(id="test", provider="ollama", model="test")
+        conversation.inject_prior_context(conv, "used <tool> tag")
+        self.assertIn("&lt;tool&gt;", conv.messages[1]["content"])
+        self.assertNotIn("<tool>", conv.messages[1]["content"])
+
+
 class RecentSessionsTests(unittest.TestCase):
     def test_load_recent_sessions_orders_and_limits(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:

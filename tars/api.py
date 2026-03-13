@@ -194,6 +194,35 @@ def save_conversation(conversation_id: str) -> dict:
     return {"ok": True}
 
 
+@app.post("/conversations/{conversation_id}/continue")
+def continue_conversation(conversation_id: str) -> dict:
+    """Inject the most recent session as prior context into a conversation."""
+    from tars.conversation import inject_prior_context
+    from tars.sessions import load_recent_session
+
+    if conversation_id not in _conversations:
+        _conversations[conversation_id] = Conversation(
+            id=conversation_id,
+            provider=_provider,
+            model=_model,
+            remote_provider=_model_config.remote_provider,
+            remote_model=_model_config.remote_model,
+            routing_policy=_model_config.routing_policy,
+            channel="web",
+        )
+        _session_files[conversation_id] = _session_path(channel="web")
+    conv = _conversations[conversation_id]
+    if conv.messages:
+        raise HTTPException(status_code=409, detail="Conversation already has messages")
+    result = load_recent_session()
+    if result is None:
+        return {"ok": False, "message": "No previous sessions found"}
+    content, info = result
+    inject_prior_context(conv, content, label=info.date)
+    channel_tag = f" [{info.channel}]" if info.channel else ""
+    return {"ok": True, "message": f"Continuing from {info.date}{channel_tag}: {info.title[:60]}"}
+
+
 @app.post("/chat/stream")
 def chat_stream_endpoint(req: ChatRequest):
     """Streaming chat via Server-Sent Events.

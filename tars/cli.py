@@ -76,8 +76,8 @@ _COMMAND_NAMES = command_names() | {"?"}
 
 _SLASH_COMPLETIONS = sorted(
     c + " " if c in {"/todoist", "/remember", "/search", "/sgrep", "/svec",
-                      "/find", "/session", "/w", "/r", "/note", "/capture",
-                      "/read"} else c
+                      "/find", "/session", "/continue", "/w", "/r", "/note",
+                      "/capture", "/read"} else c
     for c in command_names()
 )
 _TODOIST_SUBS = ["add ", "today", "upcoming ", "complete "]

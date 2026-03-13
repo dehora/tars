@@ -2,6 +2,7 @@
 
 import sys
 import unittest
+from pathlib import Path
 from unittest import mock
 
 sys.modules.setdefault("anthropic", mock.Mock())
@@ -411,12 +412,48 @@ class CentralizedDispatchTests(unittest.TestCase):
             "/pin", "/unpin", "/pins", "/note",
             "/read", "/capture", "/brief",
             "/search", "/sgrep", "/svec", "/find",
-            "/sessions", "/session",
+            "/sessions", "/session", "/continue",
             "/w", "/r", "/review", "/tidy",
             "/mcp", "/stats", "/schedule", "/model",
             "/export", "/help", "/clear",
         }
         self.assertEqual(names, expected)
+
+    @mock.patch("tars.commands._dispatch_continue", return_value="Continuing from 2026-01-02")
+    def test_dispatch_continue(self, mock_cont) -> None:
+        from tars.conversation import Conversation
+        conv = Conversation(id="test", provider="ollama", model="test")
+        result = dispatch("/continue", conv=conv)
+        self.assertEqual(result, "Continuing from 2026-01-02")
+
+    def test_dispatch_continue_blocks_with_messages(self) -> None:
+        from tars.conversation import Conversation
+        conv = Conversation(id="test", provider="ollama", model="test")
+        conv.messages.append({"role": "user", "content": "hello"})
+        result = dispatch("/continue", conv=conv)
+        self.assertIn("already has messages", result)
+
+    def test_dispatch_continue_no_sessions(self) -> None:
+        from tars.conversation import Conversation
+        conv = Conversation(id="test", provider="ollama", model="test")
+        with mock.patch("tars.sessions.load_recent_session", return_value=None):
+            result = dispatch("/continue", conv=conv)
+        self.assertIn("No previous sessions", result)
+
+    def test_dispatch_continue_loads_recent(self) -> None:
+        from tars.conversation import Conversation
+        from tars.sessions import SessionInfo
+        conv = Conversation(id="test", provider="ollama", model="test")
+        info = SessionInfo(
+            path=Path("/fake/session.md"), date="2026-01-02 10:00",
+            title="Weather chat", filename="2026-01-02T10-00-00-cli", channel="cli",
+        )
+        with mock.patch("tars.sessions.load_recent_session", return_value=("# Session\n\n- weather", info)):
+            result = dispatch("/continue", conv=conv)
+        self.assertIn("2026-01-02", result)
+        self.assertIn("[cli]", result)
+        self.assertEqual(len(conv.messages), 2)
+        self.assertIn("weather", conv.messages[1]["content"])
 
     def test_dispatch_feedback_w(self) -> None:
         from tars.conversation import Conversation

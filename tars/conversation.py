@@ -91,6 +91,32 @@ def _should_fallback(exc: Exception) -> bool:
     return False
 
 
+def inject_prior_context(conv: Conversation, summary: str, label: str = "") -> None:
+    """Prepend a prior session summary as synthetic history to a fresh conversation.
+
+    Seeds cumulative_summary so subsequent compaction builds on the prior chain.
+    Only valid before any real messages have been added.
+    """
+    if conv.messages:
+        return
+    from tars.sessions import _escape_prompt_text
+    escaped = _escape_prompt_text(summary)
+    tag = f" ({label})" if label else ""
+    conv.messages.append({
+        "role": "user",
+        "content": "What was discussed in our previous session?",
+    })
+    conv.messages.append({
+        "role": "assistant",
+        "content": (
+            f"[Continuing from a prior session{tag}. "
+            f"Summary of previous conversation:\n\n"
+            f"<prior-session>\n{escaped}\n</prior-session>]"
+        ),
+    })
+    conv.cumulative_summary = summary
+
+
 def process_message(
     conv: Conversation, user_input: str, session_file: Path | None = None,
 ) -> str:

@@ -137,6 +137,8 @@ search:
 sessions:
   /sessions        list recent sessions
   /session <query> search session logs
+  /continue        resume the most recent session
+  /continue <q>    resume the best matching session
 feedback:
   /w [note]        flag last response as wrong
   /r [note]        flag last response as good
@@ -276,6 +278,8 @@ def dispatch(
             return _dispatch_sessions()
         if cmd == "/session":
             return _dispatch_session_search(parts)
+        if cmd == "/continue":
+            return _dispatch_continue(parts, conv)
         if cmd == "/export":
             return _export_conversation(conv)
         if cmd == "/help":
@@ -427,6 +431,44 @@ def _dispatch_session_search(parts: list[str]) -> str:
         if preview:
             lines.append(f"   {preview[0][:80]}")
     return "\n".join(lines)
+
+
+def _dispatch_continue(parts: list[str], conv: Conversation | None) -> str:
+    if conv is None:
+        return "No active conversation."
+    if conv.messages:
+        return "Cannot continue: conversation already has messages. Use /clear first, then /continue."
+
+    from tars.conversation import inject_prior_context
+    from tars.sessions import load_recent_session, load_session
+
+    query = " ".join(parts[1:]).strip() if len(parts) > 1 else ""
+
+    if query:
+        from pathlib import Path
+
+        from tars.search import search
+
+        results = search(query, mode="hybrid", limit=5)
+        episodic = [r for r in results if r.memory_type == "episodic"]
+        if not episodic:
+            return f"No session found matching '{query}'."
+        top = episodic[0]
+        stem = Path(top.file_path).stem
+        content = load_session(stem)
+        if not content:
+            return f"Could not load session '{stem}'."
+        label = top.file_title or stem
+        inject_prior_context(conv, content, label=label)
+        return f"Continuing from session: {label[:60]}"
+
+    result = load_recent_session()
+    if result is None:
+        return "No previous sessions found."
+    content, info = result
+    inject_prior_context(conv, content, label=info.date)
+    channel_tag = f" [{info.channel}]" if info.channel else ""
+    return f"Continuing from {info.date}{channel_tag}: {info.title[:60]}"
 
 
 def _dispatch_feedback(
@@ -629,7 +671,7 @@ _ALL_COMMANDS = {
     "/pin", "/unpin", "/pins", "/note",
     "/read", "/capture", "/brief",
     "/search", "/sgrep", "/svec", "/find",
-    "/sessions", "/session",
+    "/sessions", "/session", "/continue",
     "/w", "/r", "/review", "/tidy",
     "/mcp", "/stats", "/schedule", "/model",
     "/export", "/help", "/clear",
