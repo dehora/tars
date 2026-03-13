@@ -202,14 +202,14 @@ ANTHROPIC_TOOLS = [
         "name": "note_write",
         "description": (
             "Create a new note in the user's Obsidian vault. Provide the path relative to "
-            "the vault root (e.g. '000 Self/Exercise Pain Log.md'). Fails if the file already "
+            "the vault root (e.g. 'folder/My Note.md'). Fails if the file already "
             "exists unless overwrite is set to true. Use notes_search first to check if the "
             "page exists."
         ),
         "input_schema": {
             "type": "object",
             "properties": {
-                "path": {"type": "string", "description": "Relative path from vault root, e.g. '000 Self/Pain Log.md'"},
+                "path": {"type": "string", "description": "Relative path from vault root, e.g. 'folder/My Note.md'"},
                 "content": {"type": "string", "description": "Full markdown content to write"},
                 "overwrite": {"type": "boolean", "description": "Allow overwriting an existing file (default false)"},
             },
@@ -225,7 +225,7 @@ ANTHROPIC_TOOLS = [
         "input_schema": {
             "type": "object",
             "properties": {
-                "path": {"type": "string", "description": "Relative path from vault root, e.g. '000 Self/Pain Log.md'"},
+                "path": {"type": "string", "description": "Relative path from vault root, e.g. 'folder/My Note.md'"},
             },
             "required": ["path"],
         },
@@ -239,7 +239,7 @@ ANTHROPIC_TOOLS = [
         "input_schema": {
             "type": "object",
             "properties": {
-                "path": {"type": "string", "description": "Relative path from vault root, e.g. '000 Self/Pain Log.md'"},
+                "path": {"type": "string", "description": "Relative path from vault root, e.g. 'folder/My Note.md'"},
                 "content": {"type": "string", "description": "Content to append (added after a newline)"},
             },
             "required": ["path", "content"],

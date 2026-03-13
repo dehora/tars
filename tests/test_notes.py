@@ -155,6 +155,51 @@ class NoteWriteTests(unittest.TestCase):
         self.assertIn("error", result)
 
 
+class FindSimilarTests(unittest.TestCase):
+    def test_suggests_similar_file(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            sub = Path(tmpdir) / "000 Self"
+            sub.mkdir()
+            (sub / "Exercise Pain Log.md").write_text("# Pain Log")
+            with mock.patch.dict("os.environ", {"TARS_NOTES_DIR": tmpdir}):
+                result = json.loads(notes.note_append("000 Self/Pain Log.md", "entry"))
+                self.assertIn("error", result)
+                self.assertIn("Exercise Pain Log.md", result["error"])
+
+    def test_no_suggestion_when_exact_match(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            (Path(tmpdir) / "log.md").write_text("existing")
+            with mock.patch.dict("os.environ", {"TARS_NOTES_DIR": tmpdir}):
+                result = json.loads(notes.note_append("log.md", "more"))
+                self.assertTrue(result["ok"])
+
+    def test_no_suggestion_when_no_similar(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            with mock.patch.dict("os.environ", {"TARS_NOTES_DIR": tmpdir}):
+                result = json.loads(notes.note_append("brand-new.md", "content"))
+                self.assertTrue(result["ok"])
+
+    def test_write_suggests_similar(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            sub = Path(tmpdir) / "000 Self"
+            sub.mkdir()
+            (sub / "Exercise Pain Log.md").write_text("# Pain Log")
+            with mock.patch.dict("os.environ", {"TARS_NOTES_DIR": tmpdir}):
+                result = json.loads(notes.note_write("000 Self/Pain Log.md", "new content"))
+                self.assertIn("error", result)
+                self.assertIn("Exercise Pain Log.md", result["error"])
+
+    def test_no_suggestion_with_multiple_matches(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            (Path(tmpdir) / "Pain Log.md").write_text("a")
+            (Path(tmpdir) / "Exercise Pain Log.md").write_text("b")
+            with mock.patch.dict("os.environ", {"TARS_NOTES_DIR": tmpdir}):
+                # "Pain" is a substring of both — ambiguous, so no suggestion
+                # But "Pain Log.md" exists exactly, so append succeeds
+                result = json.loads(notes.note_append("Pain Log.md", "entry"))
+                self.assertTrue(result["ok"])
+
+
 class NoteReadTests(unittest.TestCase):
     def test_reads_existing_file(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:

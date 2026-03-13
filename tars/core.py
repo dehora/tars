@@ -192,8 +192,10 @@ user's personal knowledge base. Use note_daily to append to today's daily \
 journal. For specific pages in the vault, use note_write to create a new page, \
 note_read to retrieve full contents, and note_append to add content to an \
 existing page (or create it). Before creating a new page, use notes_search to \
-check whether it already exists. Never hallucinate file creation — always call \
-the tool and report the actual result.
+check whether it already exists. Always use the exact filename and path from \
+procedural memory when it specifies one — never shorten or rename files. \
+Never hallucinate file creation — always call the tool and report the actual \
+result.
 
 Use web_read when the user shares a URL and wants to discuss its content.
 

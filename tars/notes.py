@@ -70,6 +70,10 @@ def note_write(path_str: str, content: str, *, overwrite: bool = False) -> str:
         rel = resolved.relative_to(_notes_dir().resolve())
         return json.dumps({"error": f"file already exists: {rel}", "path": str(rel)})
 
+    similar = _find_similar(resolved)
+    if similar:
+        return json.dumps({"error": f"file not found, did you mean '{similar}'?"})
+
     resolved.parent.mkdir(parents=True, exist_ok=True)
     overwritten = resolved.exists()
     resolved.write_text(content, encoding="utf-8", errors="replace")
@@ -100,6 +104,28 @@ def note_read(path_str: str) -> str:
     return json.dumps({"ok": True, "path": rel, "content": text, "truncated": truncated})
 
 
+def _find_similar(resolved: Path) -> str | None:
+    """If resolved doesn't exist, look for a file in the same dir whose stem contains
+    the target stem or vice versa. Returns the relative path if exactly one match."""
+    if resolved.exists():
+        return None
+    parent = resolved.parent
+    if not parent.is_dir():
+        return None
+    target = resolved.stem.lower()
+    matches = []
+    for f in parent.iterdir():
+        if not f.is_file() or f.suffix != ".md":
+            continue
+        existing = f.stem.lower()
+        if target in existing or existing in target:
+            matches.append(f)
+    if len(matches) == 1:
+        d = _notes_dir().resolve()
+        return str(matches[0].relative_to(d))
+    return None
+
+
 def note_append(path_str: str, content: str) -> str:
     """Append content to a vault note. Creates file if missing."""
     resolved, err = _validate_note_path(path_str)
@@ -108,6 +134,10 @@ def note_append(path_str: str, content: str) -> str:
 
     if not content or not content.strip():
         return json.dumps({"error": "content is required"})
+
+    similar = _find_similar(resolved)
+    if similar:
+        return json.dumps({"error": f"file not found, did you mean '{similar}'?"})
 
     resolved.parent.mkdir(parents=True, exist_ok=True)
     created = not resolved.exists()
