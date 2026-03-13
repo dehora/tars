@@ -19,7 +19,8 @@ _TOOL_NAMES = {
     "todoist_add_task", "todoist_today", "todoist_upcoming",
     "todoist_complete_task", "weather_now", "weather_forecast",
     "memory_remember", "memory_update", "memory_forget", "memory_recall",
-    "memory_search", "notes_search", "note_daily", "web_read",
+    "memory_search", "notes_search", "note_daily",
+    "note_write", "note_read", "note_append", "web_read",
     "strava_activities", "strava_user", "strava_summary",
     "strava_compare", "strava_analysis", "strava_zones", "strava_routes",
 }
@@ -51,6 +52,15 @@ _TOOL_HINT_PATTERNS: list[tuple[str, list[str]]] = [
     # Search
     (r"\bsearch\s+for\b",            ["memory_search"]),
     (r"\blook\s+up\b",               ["memory_search"]),
+    # Vault write/read/append
+    (r"\bcreate\s+(?:a\s+)?(?:note|page)\b",        ["note_write"]),
+    (r"\bnew\s+(?:note|page)\s+(?:for|about|in)\b", ["note_write"]),
+    (r"\bread\s+(?:my\s+)?note\b",                  ["note_read"]),
+    (r"\bopen\s+(?:my\s+)?note\b",                  ["note_read"]),
+    (r"\bappend\s+to\b",                             ["note_append"]),
+    (r"\badd\s+to\s+(?:my\s+)?(?:note|page|log)\b", ["note_append"]),
+    (r"\bpain\s+log\b",                              ["note_append", "note_write"]),
+    (r"\bexercise\s+log\b",                          ["note_append", "note_write"]),
     # Notes vault
     (r"\bmy\s+notes?\b",             ["notes_search"]),
     (r"\bdaily\s+notes?\b",          ["notes_search", "note_daily"]),

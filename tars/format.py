@@ -796,6 +796,49 @@ def _format_route_detail(data: dict) -> str:
     return "\n".join(lines)
 
 
+def format_note_write(raw: str) -> str:
+    """Format note_write result."""
+    try:
+        data = json.loads(raw)
+    except (json.JSONDecodeError, TypeError):
+        return raw
+    if "error" in data:
+        return data["error"]
+    path = data.get("path", "")
+    if data.get("overwritten"):
+        return f"updated: {path}"
+    return f"created: {path}"
+
+
+def format_note_read(raw: str) -> str:
+    """Format note_read result."""
+    try:
+        data = json.loads(raw)
+    except (json.JSONDecodeError, TypeError):
+        return raw
+    if "error" in data:
+        return data["error"]
+    content = data.get("content", "")
+    truncated = data.get("truncated", False)
+    if truncated:
+        return content + "\n(content truncated)"
+    return content
+
+
+def format_note_append(raw: str) -> str:
+    """Format note_append result."""
+    try:
+        data = json.loads(raw)
+    except (json.JSONDecodeError, TypeError):
+        return raw
+    if "error" in data:
+        return data["error"]
+    path = data.get("path", "")
+    if data.get("created"):
+        return f"created: {path}"
+    return f"appended to: {path}"
+
+
 _ZONE_INSIGHTS = {
     "Polarised": "classic polarised — most time easy, hard sessions are hard.",
     "Pyramidal": "pyramidal — well-distributed, most time easy.",
@@ -863,6 +906,9 @@ _FORMATTERS = {
     "weather_forecast": format_weather_forecast,
     "memory_recall": format_memory_recall,
     "note_daily": format_todoist_action,
+    "note_write": format_note_write,
+    "note_read": format_note_read,
+    "note_append": format_note_append,
     "web_read": format_web_read,
     "capture": format_capture,
     "strava_activities": format_strava_activities,

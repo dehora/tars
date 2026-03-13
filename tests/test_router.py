@@ -222,6 +222,26 @@ class TestRouter(unittest.TestCase):
         result = route_message("fire zone 2 evacuation", _ESC_CONFIG)
         self.assertEqual(result.provider, "ollama")
 
+    def test_create_note_escalates(self):
+        result = route_message("create a note for my pain log", _ESC_CONFIG)
+        self.assertEqual(result.provider, "claude")
+        self.assertIn("note_write", result.tool_hints)
+
+    def test_read_note_escalates(self):
+        result = route_message("read my note about exercise", _ESC_CONFIG)
+        self.assertEqual(result.provider, "claude")
+        self.assertIn("note_read", result.tool_hints)
+
+    def test_append_to_log_escalates(self):
+        result = route_message("add to my exercise log", _ESC_CONFIG)
+        self.assertEqual(result.provider, "claude")
+        self.assertIn("note_append", result.tool_hints)
+
+    def test_pain_log_escalates(self):
+        result = route_message("update my pain log", _ESC_CONFIG)
+        self.assertEqual(result.provider, "claude")
+        self.assertIn("note_append", result.tool_hints)
+
 
 if __name__ == "__main__":
     unittest.main()

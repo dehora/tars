@@ -3,6 +3,9 @@ import unittest
 
 from tars.format import (
     format_memory_recall,
+    format_note_append,
+    format_note_read,
+    format_note_write,
     format_strava_activities,
     format_strava_zones,
     format_todoist_action,
@@ -307,6 +310,52 @@ class StravaZonesFormatTests(unittest.TestCase):
         })
         out = format_tool_result("strava_zones", raw)
         self.assertIn("Polarised", out)
+
+
+class NoteWriteFormatTests(unittest.TestCase):
+    def test_created(self) -> None:
+        raw = json.dumps({"ok": True, "path": "000 Self/Pain Log.md", "created": True})
+        self.assertEqual(format_note_write(raw), "created: 000 Self/Pain Log.md")
+
+    def test_overwritten(self) -> None:
+        raw = json.dumps({"ok": True, "path": "test.md", "overwritten": True})
+        self.assertEqual(format_note_write(raw), "updated: test.md")
+
+    def test_error(self) -> None:
+        raw = json.dumps({"error": "file already exists: test.md"})
+        self.assertEqual(format_note_write(raw), "file already exists: test.md")
+
+    def test_dispatch(self) -> None:
+        raw = json.dumps({"ok": True, "path": "x.md", "created": True})
+        self.assertEqual(format_tool_result("note_write", raw), "created: x.md")
+
+
+class NoteReadFormatTests(unittest.TestCase):
+    def test_content(self) -> None:
+        raw = json.dumps({"ok": True, "path": "t.md", "content": "# Hello", "truncated": False})
+        self.assertEqual(format_note_read(raw), "# Hello")
+
+    def test_truncated(self) -> None:
+        raw = json.dumps({"ok": True, "path": "t.md", "content": "text", "truncated": True})
+        self.assertIn("(content truncated)", format_note_read(raw))
+
+    def test_error(self) -> None:
+        raw = json.dumps({"error": "file not found: nope.md"})
+        self.assertEqual(format_note_read(raw), "file not found: nope.md")
+
+
+class NoteAppendFormatTests(unittest.TestCase):
+    def test_appended(self) -> None:
+        raw = json.dumps({"ok": True, "path": "log.md", "created": False})
+        self.assertEqual(format_note_append(raw), "appended to: log.md")
+
+    def test_created(self) -> None:
+        raw = json.dumps({"ok": True, "path": "log.md", "created": True})
+        self.assertEqual(format_note_append(raw), "created: log.md")
+
+    def test_error(self) -> None:
+        raw = json.dumps({"error": "traversal not allowed"})
+        self.assertEqual(format_note_append(raw), "traversal not allowed")
 
 
 if __name__ == "__main__":

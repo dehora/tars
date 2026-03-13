@@ -199,6 +199,53 @@ ANTHROPIC_TOOLS = [
         },
     },
     {
+        "name": "note_write",
+        "description": (
+            "Create a new note in the user's Obsidian vault. Provide the path relative to "
+            "the vault root (e.g. '000 Self/Exercise Pain Log.md'). Fails if the file already "
+            "exists unless overwrite is set to true. Use notes_search first to check if the "
+            "page exists."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "path": {"type": "string", "description": "Relative path from vault root, e.g. '000 Self/Pain Log.md'"},
+                "content": {"type": "string", "description": "Full markdown content to write"},
+                "overwrite": {"type": "boolean", "description": "Allow overwriting an existing file (default false)"},
+            },
+            "required": ["path", "content"],
+        },
+    },
+    {
+        "name": "note_read",
+        "description": (
+            "Read the contents of a specific note from the user's Obsidian vault by path. "
+            "Use when you need the full content of a specific page, not a search."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "path": {"type": "string", "description": "Relative path from vault root, e.g. '000 Self/Pain Log.md'"},
+            },
+            "required": ["path"],
+        },
+    },
+    {
+        "name": "note_append",
+        "description": (
+            "Append content to an existing note in the user's Obsidian vault. Creates the "
+            "file if it does not exist. Use for adding entries to logs, journals, or growing documents."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "path": {"type": "string", "description": "Relative path from vault root, e.g. '000 Self/Pain Log.md'"},
+                "content": {"type": "string", "description": "Content to append (added after a newline)"},
+            },
+            "required": ["path", "content"],
+        },
+    },
+    {
         "name": "web_read",
         "description": "Fetch and read a web page. Use when the user shares a URL or asks you to read/discuss a link.",
         "input_schema": {
@@ -494,7 +541,7 @@ def run_tool(name: str, args: dict, *, quiet: bool = False) -> str:
             return _run_notes_search_tool(name, args)
         if name in ("weather_now", "weather_forecast"):
             return _run_weather_tool(name, args)
-        if name == "note_daily":
+        if name in ("note_daily", "note_write", "note_read", "note_append"):
             return _run_note_tool(name, args)
         if name == "web_read":
             return _run_web_tool(name, args)
