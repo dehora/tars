@@ -2,6 +2,34 @@
 
 ## Next
 
+### 39. Conversation continuity across channels
+
+Conversations are channel-scoped. Add a `/continue` command (and implicit resume) that picks up context from the most recent session regardless of which channel created it. Requires a shared session lookup and a way to hydrate prior messages into a new Conversation. Makes tars feel like one assistant instead of four.
+
+### 40. Vault backlinks / graph awareness
+
+Extract `[[wikilinks]]` during indexing and store link edges in the DB. Search can then boost connected notes (graph proximity) and support "what links to this?" queries. Leverages structure already present in the vault at near-zero indexing cost.
+
+### 41. Scheduled memory review
+
+Run `/tidy` + `/review` automatically on a weekly schedule (`tars review`). Surfaces stale entries and proposed changes via email or Telegram digest for async approval. Builds on existing `/tidy`, `/review`, and scheduling infrastructure.
+
+### 42. Tool composition / multi-step plans
+
+Lightweight planner that chains multiple tool calls from a single natural language request — e.g. "capture this article, add a todoist task to read it, and note it in today's daily". Planning layer on top of the existing bounded tool loop.
+
+### 43. Proactive daily context
+
+Lighter version of #19. On session open, silently check todoist/recent sessions and seed the system prompt with "context of the day" — no explicit `/brief` needed. Subsumes the parked proactive nudges item.
+
+### 44. Multi-vault unified search
+
+Unified cross-vault search across tars vault and personal vault with source attribution. Currently separate indexes (`tars.db` and `notes.db`); merge results with provenance tags.
+
+### 45. Voice channel
+
+Local speech-to-text (Whisper or MLX whisper) piped through existing conversation flow. Apple Silicon is fast enough for real-time local transcription. Makes tars usable hands-free.
+
 ## Fixes
 
 <details>
@@ -9,7 +37,7 @@
 
 ### 19. Proactive nudges
 
-Pattern detection over session history for suggestions.
+Superseded by #43. Pattern detection over session history for suggestions.
 
 ### 36. Escalation-aware search budgeting
 
