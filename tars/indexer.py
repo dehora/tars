@@ -1,5 +1,6 @@
 """Orchestration: discover memory files, chunk, embed, and store."""
 
+import re
 import sqlite3
 import sys as _sys_mod
 import time
@@ -9,6 +10,7 @@ _stderr = _sys_mod.stderr
 
 from tars.chunker import _content_hash, chunk_markdown
 from tars.db import (
+    _file_links_table_exists,
     _get_metadata,
     _notes_db_path,
     _prepare_db,
@@ -19,7 +21,9 @@ from tars.db import (
     get_indexed_paths,
     init_db,
     insert_chunks,
+    resolve_file_links,
     upsert_file,
+    upsert_file_links,
 )
 from tars.embeddings import DEFAULT_EMBEDDING_MODEL, embed, embedding_dimensions
 from tars.memory import _MEMORY_FILES, _memory_dir
@@ -29,6 +33,31 @@ _EMBED_BATCH_SIZE = 64
 _EMBED_MAX_RETRIES = 3
 _MAX_CONTEXT_LEVELS = 3
 _MAX_CONTEXT_CHARS = 120
+
+_WIKILINK_RE = re.compile(r"\[\[([^\]|#\n]+?)(?:[|#][^\]]*?)?\]\]")
+_EMBED_EXTENSIONS = frozenset({
+    ".png", ".jpg", ".jpeg", ".gif", ".bmp", ".svg", ".webp",
+    ".tiff", ".mp3", ".mp4", ".wav", ".pdf",
+})
+
+
+def _extract_wikilinks(content: str) -> list[str]:
+    """Extract deduplicated target titles from wikilinks in content.
+
+    Skips embedded assets (images, audio, video, PDFs).
+    """
+    seen: set[str] = set()
+    result: list[str] = []
+    for m in _WIKILINK_RE.finditer(content):
+        title = m.group(1).strip()
+        if not title or title in seen:
+            continue
+        suffix = title[title.rfind("."):].lower() if "." in title else ""
+        if suffix in _EMBED_EXTENSIONS:
+            continue
+        seen.add(title)
+        result.append(title)
+    return result
 
 
 def _embed_prefix(context: str) -> str:
@@ -155,6 +184,8 @@ def _index_files(
             delete_file(conn, file_id)
             stats["deleted"] += 1
 
+    has_links_table = _file_links_table_exists(conn)
+
     for filepath, memory_type in files:
         try:
             content = filepath.read_text(encoding="utf-8", errors="replace")
@@ -175,6 +206,12 @@ def _index_files(
             size=stat.st_size,
         )
 
+        if has_links_table:
+            links = _extract_wikilinks(content)
+            if links:
+                upsert_file_links(conn, file_id, links)
+                conn.commit()
+
         if not changed:
             stats["skipped"] += 1
             continue
@@ -185,6 +222,10 @@ def _index_files(
             stats["indexed"] += 1
         except Exception as e:
             print(f"  [warning] indexing failed for {filepath}: {e}", file=_stderr)
+
+    if has_links_table:
+        resolve_file_links(conn, collection_id)
+        conn.commit()
 
 
 def build_notes_index(*, model: str = DEFAULT_EMBEDDING_MODEL) -> dict:

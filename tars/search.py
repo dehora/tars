@@ -3,7 +3,16 @@
 import json
 from dataclasses import dataclass
 
-from tars.db import _connect, _db_path, _fts_table_exists, _get_metadata, _serialize_f32, _vec_table_exists
+from tars.db import (
+    _connect,
+    _db_path,
+    _file_links_table_exists,
+    _fts_table_exists,
+    _get_metadata,
+    _serialize_f32,
+    _vec_table_exists,
+    get_linked_file_ids,
+)
 from tars.debug import verbose
 from tars.embeddings import (
     DEFAULT_EMBEDDING_MODEL,
@@ -235,6 +244,38 @@ def _apply_char_cap(results: list[SearchResult], max_chars: int) -> list[SearchR
     return capped
 
 
+def _graph_boost(
+    conn,
+    raw: list[tuple[SearchResult, int, int]],
+    boost: float = 0.05,
+) -> list[tuple[SearchResult, int, int]]:
+    """Apply additive score bonus to results linked to top-scoring results."""
+    if not raw or not _file_links_table_exists(conn):
+        return raw
+    result_file_ids = {fid for _, fid, _ in raw}
+    linked = get_linked_file_ids(conn, result_file_ids)
+    if not linked:
+        return raw
+    boosted = []
+    for result, fid, seq in raw:
+        if fid in linked and fid not in result_file_ids:
+            result = SearchResult(
+                content=result.content,
+                score=result.score + boost,
+                file_path=result.file_path,
+                file_title=result.file_title,
+                memory_type=result.memory_type,
+                start_line=result.start_line,
+                end_line=result.end_line,
+                chunk_rowid=result.chunk_rowid,
+                file_id=result.file_id,
+                chunk_sequence=result.chunk_sequence,
+            )
+        boosted.append((result, fid, seq))
+    boosted.sort(key=lambda x: x[0].score, reverse=True)
+    return boosted
+
+
 def search(
     query: str,
     *,
@@ -318,6 +359,8 @@ def search(
                 chunk_sequence=row["chunk_sequence"],
             )
             _raw.append((result, row["file_id"], row["chunk_sequence"]))
+
+        _raw = _graph_boost(conn, _raw)
 
         if window > 0:
             results = _expand_windows(_raw, window, conn)
@@ -422,6 +465,8 @@ def search_expanded(
                 chunk_sequence=row["chunk_sequence"],
             )
             _raw.append((result, row["file_id"], row["chunk_sequence"]))
+
+        _raw = _graph_boost(conn, _raw)
 
         if window > 0:
             results = _expand_windows(_raw, window, conn)

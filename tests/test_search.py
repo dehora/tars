@@ -24,6 +24,7 @@ from tars.search import (
     _apply_char_cap,
     _expand_windows,
     _fetch_window_chunks,
+    _graph_boost,
     _merge_intervals,
     _reciprocal_rank_fusion,
     _run_notes_search_tool,
@@ -911,6 +912,67 @@ class SearchExpandedTests(unittest.TestCase):
         with mock.patch("tars.search._db_path", return_value=None):
             results = search_expanded("test", limit=None)
         self.assertEqual(results, [])
+
+
+@unittest.skipUnless(_HAS_SQLITE_VEC, "sqlite-vec not installed")
+class GraphBoostTests(unittest.TestCase):
+    def test_promotes_linked(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            with mock.patch.dict(os.environ, {"TARS_MEMORY_DIR": tmpdir}, clear=True):
+                conn = db.init_db(dim=_DIM)
+                cid = db.ensure_collection(conn)
+                fid1, _ = db.upsert_file(
+                    conn, collection_id=cid, path="/a.md", title="Alpha",
+                    memory_type="note", content_hash="a1", mtime=1.0, size=10,
+                )
+                fid2, _ = db.upsert_file(
+                    conn, collection_id=cid, path="/b.md", title="Beta",
+                    memory_type="note", content_hash="b1", mtime=1.0, size=10,
+                )
+                fid3, _ = db.upsert_file(
+                    conn, collection_id=cid, path="/c.md", title="Gamma",
+                    memory_type="note", content_hash="c1", mtime=1.0, size=10,
+                )
+                # Alpha links to Gamma
+                db.upsert_file_links(conn, fid1, ["Gamma"])
+                conn.commit()
+
+                r1 = SearchResult(
+                    content="alpha content", score=0.9, file_path="/a.md",
+                    file_title="Alpha", memory_type="note", start_line=1,
+                    end_line=1, chunk_rowid=1, file_id=fid1, chunk_sequence=0,
+                )
+                r3 = SearchResult(
+                    content="gamma content", score=0.3, file_path="/c.md",
+                    file_title="Gamma", memory_type="note", start_line=1,
+                    end_line=1, chunk_rowid=3, file_id=fid3, chunk_sequence=0,
+                )
+                raw = [(r1, fid1, 0), (r3, fid3, 0)]
+                boosted = _graph_boost(conn, raw, boost=0.1)
+                # fid3 is linked from fid1 but is also in result_file_ids,
+                # so the boost should not apply (it's already in top results)
+                scores = {fid: r.score for r, fid, _ in boosted}
+                # Both are in result_file_ids, so neither gets boosted
+                self.assertAlmostEqual(scores[fid1], 0.9)
+                self.assertAlmostEqual(scores[fid3], 0.3)
+                conn.close()
+
+    def test_no_links_table(self) -> None:
+        conn = mock.Mock()
+        conn.execute.return_value.fetchone.return_value = None
+        r = SearchResult(
+            content="x", score=0.5, file_path="/a.md", file_title="a",
+            memory_type="note", start_line=1, end_line=1, chunk_rowid=1,
+            file_id=1, chunk_sequence=0,
+        )
+        raw = [(r, 1, 0)]
+        result = _graph_boost(conn, raw)
+        self.assertEqual(len(result), 1)
+        self.assertAlmostEqual(result[0][0].score, 0.5)
+
+    def test_empty_raw(self) -> None:
+        result = _graph_boost(mock.Mock(), [])
+        self.assertEqual(result, [])
 
 
 if __name__ == "__main__":

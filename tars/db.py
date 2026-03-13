@@ -65,6 +65,14 @@ CREATE TABLE IF NOT EXISTS metadata (
     key TEXT PRIMARY KEY,
     value TEXT NOT NULL
 );
+
+CREATE TABLE IF NOT EXISTS file_links (
+    source_file_id INTEGER NOT NULL REFERENCES files(id) ON DELETE CASCADE,
+    target_title TEXT NOT NULL,
+    target_file_id INTEGER REFERENCES files(id) ON DELETE SET NULL,
+    PRIMARY KEY (source_file_id, target_title)
+);
+CREATE INDEX IF NOT EXISTS idx_file_links_target ON file_links(target_file_id);
 """
 
 _VEC_TABLE_SQL = """\
@@ -335,9 +343,10 @@ def get_indexed_paths(conn: sqlite3.Connection, collection_id: int) -> dict[str,
 
 
 def delete_file(conn: sqlite3.Connection, file_id: int) -> None:
-    """Remove a file record and all its chunks."""
+    """Remove a file record, its chunks, and its outgoing links."""
     _delete_fts_for_file(conn, file_id)
     conn.execute("DELETE FROM vec_chunks WHERE file_id = ?", (file_id,))
+    conn.execute("DELETE FROM file_links WHERE source_file_id = ?", (file_id,))
     conn.execute("DELETE FROM files WHERE id = ?", (file_id,))
     conn.commit()
 
@@ -398,3 +407,69 @@ def insert_chunks(
             "INSERT INTO chunks_fts (rowid, content) VALUES (?, ?)",
             (cur.lastrowid, chunk.content),
         )
+
+
+def _file_links_table_exists(conn: sqlite3.Connection) -> bool:
+    row = conn.execute(
+        "SELECT name FROM sqlite_master WHERE type='table' AND name='file_links'"
+    ).fetchone()
+    return row is not None
+
+
+def upsert_file_links(
+    conn: sqlite3.Connection, source_file_id: int, links: list[str]
+) -> None:
+    """Replace all outgoing links for a source file.
+
+    Resolves target_file_id by matching title within the same collection.
+    """
+    conn.execute(
+        "DELETE FROM file_links WHERE source_file_id = ?", (source_file_id,)
+    )
+    if not links:
+        return
+    for title in links:
+        row = conn.execute(
+            "SELECT f2.id FROM files f2 "
+            "JOIN files f1 ON f1.collection_id = f2.collection_id "
+            "WHERE f1.id = ? AND f2.title = ?",
+            (source_file_id, title),
+        ).fetchone()
+        target_id = row["id"] if row else None
+        conn.execute(
+            "INSERT OR REPLACE INTO file_links (source_file_id, target_title, target_file_id) "
+            "VALUES (?, ?, ?)",
+            (source_file_id, title, target_id),
+        )
+
+
+def resolve_file_links(conn: sqlite3.Connection, collection_id: int) -> None:
+    """Bulk resolve NULL target_file_id where a matching file now exists."""
+    conn.execute(
+        "UPDATE file_links SET target_file_id = ("
+        "  SELECT f.id FROM files f "
+        "  WHERE f.title = file_links.target_title "
+        "  AND f.collection_id = ?"
+        ") WHERE target_file_id IS NULL "
+        "AND source_file_id IN (SELECT id FROM files WHERE collection_id = ?)",
+        (collection_id, collection_id),
+    )
+
+
+def get_linked_file_ids(
+    conn: sqlite3.Connection, file_ids: set[int]
+) -> set[int]:
+    """Return file_ids linked to/from any of the input file_ids (one hop, bidirectional)."""
+    if not file_ids:
+        return set()
+    placeholders = ",".join("?" * len(file_ids))
+    ids = list(file_ids)
+    rows = conn.execute(
+        f"SELECT target_file_id AS fid FROM file_links "
+        f"WHERE source_file_id IN ({placeholders}) AND target_file_id IS NOT NULL "
+        f"UNION "
+        f"SELECT source_file_id AS fid FROM file_links "
+        f"WHERE target_file_id IN ({placeholders})",
+        ids + ids,
+    ).fetchall()
+    return {r["fid"] for r in rows} - file_ids

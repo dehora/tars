@@ -361,6 +361,140 @@ class DbStatsTests(unittest.TestCase):
 
 
 @unittest.skipUnless(_HAS_SQLITE_VEC, "sqlite-vec not installed")
+class FileLinksTests(unittest.TestCase):
+    def _setup(self, tmpdir):
+        conn = db.init_db(dim=4)
+        cid = db.ensure_collection(conn)
+        fid1, _ = db.upsert_file(
+            conn, collection_id=cid, path="/a.md", title="Alpha",
+            content_hash="a1", mtime=1.0, size=10,
+        )
+        fid2, _ = db.upsert_file(
+            conn, collection_id=cid, path="/b.md", title="Beta",
+            content_hash="b1", mtime=1.0, size=10,
+        )
+        fid3, _ = db.upsert_file(
+            conn, collection_id=cid, path="/c.md", title="Gamma",
+            content_hash="c1", mtime=1.0, size=10,
+        )
+        return conn, cid, fid1, fid2, fid3
+
+    def test_upsert_file_links(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            with mock.patch.dict(os.environ, {"TARS_MEMORY_DIR": tmpdir}, clear=True):
+                conn, cid, fid1, fid2, fid3 = self._setup(tmpdir)
+                db.upsert_file_links(conn, fid1, ["Beta", "Gamma"])
+                conn.commit()
+                rows = conn.execute(
+                    "SELECT target_title, target_file_id FROM file_links "
+                    "WHERE source_file_id = ? ORDER BY target_title",
+                    (fid1,),
+                ).fetchall()
+                self.assertEqual(len(rows), 2)
+                self.assertEqual(rows[0]["target_title"], "Beta")
+                self.assertEqual(rows[0]["target_file_id"], fid2)
+                self.assertEqual(rows[1]["target_title"], "Gamma")
+                self.assertEqual(rows[1]["target_file_id"], fid3)
+                conn.close()
+
+    def test_upsert_replaces_old_links(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            with mock.patch.dict(os.environ, {"TARS_MEMORY_DIR": tmpdir}, clear=True):
+                conn, cid, fid1, fid2, fid3 = self._setup(tmpdir)
+                db.upsert_file_links(conn, fid1, ["Beta", "Gamma"])
+                conn.commit()
+                db.upsert_file_links(conn, fid1, ["Beta"])
+                conn.commit()
+                count = conn.execute(
+                    "SELECT COUNT(*) as cnt FROM file_links WHERE source_file_id = ?",
+                    (fid1,),
+                ).fetchone()["cnt"]
+                self.assertEqual(count, 1)
+                conn.close()
+
+    def test_unresolved_link(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            with mock.patch.dict(os.environ, {"TARS_MEMORY_DIR": tmpdir}, clear=True):
+                conn, cid, fid1, fid2, fid3 = self._setup(tmpdir)
+                db.upsert_file_links(conn, fid1, ["Nonexistent"])
+                conn.commit()
+                row = conn.execute(
+                    "SELECT target_file_id FROM file_links WHERE source_file_id = ?",
+                    (fid1,),
+                ).fetchone()
+                self.assertIsNone(row["target_file_id"])
+                conn.close()
+
+    def test_resolve_file_links(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            with mock.patch.dict(os.environ, {"TARS_MEMORY_DIR": tmpdir}, clear=True):
+                conn, cid, fid1, fid2, fid3 = self._setup(tmpdir)
+                db.upsert_file_links(conn, fid1, ["NewNote"])
+                conn.commit()
+                row = conn.execute(
+                    "SELECT target_file_id FROM file_links "
+                    "WHERE source_file_id = ? AND target_title = 'NewNote'",
+                    (fid1,),
+                ).fetchone()
+                self.assertIsNone(row["target_file_id"])
+                fid_new, _ = db.upsert_file(
+                    conn, collection_id=cid, path="/new.md", title="NewNote",
+                    content_hash="n1", mtime=1.0, size=10,
+                )
+                db.resolve_file_links(conn, cid)
+                conn.commit()
+                row = conn.execute(
+                    "SELECT target_file_id FROM file_links "
+                    "WHERE source_file_id = ? AND target_title = 'NewNote'",
+                    (fid1,),
+                ).fetchone()
+                self.assertEqual(row["target_file_id"], fid_new)
+                conn.close()
+
+    def test_get_linked_file_ids(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            with mock.patch.dict(os.environ, {"TARS_MEMORY_DIR": tmpdir}, clear=True):
+                conn, cid, fid1, fid2, fid3 = self._setup(tmpdir)
+                db.upsert_file_links(conn, fid1, ["Beta"])
+                conn.commit()
+                linked = db.get_linked_file_ids(conn, {fid1})
+                self.assertIn(fid2, linked)
+                self.assertNotIn(fid1, linked)
+                # Bidirectional: querying fid2 should find fid1
+                linked_back = db.get_linked_file_ids(conn, {fid2})
+                self.assertIn(fid1, linked_back)
+                conn.close()
+
+    def test_get_linked_file_ids_empty(self) -> None:
+        result = db.get_linked_file_ids(mock.Mock(), set())
+        self.assertEqual(result, set())
+
+    def test_delete_file_cascades_links(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            with mock.patch.dict(os.environ, {"TARS_MEMORY_DIR": tmpdir}, clear=True):
+                conn, cid, fid1, fid2, fid3 = self._setup(tmpdir)
+                # Insert dummy chunks so delete_file doesn't fail on vec_chunks
+                chunks = [Chunk(content="x", sequence=0, start_line=1, end_line=1, content_hash="x1")]
+                embs = [[0.1, 0.2, 0.3, 0.4]]
+                db.insert_chunks(conn, fid1, chunks, embs)
+                conn.commit()
+                db.upsert_file_links(conn, fid1, ["Beta"])
+                conn.commit()
+                count_before = conn.execute(
+                    "SELECT COUNT(*) as cnt FROM file_links WHERE source_file_id = ?",
+                    (fid1,),
+                ).fetchone()["cnt"]
+                self.assertEqual(count_before, 1)
+                db.delete_file(conn, fid1)
+                count_after = conn.execute(
+                    "SELECT COUNT(*) as cnt FROM file_links WHERE source_file_id = ?",
+                    (fid1,),
+                ).fetchone()["cnt"]
+                self.assertEqual(count_after, 0)
+                conn.close()
+
+
+@unittest.skipUnless(_HAS_SQLITE_VEC, "sqlite-vec not installed")
 class SerializeTests(unittest.TestCase):
     def test_serialize_f32(self) -> None:
         vec = [1.0, 2.0, 3.0]

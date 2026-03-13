@@ -21,6 +21,7 @@ from tars.indexer import (
     _discover_files,
     _discover_vault_files,
     _embed_prefix,
+    _extract_wikilinks,
     build_index,
     build_notes_index,
 )
@@ -31,6 +32,42 @@ _DIM = 4
 def _fake_embed(**kwargs):
     texts = kwargs.get("input", [])
     return {"embeddings": [[0.1] * _DIM for _ in texts]}
+
+
+class ExtractWikilinksTests(unittest.TestCase):
+    def test_basic(self) -> None:
+        self.assertEqual(_extract_wikilinks("See [[Note]]"), ["Note"])
+
+    def test_alias(self) -> None:
+        self.assertEqual(_extract_wikilinks("See [[Note|Alias]]"), ["Note"])
+
+    def test_heading(self) -> None:
+        self.assertEqual(_extract_wikilinks("See [[Note#Section]]"), ["Note"])
+
+    def test_dedup(self) -> None:
+        result = _extract_wikilinks("[[Note]] and [[Note]] again")
+        self.assertEqual(result, ["Note"])
+
+    def test_multiple(self) -> None:
+        result = _extract_wikilinks("[[Alpha]] then [[Beta]]")
+        self.assertEqual(result, ["Alpha", "Beta"])
+
+    def test_no_links(self) -> None:
+        self.assertEqual(_extract_wikilinks("plain text"), [])
+
+    def test_alias_and_heading_combined(self) -> None:
+        result = _extract_wikilinks("[[Note#Section|Display]]")
+        self.assertEqual(result, ["Note"])
+
+    def test_skips_images(self) -> None:
+        content = "![[photo.png]] and [[Note]] and ![[clip.mp4]]"
+        self.assertEqual(_extract_wikilinks(content), ["Note"])
+
+    def test_skips_pdf(self) -> None:
+        self.assertEqual(_extract_wikilinks("[[doc.pdf]]"), [])
+
+    def test_empty_content(self) -> None:
+        self.assertEqual(_extract_wikilinks(""), [])
 
 
 class DiscoverFilesTests(unittest.TestCase):
