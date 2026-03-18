@@ -210,6 +210,21 @@ def send_brief_email() -> None:
     _send_message(config, config["to"], "tars brief", body)
 
 
+def send_review_email(provider: str, model: str) -> None:
+    """Send memory review digest to the configured recipient."""
+    from tars.brief import build_review_sections
+
+    config = _email_config()
+    if config is None:
+        raise RuntimeError(
+            "missing config — set TARS_EMAIL_ADDRESS, TARS_EMAIL_PASSWORD, "
+            "TARS_EMAIL_ALLOW, TARS_EMAIL_TO"
+        )
+    sections = build_review_sections(provider, model)
+    body = format_brief_text(sections)
+    _send_message(config, config["to"], "tars memory review", body)
+
+
 # In-memory conversation state, keyed by thread ID
 _conversations: dict[str, Conversation] = {}
 _session_files: dict[str, Path | None] = {}

@@ -433,6 +433,9 @@ def main():
     sub.add_parser("email-brief", help="send the daily brief via email")
     sub.add_parser("telegram", help="start Telegram bot channel")
     sub.add_parser("telegram-brief", help="send the daily brief via Telegram")
+    sub.add_parser("review", help="run memory tidy + review, print to stdout")
+    sub.add_parser("email-review", help="send memory review digest via email")
+    sub.add_parser("telegram-review", help="send memory review digest via Telegram")
 
     sub.add_parser("strava-auth", help="one-time Strava OAuth setup")
 
@@ -455,7 +458,7 @@ def main():
     # greedily match the first positional arg as a subcommand, so
     # `tars "hello"` fails with "invalid choice".  If argv[1] isn't a known
     # subcommand or flag, treat everything after flags as a message.
-    _subcommands = {"index", "notes-index", "search", "sgrep", "svec", "serve", "email", "email-brief", "telegram", "telegram-brief", "schedule", "strava-auth"}
+    _subcommands = {"index", "notes-index", "search", "sgrep", "svec", "serve", "email", "email-brief", "telegram", "telegram-brief", "review", "email-review", "telegram-review", "schedule", "strava-auth"}
     raw_args = sys.argv[1:]
     message_args: list[str] = []
     # Skip leading flags (-v, --verbose, -m, --model, --remote-model and their values)
@@ -546,6 +549,34 @@ def main():
             send_brief_telegram_sync()
         except Exception as e:
             print(f"  {red('[error]')} telegram brief failed: {e}", file=sys.stderr)
+        return
+
+    if args.command == "review":
+        from tars.brief import build_review_sections, format_brief_cli
+
+        try:
+            sections = build_review_sections(provider, model)
+            print(format_brief_cli(sections))
+        except Exception as e:
+            print(f"  {red('[error]')} review failed: {e}", file=sys.stderr)
+        return
+
+    if args.command == "email-review":
+        from tars.email import send_review_email
+
+        try:
+            send_review_email(provider, model)
+        except Exception as e:
+            print(f"  {red('[error]')} email review failed: {e}", file=sys.stderr)
+        return
+
+    if args.command == "telegram-review":
+        from tars.telegram import send_review_telegram_sync
+
+        try:
+            send_review_telegram_sync(provider, model)
+        except Exception as e:
+            print(f"  {red('[error]')} telegram review failed: {e}", file=sys.stderr)
         return
 
     if args.command == "schedule":

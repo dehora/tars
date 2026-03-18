@@ -2,18 +2,6 @@
 
 ## Next
 
-### 39. Conversation continuity across channels
-
-Conversations are channel-scoped. Add a `/continue` command (and implicit resume) that picks up context from the most recent session regardless of which channel created it. Requires a shared session lookup and a way to hydrate prior messages into a new Conversation. Makes tars feel like one assistant instead of four.
-
-### 40. Vault backlinks / graph awareness
-
-Extract `[[wikilinks]]` during indexing and store link edges in the DB. Search can then boost connected notes (graph proximity) and support "what links to this?" queries. Leverages structure already present in the vault at near-zero indexing cost.
-
-### 41. Scheduled memory review
-
-Run `/tidy` + `/review` automatically on a weekly schedule (`tars review`). Surfaces stale entries and proposed changes via email or Telegram digest for async approval. Builds on existing `/tidy`, `/review`, and scheduling infrastructure.
-
 ### 42. Tool composition / multi-step plans
 
 Lightweight planner that chains multiple tool calls from a single natural language request — e.g. "capture this article, add a todoist task to read it, and note it in today's daily". Planning layer on top of the existing bounded tool loop.
@@ -175,6 +163,18 @@ Native Strava integration via stravalib. OAuth token lifecycle (auto-refresh), `
 ### 38b. Strava Phase 2
 
 `strava_summary` (period totals by type), `strava_compare` (period-over-period deltas), `strava_analysis` (trend comparison with auto-derived prior period), `strava_routes` (route listing, detail, starred segments), `strava_zones` (HR stream-based 3-zone distribution, polarised/pyramidal/threshold-heavy/unstructured classification). Format renderers with sparklines and zone bar charts. Router keyword patterns for all Strava tools. Domain prompt template assessed — model handles interpretation from tool descriptions; zone classification label + flag passed in data for steering.
+
+### 39. Conversation continuity across channels
+
+`/continue` command picks up context from the most recent session regardless of which channel created it. Shared session lookup hydrates prior messages into a new Conversation.
+
+### 40. Vault backlinks / graph awareness
+
+Extracts `[[wikilinks]]` during indexing into a `file_links` table, resolves targets within the same collection, applies post-RRF graph proximity boost to search results linked to high-scoring hits. Filters embedded assets (images, PDFs, etc) from link extraction.
+
+### 41. Scheduled memory review
+
+`/memory-review` command combines `/tidy` + `/review` into a single digest. Not CLI-only — dispatchable by TaskRunner from `scheduled` channel. CLI subcommands: `tars review` (stdout), `tars email-review`, `tars telegram-review`. Schedulable via OS-level timers or in-process `schedules.json`.
 
 ### 35. Security hardening and bug fixes
 

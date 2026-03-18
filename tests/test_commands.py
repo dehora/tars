@@ -413,7 +413,7 @@ class CentralizedDispatchTests(unittest.TestCase):
             "/read", "/capture", "/brief",
             "/search", "/sgrep", "/svec", "/find",
             "/sessions", "/session", "/continue",
-            "/w", "/r", "/review", "/tidy",
+            "/w", "/r", "/review", "/tidy", "/memory-review",
             "/mcp", "/stats", "/schedule", "/model",
             "/export", "/help", "/clear",
         }
@@ -519,6 +519,29 @@ class PinCommandTests(unittest.TestCase):
         self.assertIn("/pin", names)
         self.assertIn("/unpin", names)
         self.assertIn("/pins", names)
+
+
+class MemoryReviewDispatchTests(unittest.TestCase):
+    @mock.patch("tars.brief.build_review_sections", return_value=[("tidy", "clean"), ("review", "rules")])
+    @mock.patch("tars.brief.format_brief_text", return_value="formatted review")
+    def test_memory_review_dispatch(self, mock_fmt, mock_sections) -> None:
+        result = dispatch("/memory-review", "claude", "sonnet")
+        self.assertEqual(result, "formatted review")
+
+    def test_memory_review_not_cli_only(self) -> None:
+        """memory-review must be dispatchable from scheduled channel."""
+        with mock.patch("tars.brief.build_review_sections", return_value=[]):
+            with mock.patch("tars.brief.format_brief_text", return_value=""):
+                result = dispatch("/memory-review", "claude", "sonnet", context={"channel": "scheduled"})
+        self.assertNotIn("CLI", result or "")
+
+    def test_review_still_cli_only(self) -> None:
+        result = dispatch("/review", context={"channel": "scheduled"})
+        self.assertIn("CLI", result)
+
+    def test_tidy_still_cli_only(self) -> None:
+        result = dispatch("/tidy", context={"channel": "scheduled"})
+        self.assertIn("CLI", result)
 
 
 class ReviewTidyToolLeakageTests(unittest.TestCase):

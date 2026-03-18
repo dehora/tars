@@ -144,6 +144,7 @@ feedback:
   /r [note]        flag last response as good
   /review          review corrections and apply learnings
   /tidy            clean up memory (duplicates, junk)
+  /memory-review   combined tidy + review (schedulable)
 daily:
   /brief           todoist + weather digest
 export:
@@ -292,6 +293,11 @@ def dispatch(
             return _dispatch_review(provider, model)
         if cmd == "/tidy":
             return _dispatch_tidy(provider, model)
+        if cmd == "/memory-review":
+            from tars.brief import build_review_sections, format_brief_text
+
+            sections = build_review_sections(provider, model)
+            return format_brief_text(sections)
         if cmd == "/mcp":
             return _dispatch_mcp()
         if cmd == "/stats":
@@ -672,7 +678,7 @@ _ALL_COMMANDS = {
     "/read", "/capture", "/brief",
     "/search", "/sgrep", "/svec", "/find",
     "/sessions", "/session", "/continue",
-    "/w", "/r", "/review", "/tidy",
+    "/w", "/r", "/review", "/tidy", "/memory-review",
     "/mcp", "/stats", "/schedule", "/model",
     "/export", "/help", "/clear",
 }

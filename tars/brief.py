@@ -45,6 +45,39 @@ def build_brief_sections() -> list[tuple[str, str]]:
     return sections
 
 
+def build_daily_context() -> str:
+    """Build lightweight daily context for system prompt injection.
+
+    Fetches tasks and weather only (pinned is already in the prompt,
+    strava is too slow for startup). Returns empty string on failure.
+    """
+    parts: list[str] = []
+    for label, tool_name in [
+        ("tasks", "todoist_today"),
+        ("weather", "weather_now"),
+    ]:
+        try:
+            raw = run_tool(tool_name, {}, quiet=True)
+            parts.append(f"[{label}]\n{format_tool_result(tool_name, raw)}")
+        except Exception:
+            pass
+    return "\n\n".join(parts)
+
+
+def build_review_sections(provider: str, model: str) -> list[tuple[str, str]]:
+    """Run memory tidy + feedback review and return (label, content) sections."""
+    from tars.commands import _dispatch_tidy, _dispatch_review
+
+    sections: list[tuple[str, str]] = []
+    for label, fn in [("tidy", _dispatch_tidy), ("review", _dispatch_review)]:
+        try:
+            result = fn(provider, model)
+            sections.append((label, result))
+        except Exception as e:
+            sections.append((label, f"unavailable: {e}"))
+    return sections
+
+
 def format_brief_text(sections: list[tuple[str, str]]) -> str:
     """Format brief sections for plain-text output (email/Telegram)."""
     lines: list[str] = []

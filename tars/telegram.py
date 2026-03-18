@@ -202,6 +202,30 @@ def send_brief_telegram_sync() -> None:
     asyncio.run(send_brief_telegram())
 
 
+async def send_review_telegram(provider: str, model: str) -> None:
+    """Send memory review digest to all allowed Telegram users."""
+    from telegram import Bot
+
+    from tars.brief import build_review_sections
+
+    config = _telegram_config()
+    if config is None:
+        raise RuntimeError(
+            "missing config — set TARS_TELEGRAM_TOKEN and TARS_TELEGRAM_ALLOW"
+        )
+    sections = build_review_sections(provider, model)
+    body = format_brief_text(sections)
+    bot = Bot(token=config["token"])
+    async with bot:
+        for user_id in config["allow"]:
+            await bot.send_message(chat_id=user_id, text=_truncate(body))
+
+
+def send_review_telegram_sync(provider: str, model: str) -> None:
+    """Sync wrapper for send_review_telegram()."""
+    asyncio.run(send_review_telegram(provider, model))
+
+
 def run_telegram(model_config: ModelConfig) -> None:
     """Start the Telegram bot. Blocks until interrupted."""
     from telegram import Update
