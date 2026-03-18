@@ -6,6 +6,7 @@ from pathlib import Path
 import anthropic
 import openai
 
+from tars.brief import build_daily_context
 from tars.config import ModelConfig
 from tars.core import _search_relevant_context, chat, chat_stream
 from tars.debug import verbose
@@ -35,6 +36,7 @@ class Conversation:
     channel: str = ""
     messages: list[dict] = field(default_factory=list)
     search_context: str = ""
+    daily_brief: str = ""
     msg_count: int = 0
     last_compaction: int = 0
     last_compaction_index: int = 0
@@ -117,12 +119,32 @@ def inject_prior_context(conv: Conversation, summary: str, label: str = "") -> N
     conv.cumulative_summary = summary
 
 
+def _effective_search_context(conv: Conversation) -> str:
+    """Combine daily brief and search context for system prompt injection."""
+    if not conv.daily_brief:
+        return conv.search_context
+    if not conv.search_context:
+        return conv.daily_brief
+    return f"{conv.daily_brief}\n\n{conv.search_context}"
+
+
+def _fetch_daily_brief(conv: Conversation) -> None:
+    """Fetch lightweight daily context on session open. Swallows errors."""
+    try:
+        conv.daily_brief = build_daily_context()
+        if conv.daily_brief:
+            verbose("  [context] daily brief loaded")
+    except Exception as e:
+        verbose(f"  [warning] daily brief failed: {e}")
+
+
 def process_message(
     conv: Conversation, user_input: str, session_file: Path | None = None,
 ) -> str:
     """Send a user message through the conversation and return the reply."""
-    # Search on first message only
+    # Search and daily context on first message only
     if not conv.messages and not conv.search_context:
+        _fetch_daily_brief(conv)
         try:
             conv.search_context = _search_relevant_context(user_input)
         except Exception as e:
@@ -135,7 +157,7 @@ def process_message(
     try:
         reply = chat(
             conv.messages, provider, model,
-            search_context=conv.search_context, tool_hints=route.tool_hints,
+            search_context=_effective_search_context(conv), tool_hints=route.tool_hints,
         )
         conv.last_provider = provider
         conv.last_model = model
@@ -146,7 +168,7 @@ def process_message(
         verbose(f"  [router] escalation failed ({status}), falling back to {conv.provider}:{conv.model}")
         reply = chat(
             conv.messages, conv.provider, conv.model,
-            search_context=conv.search_context, tool_hints=route.tool_hints,
+            search_context=_effective_search_context(conv), tool_hints=route.tool_hints,
         )
         conv.last_provider = conv.provider
         conv.last_model = conv.model
@@ -167,6 +189,7 @@ def process_message_stream(
     (API endpoint) forwards each delta to the client as an SSE event.
     """
     if not conv.messages and not conv.search_context:
+        _fetch_daily_brief(conv)
         try:
             conv.search_context = _search_relevant_context(user_input)
         except Exception as e:
@@ -185,7 +208,7 @@ def process_message_stream(
         try:
             reply = chat(
                 conv.messages, provider, model,
-                search_context=conv.search_context, tool_hints=route.tool_hints,
+                search_context=_effective_search_context(conv), tool_hints=route.tool_hints,
             )
             conv.last_provider = provider
             conv.last_model = model
@@ -200,7 +223,7 @@ def process_message_stream(
             conv.last_model = conv.model
             for delta in chat_stream(
                 conv.messages, conv.provider, conv.model,
-                search_context=conv.search_context, tool_hints=route.tool_hints,
+                search_context=_effective_search_context(conv), tool_hints=route.tool_hints,
             ):
                 full_reply.append(delta)
                 yield delta
@@ -209,7 +232,7 @@ def process_message_stream(
         conv.last_model = model
         for delta in chat_stream(
             conv.messages, provider, model,
-            search_context=conv.search_context, tool_hints=route.tool_hints,
+            search_context=_effective_search_context(conv), tool_hints=route.tool_hints,
         ):
             full_reply.append(delta)
             yield delta

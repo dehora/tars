@@ -24,7 +24,14 @@ sys.modules["openai"].APIConnectionError = type("APIConnectionError", (Exception
 sys.modules["openai"].APITimeoutError = type("APITimeoutError", (Exception,), {})
 
 from tars import conversation
-from tars.conversation import Conversation, process_message, process_message_stream, save_session
+from tars.conversation import (
+    Conversation,
+    _effective_search_context,
+    _fetch_daily_brief,
+    process_message,
+    process_message_stream,
+    save_session,
+)
 from tars.router import RouteResult
 
 
@@ -416,6 +423,77 @@ class OpenAIEscalationFallbackTests(unittest.TestCase):
         ):
             deltas = list(process_message_stream(conv, "hello"))
         self.assertEqual(deltas, ["fall", "back"])
+
+
+class EffectiveSearchContextTests(unittest.TestCase):
+    def test_both_present(self) -> None:
+        conv = Conversation(id="t", provider="ollama", model="m")
+        conv.daily_brief = "[tasks]\nBuy milk"
+        conv.search_context = "some search results"
+        result = _effective_search_context(conv)
+        self.assertIn("[tasks]", result)
+        self.assertIn("some search results", result)
+
+    def test_only_brief(self) -> None:
+        conv = Conversation(id="t", provider="ollama", model="m")
+        conv.daily_brief = "[tasks]\nBuy milk"
+        result = _effective_search_context(conv)
+        self.assertEqual(result, "[tasks]\nBuy milk")
+
+    def test_only_search(self) -> None:
+        conv = Conversation(id="t", provider="ollama", model="m")
+        conv.search_context = "search results"
+        result = _effective_search_context(conv)
+        self.assertEqual(result, "search results")
+
+    def test_neither(self) -> None:
+        conv = Conversation(id="t", provider="ollama", model="m")
+        result = _effective_search_context(conv)
+        self.assertEqual(result, "")
+
+
+class FetchDailyBriefTests(unittest.TestCase):
+    @mock.patch("tars.conversation.build_daily_context", return_value="[tasks]\nStuff")
+    def test_stores_on_conv(self, mock_ctx) -> None:
+        conv = Conversation(id="t", provider="ollama", model="m")
+        _fetch_daily_brief(conv)
+        self.assertEqual(conv.daily_brief, "[tasks]\nStuff")
+
+    @mock.patch("tars.conversation.build_daily_context", side_effect=Exception("boom"))
+    def test_swallows_errors(self, mock_ctx) -> None:
+        conv = Conversation(id="t", provider="ollama", model="m")
+        _fetch_daily_brief(conv)
+        self.assertEqual(conv.daily_brief, "")
+
+    @mock.patch("tars.conversation.build_daily_context", return_value="[tasks]\nDo things")
+    def test_process_message_fetches_on_first(self, mock_ctx) -> None:
+        conv = Conversation(id="t", provider="ollama", model="m")
+        with (
+            mock.patch.object(conversation, "chat", return_value="ok"),
+            mock.patch.object(conversation, "_search_relevant_context", return_value=""),
+        ):
+            process_message(conv, "hello")
+        mock_ctx.assert_called_once()
+        self.assertEqual(conv.daily_brief, "[tasks]\nDo things")
+
+    @mock.patch("tars.conversation.build_daily_context", return_value="[tasks]\nDo things")
+    def test_not_fetched_on_second_message(self, mock_ctx) -> None:
+        conv = Conversation(id="t", provider="ollama", model="m")
+        with (
+            mock.patch.object(conversation, "chat", return_value="ok"),
+            mock.patch.object(conversation, "_search_relevant_context", return_value=""),
+        ):
+            process_message(conv, "hello")
+            process_message(conv, "again")
+        mock_ctx.assert_called_once()
+
+    @mock.patch("tars.conversation.build_daily_context", return_value="[tasks]\nDo things")
+    def test_skipped_when_search_context_preset(self, mock_ctx) -> None:
+        conv = Conversation(id="t", provider="ollama", model="m")
+        conv.search_context = "[one-shot]"
+        with mock.patch.object(conversation, "chat", return_value="ok"):
+            process_message(conv, "hello")
+        mock_ctx.assert_not_called()
 
 
 if __name__ == "__main__":
