@@ -939,6 +939,27 @@ class DefaultComparisonPeriodTests(unittest.TestCase):
         self.assertIsInstance(result, str)
         self.assertIn("cannot auto-derive", result)
 
+    def test_single_date(self):
+        parsed_a = strava._parse_period("2025-10-28")
+        self.assertIsInstance(parsed_a, tuple)
+        result = strava._default_comparison_period("2025-10-28", parsed_a)
+        self.assertIsInstance(result, tuple)
+        after, before = result
+        self.assertEqual(before, parsed_a[0])
+        span = parsed_a[1] - parsed_a[0]
+        self.assertAlmostEqual((before - after).total_seconds(), span.total_seconds(), delta=5)
+
+    def test_date_range(self):
+        parsed_a = strava._parse_period("2025-10-01_2025-10-31")
+        self.assertIsInstance(parsed_a, tuple)
+        result = strava._default_comparison_period("2025-10-01_2025-10-31", parsed_a)
+        self.assertIsInstance(result, tuple)
+        after, before = result
+        self.assertEqual(before, parsed_a[0])
+        span = parsed_a[1] - parsed_a[0]
+        expected_span = (before - after).total_seconds()
+        self.assertAlmostEqual(expected_span, span.total_seconds(), delta=5)
+
 
 class ComputeDeltaTests(unittest.TestCase):
     def test_basic_delta(self):
@@ -1083,6 +1104,32 @@ class CompareToolTests(unittest.TestCase):
         self.assertIn("total_distance_km", delta)
         self.assertIn("total_time_hours", delta)
         self.assertIn("avg_heartrate", delta)
+
+    @mock.patch.object(strava, "_get_client")
+    def test_single_date_auto_compare(self, mock_get):
+        mock_get.return_value = self.client
+        acts_a = [_mock_activity(type="Run", distance=5000.0, moving_time=1500)]
+        self.client.get_activities.side_effect = [acts_a, []]
+
+        result = json.loads(strava._run_strava_tool("strava_compare", {
+            "period_a": "2025-10-28"
+        }))
+        self.assertNotIn("error", result)
+        self.assertEqual(result["period_a"], "2025-10-28")
+        self.assertEqual(result["period_b"], "auto")
+        self.assertEqual(result["count_a"], 1)
+
+    @mock.patch.object(strava, "_get_client")
+    def test_date_range_auto_compare(self, mock_get):
+        mock_get.return_value = self.client
+        self.client.get_activities.side_effect = [[], []]
+
+        result = json.loads(strava._run_strava_tool("strava_compare", {
+            "period_a": "2025-10-01_2025-10-31"
+        }))
+        self.assertNotIn("error", result)
+        self.assertEqual(result["period_a"], "2025-10-01_2025-10-31")
+        self.assertEqual(result["period_b"], "auto")
 
 
 class RoutesToolTests(unittest.TestCase):
@@ -1443,6 +1490,30 @@ class AnalysisToolTests(unittest.TestCase):
         result = json.loads(strava._run_strava_tool("strava_analysis", {}))
         self.assertEqual(result["period"], "this-week")
 
+    @mock.patch.object(strava, "_get_client")
+    def test_single_date_auto_compare(self, mock_get):
+        mock_get.return_value = self.client
+        self.client.get_activities.return_value = []
+
+        result = json.loads(strava._run_strava_tool("strava_analysis", {
+            "period": "2025-10-28"
+        }))
+        self.assertNotIn("error", result)
+        self.assertEqual(result["period"], "2025-10-28")
+        self.assertIsNotNone(result.get("compare_period"))
+
+    @mock.patch.object(strava, "_get_client")
+    def test_date_range_auto_compare(self, mock_get):
+        mock_get.return_value = self.client
+        self.client.get_activities.return_value = []
+
+        result = json.loads(strava._run_strava_tool("strava_analysis", {
+            "period": "2025-10-01_2025-10-31"
+        }))
+        self.assertNotIn("error", result)
+        self.assertEqual(result["period"], "2025-10-01_2025-10-31")
+        self.assertIsNotNone(result.get("compare_period"))
+
 
 class FormatAnalysisTests(unittest.TestCase):
     def _make_analysis_json(self, **overrides):
@@ -1554,6 +1625,16 @@ class CompareLabelTests(unittest.TestCase):
 
     def test_numeric_period(self):
         self.assertEqual(strava._compare_label("7d"), "prior 7d")
+
+    def test_single_date(self):
+        label = strava._compare_label("2025-10-28")
+        self.assertIn("prior period", label)
+        self.assertIn("2025-10-28", label)
+
+    def test_date_range(self):
+        label = strava._compare_label("2025-10-01_2025-10-31")
+        self.assertIn("_", label)
+        self.assertNotEqual(label, "2025-10-01_2025-10-31")
 
 
 def _strict_get_activities(activities):

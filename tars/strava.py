@@ -143,6 +143,12 @@ def strava_auth_flow(client_id: str, client_secret: str) -> None:
 
 
 _PERIOD_RE = re.compile(r"^(\d+)([dwmy])$")
+_ISO_DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
+
+
+def _is_iso_date(s: str) -> bool:
+    """Check if string looks like YYYY-MM-DD (syntactic check only)."""
+    return bool(_ISO_DATE_RE.match(s))
 
 
 def _parse_period(period: str) -> tuple[datetime, datetime] | str:
@@ -535,6 +541,13 @@ def _default_comparison_period(period_a_str: str, parsed_a: tuple[datetime, date
         before = after_a
         return (after, before)
 
+    # Absolute date or date range: mirror the span immediately before
+    if "_" in period_a_str or _is_iso_date(period_a_str):
+        span = before_a - after_a
+        after = after_a - span
+        before = after_a
+        return (after, before)
+
     return f"cannot auto-derive comparison for {period_a_str!r}"
 
 
@@ -655,6 +668,17 @@ def _compare_label(period_str: str) -> str:
     m = _PERIOD_RE.match(period_str)
     if m:
         return f"prior {period_str}"
+    # Absolute date range or single date — derive label from the mirrored window
+    if "_" in period_str:
+        parts = period_str.split("_", 1)
+        parsed = _parse_period(period_str)
+        if isinstance(parsed, tuple):
+            span = parsed[1] - parsed[0]
+            prior_end = parsed[0]
+            prior_start = prior_end - span
+            return f"{prior_start.strftime('%Y-%m-%d')}_{prior_end.strftime('%Y-%m-%d')}"
+    if _is_iso_date(period_str):
+        return f"prior period (same duration before {period_str})"
     return period_str
 
 
