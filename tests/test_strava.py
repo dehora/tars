@@ -161,6 +161,43 @@ class ParsePeriodTests(unittest.TestCase):
         result = strava._parse_period("")
         self.assertIsInstance(result, str)
 
+    def test_single_date(self):
+        result = strava._parse_period("2025-10-28")
+        self.assertIsInstance(result, tuple)
+        after, before = result
+        self.assertEqual(after.year, 2025)
+        self.assertEqual(after.month, 10)
+        self.assertEqual(after.day, 28)
+        self.assertGreater(before, after)
+
+    def test_date_range(self):
+        result = strava._parse_period("2025-10-28_2026-03-15")
+        self.assertIsInstance(result, tuple)
+        after, before = result
+        self.assertEqual(after.year, 2025)
+        self.assertEqual(after.month, 10)
+        self.assertEqual(after.day, 28)
+        self.assertEqual(before.year, 2026)
+        self.assertEqual(before.month, 3)
+        self.assertEqual(before.day, 15)
+        self.assertEqual(before.hour, 23)
+        self.assertEqual(before.minute, 59)
+
+    def test_date_range_start_after_end(self):
+        result = strava._parse_period("2026-03-15_2025-10-28")
+        self.assertIsInstance(result, str)
+        self.assertIn("invalid date range", result)
+
+    def test_malformed_date_range(self):
+        result = strava._parse_period("2025-13-01_2025-14-01")
+        self.assertIsInstance(result, str)
+        self.assertIn("invalid date range", result)
+
+    def test_malformed_single_date_falls_through(self):
+        result = strava._parse_period("2025-13-01")
+        self.assertIsInstance(result, str)
+        self.assertIn("invalid period", result)
+
 
 class ActivitiesToolTests(unittest.TestCase):
     def setUp(self):

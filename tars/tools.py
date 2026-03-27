@@ -267,7 +267,7 @@ ANTHROPIC_TOOLS = [
             "properties": {
                 "period": {
                     "type": "string",
-                    "description": "Time period: 'today', 'yesterday', '7d', '30d', '3m', 'this-week', 'last-week', 'this-month', 'last-month', 'this-year', 'ytd'",
+                    "description": "Time period: 'today', 'yesterday', '7d', '30d', '3m', 'this-week', 'last-week', 'this-month', 'last-month', 'this-year', 'ytd', or date 'YYYY-MM-DD' / range 'YYYY-MM-DD_YYYY-MM-DD'",
                 },
                 "type": {
                     "type": "string",
@@ -303,7 +303,7 @@ ANTHROPIC_TOOLS = [
             "properties": {
                 "period": {
                     "type": "string",
-                    "description": "Time period: '7d', '30d', '3m', 'this-week', 'last-week', 'this-month', 'last-month', 'this-year', 'ytd' (default: 'this-month')",
+                    "description": "Time period: '7d', '30d', '3m', 'this-week', 'last-week', 'this-month', 'last-month', 'this-year', 'ytd', or date 'YYYY-MM-DD' / range 'YYYY-MM-DD_YYYY-MM-DD' (default: 'this-month')",
                 },
                 "type": {
                     "type": "string",
@@ -344,11 +344,11 @@ ANTHROPIC_TOOLS = [
             "properties": {
                 "period_a": {
                     "type": "string",
-                    "description": "The period to analyze: 'today', 'yesterday', '7d', '30d', '3m', 'this-week', 'last-week', 'this-month', 'last-month', 'this-year', 'ytd'",
+                    "description": "The period to analyze: 'today', 'yesterday', '7d', '30d', '3m', 'this-week', 'last-week', 'this-month', 'last-month', 'this-year', 'ytd', or date 'YYYY-MM-DD' / range 'YYYY-MM-DD_YYYY-MM-DD'",
                 },
                 "period_b": {
                     "type": "string",
-                    "description": "Comparison period (auto-derived if omitted — e.g. this-month auto-compares to last-month)",
+                    "description": "Comparison period (auto-derived if omitted — e.g. this-month auto-compares to last-month). Same formats as period_a.",
                 },
                 "type": {
                     "type": "string",
@@ -371,11 +371,11 @@ ANTHROPIC_TOOLS = [
             "properties": {
                 "period": {
                     "type": "string",
-                    "description": "Time period: '7d', '30d', '3m', 'this-week', 'last-week', 'this-month', 'last-month', 'this-year', 'ytd' (default: 'this-week')",
+                    "description": "Time period: '7d', '30d', '3m', 'this-week', 'last-week', 'this-month', 'last-month', 'this-year', 'ytd', or date 'YYYY-MM-DD' / range 'YYYY-MM-DD_YYYY-MM-DD' (default: 'this-week')",
                 },
                 "compare_period": {
                     "type": "string",
-                    "description": "Comparison period (auto-derived if omitted — e.g. this-week auto-compares to last-week)",
+                    "description": "Comparison period (auto-derived if omitted — e.g. this-week auto-compares to last-week). Same formats as period.",
                 },
                 "type": {
                     "type": "string",
@@ -398,7 +398,7 @@ ANTHROPIC_TOOLS = [
             "properties": {
                 "period": {
                     "type": "string",
-                    "description": "Time period (default: '4w'). Accepts same formats as other strava tools.",
+                    "description": "Time period (default: '4w'). Accepts same formats as other strava tools including 'YYYY-MM-DD' and 'YYYY-MM-DD_YYYY-MM-DD'.",
                 },
                 "type": {
                     "type": "string",

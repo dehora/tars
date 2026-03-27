@@ -177,9 +177,30 @@ def _parse_period(period: str) -> tuple[datetime, datetime] | str:
         after = today.replace(month=1, day=1)
         return (after, now)
 
+    # Absolute date range: YYYY-MM-DD_YYYY-MM-DD
+    if "_" in period:
+        parts = period.split("_", 1)
+        try:
+            start = datetime.strptime(parts[0], "%Y-%m-%d").replace(tzinfo=timezone.utc)
+            end = datetime.strptime(parts[1], "%Y-%m-%d").replace(
+                hour=23, minute=59, second=59, tzinfo=timezone.utc
+            )
+            if start > end:
+                return f"invalid date range: start {parts[0]} is after end {parts[1]}"
+            return (start, end)
+        except ValueError:
+            return f"invalid date range: {period!r} — use YYYY-MM-DD_YYYY-MM-DD"
+
+    # Single absolute date: YYYY-MM-DD → from that date to now
+    try:
+        start = datetime.strptime(period, "%Y-%m-%d").replace(tzinfo=timezone.utc)
+        return (start, now)
+    except ValueError:
+        pass
+
     m = _PERIOD_RE.match(period)
     if not m:
-        return f"invalid period: {period!r} — use e.g. today, yesterday, 7d, 3m, this-week, ytd"
+        return f"invalid period: {period!r} — use e.g. today, yesterday, 7d, 3m, this-week, ytd, YYYY-MM-DD"
 
     n = int(m.group(1))
     unit = m.group(2)
