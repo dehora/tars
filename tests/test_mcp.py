@@ -142,12 +142,19 @@ class RunAsyncTests(unittest.TestCase):
 
 
 class ValidationDotsTests(unittest.TestCase):
-    """Test that dots in server names are rejected."""
+    """Test that dots and double underscores in server names are rejected."""
 
     def test_rejects_dots_in_name(self) -> None:
         from tars.mcp import _validate_config
 
         config = {"my.server": {"command": "uvx", "args": []}}
+        result = _validate_config(config)
+        self.assertEqual(result, {})
+
+    def test_rejects_double_underscore_in_name(self) -> None:
+        from tars.mcp import _validate_config
+
+        config = {"my__server": {"command": "uvx", "args": []}}
         result = _validate_config(config)
         self.assertEqual(result, {})
 
@@ -178,7 +185,7 @@ class ToolDiscoveryTests(unittest.TestCase):
     def test_discover_tools_returns_anthropic_format(self) -> None:
         tools = [
             {
-                "name": "fetch.fetch_url",
+                "name": "fetch__fetch_url",
                 "description": "Fetch a URL",
                 "input_schema": {"type": "object", "properties": {"url": {"type": "string"}}},
                 "_server": "fetch",
@@ -188,7 +195,7 @@ class ToolDiscoveryTests(unittest.TestCase):
         client = self._make_client_with_tools("fetch", tools)
         result = client.discover_tools()
         self.assertEqual(len(result), 1)
-        self.assertEqual(result[0]["name"], "fetch.fetch_url")
+        self.assertEqual(result[0]["name"], "fetch__fetch_url")
         self.assertEqual(result[0]["description"], "Fetch a URL")
         self.assertIn("input_schema", result[0])
         # Internal keys should not be in the output
@@ -197,14 +204,14 @@ class ToolDiscoveryTests(unittest.TestCase):
 
     def test_discover_tools_prefixed_names(self) -> None:
         tools = [
-            {"name": "gh.create_issue", "description": "Create issue",
+            {"name": "gh__create_issue", "description": "Create issue",
              "input_schema": {}, "_server": "gh", "_tool_name": "create_issue"},
-            {"name": "gh.list_repos", "description": "List repos",
+            {"name": "gh__list_repos", "description": "List repos",
              "input_schema": {}, "_server": "gh", "_tool_name": "list_repos"},
         ]
         client = self._make_client_with_tools("gh", tools)
         names = [t["name"] for t in client.discover_tools()]
-        self.assertEqual(names, ["gh.create_issue", "gh.list_repos"])
+        self.assertEqual(names, ["gh__create_issue", "gh__list_repos"])
 
     def test_discover_empty_when_no_servers(self) -> None:
         from tars.mcp import MCPClient
@@ -215,7 +222,7 @@ class ToolDiscoveryTests(unittest.TestCase):
         from tars.tools import ANTHROPIC_TOOLS, get_all_tools
 
         tools = [
-            {"name": "fetch.fetch_url", "description": "Fetch",
+            {"name": "fetch__fetch_url", "description": "Fetch",
              "input_schema": {}, "_server": "fetch", "_tool_name": "fetch_url"},
         ]
         client = self._make_client_with_tools("fetch", tools)
@@ -224,9 +231,9 @@ class ToolDiscoveryTests(unittest.TestCase):
         self.assertEqual(len(anthropic_tools), len(ANTHROPIC_TOOLS) + 1)
         self.assertEqual(len(ollama_tools), len(ANTHROPIC_TOOLS) + 1)
         # MCP tool should be at the end
-        self.assertEqual(anthropic_tools[-1]["name"], "fetch.fetch_url")
+        self.assertEqual(anthropic_tools[-1]["name"], "fetch__fetch_url")
         # Ollama format should have the MCP tool too
-        self.assertEqual(ollama_tools[-1]["function"]["name"], "fetch.fetch_url")
+        self.assertEqual(ollama_tools[-1]["function"]["name"], "fetch__fetch_url")
 
 
 class ToolCallTests(unittest.TestCase):
@@ -241,7 +248,7 @@ class ToolCallTests(unittest.TestCase):
         client._sessions[server_name] = mock_session
         client._servers[server_name] = ServerInfo(
             name=server_name,
-            tools=[{"name": f"{server_name}.test_tool", "description": "Test",
+            tools=[{"name": f"{server_name}__test_tool", "description": "Test",
                     "input_schema": {}, "_server": server_name, "_tool_name": "test_tool"}],
             status="connected",
         )
@@ -259,7 +266,7 @@ class ToolCallTests(unittest.TestCase):
         )
         mock_session.call_tool = mock.Mock(return_value=result_obj)
         with mock.patch.object(client, "_run_async", side_effect=lambda coro: result_obj):
-            result = client.call_tool("fetch.fetch_url", {"url": "https://example.com"})
+            result = client.call_tool("fetch__fetch_url", {"url": "https://example.com"})
         self.assertEqual(result, "page content")
 
     def test_call_tool_strips_prefix(self) -> None:
@@ -272,14 +279,14 @@ class ToolCallTests(unittest.TestCase):
         )
         mock_session.call_tool = mock.Mock(return_value=result_obj)
         with mock.patch.object(client, "_run_async", side_effect=lambda coro: result_obj):
-            client.call_tool("gh.create_issue", {"title": "test"})
+            client.call_tool("gh__create_issue", {"title": "test"})
         # Verify session.call_tool was called with stripped name
         mock_session.call_tool.assert_called_once_with("create_issue", {"title": "test"})
 
     def test_call_tool_server_not_connected(self) -> None:
         from tars.mcp import MCPClient
         client = MCPClient({})
-        result = client.call_tool("unknown.tool", {})
+        result = client.call_tool("unknown__tool", {})
         parsed = json.loads(result)
         self.assertIn("error", parsed)
         self.assertIn("not connected", parsed["error"])
@@ -293,7 +300,7 @@ class ToolCallTests(unittest.TestCase):
             isError=True,
         )
         with mock.patch.object(client, "_run_async", side_effect=lambda coro: result_obj):
-            result = client.call_tool("fetch.fetch_url", {"url": "https://bad.example"})
+            result = client.call_tool("fetch__fetch_url", {"url": "https://bad.example"})
         parsed = json.loads(result)
         self.assertIn("error", parsed)
         self.assertIn("404", parsed["error"])
@@ -301,12 +308,12 @@ class ToolCallTests(unittest.TestCase):
     def test_call_tool_exception(self) -> None:
         client, _ = self._make_client_with_session("fetch")
         with mock.patch.object(client, "_run_async", side_effect=RuntimeError("connection lost")):
-            result = client.call_tool("fetch.fetch_url", {})
+            result = client.call_tool("fetch__fetch_url", {})
         parsed = json.loads(result)
         self.assertIn("error", parsed)
         self.assertIn("connection lost", parsed["error"])
 
-    def test_call_tool_invalid_name_no_dot(self) -> None:
+    def test_call_tool_invalid_name_no_separator(self) -> None:
         from tars.mcp import MCPClient
         client = MCPClient({})
         result = client.call_tool("nodot", {})
@@ -325,9 +332,9 @@ class DispatchTests(unittest.TestCase):
         original = tools._mcp_client
         try:
             tools._mcp_client = mock_client
-            result = tools.run_tool("fetch.fetch_url", {"url": "https://example.com"}, quiet=True)
+            result = tools.run_tool("fetch__fetch_url", {"url": "https://example.com"}, quiet=True)
             mock_client.call_tool.assert_called_once_with(
-                "fetch.fetch_url", {"url": "https://example.com"}
+                "fetch__fetch_url", {"url": "https://example.com"}
             )
             self.assertEqual(result, '{"result": "ok"}')
         finally:
@@ -351,7 +358,7 @@ class DispatchTests(unittest.TestCase):
         original = tools._mcp_client
         try:
             tools._mcp_client = None
-            result = tools.run_tool("nonexistent.tool", {}, quiet=True)
+            result = tools.run_tool("nonexistent__tool", {}, quiet=True)
             parsed = json.loads(result)
             self.assertIn("error", parsed)
             self.assertIn("Unknown tool", parsed["error"])
@@ -434,9 +441,9 @@ class ListServersTests(unittest.TestCase):
         client._servers["fetch"] = ServerInfo(
             name="fetch",
             tools=[
-                {"name": "fetch.get", "description": "Get URL",
+                {"name": "fetch__get", "description": "Get URL",
                  "input_schema": {}, "_server": "fetch", "_tool_name": "get"},
-                {"name": "fetch.post", "description": "Post URL",
+                {"name": "fetch__post", "description": "Post URL",
                  "input_schema": {}, "_server": "fetch", "_tool_name": "post"},
             ],
             status="connected",
@@ -456,12 +463,12 @@ class RouterIntegrationTests(unittest.TestCase):
         from tars.router import _TOOL_NAMES, update_tool_names
 
         original_size = len(_TOOL_NAMES)
-        update_tool_names({"fetch.fetch_url", "github.create_issue"})
-        self.assertIn("fetch.fetch_url", _TOOL_NAMES)
-        self.assertIn("github.create_issue", _TOOL_NAMES)
+        update_tool_names({"fetch__fetch_url", "github__create_issue"})
+        self.assertIn("fetch__fetch_url", _TOOL_NAMES)
+        self.assertIn("github__create_issue", _TOOL_NAMES)
         # Clean up
-        _TOOL_NAMES.discard("fetch.fetch_url")
-        _TOOL_NAMES.discard("github.create_issue")
+        _TOOL_NAMES.discard("fetch__fetch_url")
+        _TOOL_NAMES.discard("github__create_issue")
         self.assertEqual(len(_TOOL_NAMES), original_size)
 
 

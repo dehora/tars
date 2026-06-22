@@ -68,8 +68,8 @@ def _validate_config(config: dict) -> dict:
         if not isinstance(entry, dict):
             print(f"  [mcp] skipping {name}: not a dict", file=sys.stderr)
             continue
-        if "." in name:
-            print(f"  [mcp] skipping {name}: dots not allowed in server names", file=sys.stderr)
+        if "." in name or "__" in name:
+            print(f"  [mcp] skipping {name}: dots and '__' not allowed in server names", file=sys.stderr)
             continue
         if "command" not in entry:
             print(f"  [mcp] skipping {name}: missing 'command'", file=sys.stderr)
@@ -159,7 +159,7 @@ class MCPClient:
             tools = []
             for tool in result.tools:
                 tools.append({
-                    "name": f"{name}.{tool.name}",
+                    "name": f"{name}__{tool.name}",
                     "description": tool.description or "",
                     "input_schema": tool.inputSchema,
                     "_server": name,
@@ -208,12 +208,10 @@ class MCPClient:
         Returns the tool result as a string (text content joined),
         or a JSON error object on failure.
         """
-        if "." not in prefixed_name:
+        if "__" not in prefixed_name:
             return json.dumps({"error": f"Invalid MCP tool name: {prefixed_name}"})
 
-        dot = prefixed_name.index(".")
-        server_name = prefixed_name[:dot]
-        tool_name = prefixed_name[dot + 1:]
+        server_name, tool_name = prefixed_name.split("__", 1)
 
         session = self._sessions.get(server_name)
         if session is None:

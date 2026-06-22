@@ -567,7 +567,7 @@ def run_tool(name: str, args: dict, *, quiet: bool = False) -> str:
         elif name == "todoist_complete_task":
             cmd = [td_bin, "task", "complete", args["ref"]]
         else:
-            if _mcp_client and "." in name:
+            if _mcp_client and "__" in name:
                 return _mcp_client.call_tool(name, args)
             return json.dumps({"error": f"Unknown tool: {name}"})
 
