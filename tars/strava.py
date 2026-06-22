@@ -541,8 +541,24 @@ def _default_comparison_period(period_a_str: str, parsed_a: tuple[datetime, date
         before = after_a
         return (after, before)
 
-    # Absolute date or date range: mirror the span immediately before
-    if "_" in period_a_str or _is_iso_date(period_a_str):
+    # Absolute date range: use calendar-day arithmetic for clean boundaries
+    if "_" in period_a_str:
+        parts = period_a_str.split("_", 1)
+        try:
+            start_date = datetime.strptime(parts[0], "%Y-%m-%d").date()
+            end_date = datetime.strptime(parts[1], "%Y-%m-%d").date()
+        except ValueError:
+            return f"cannot auto-derive comparison for {period_a_str!r}"
+        inclusive_days = (end_date - start_date).days + 1
+        prior_end_date = start_date - timedelta(days=1)
+        prior_start_date = prior_end_date - timedelta(days=inclusive_days - 1)
+        after = datetime(prior_start_date.year, prior_start_date.month, prior_start_date.day, tzinfo=timezone.utc)
+        before = datetime(prior_end_date.year, prior_end_date.month, prior_end_date.day,
+                          hour=23, minute=59, second=59, tzinfo=timezone.utc)
+        return (after, before)
+
+    # Single absolute date: mirror the span immediately before
+    if _is_iso_date(period_a_str):
         span = before_a - after_a
         after = after_a - span
         before = after_a
@@ -668,15 +684,18 @@ def _compare_label(period_str: str) -> str:
     m = _PERIOD_RE.match(period_str)
     if m:
         return f"prior {period_str}"
-    # Absolute date range or single date — derive label from the mirrored window
+    # Absolute date range — calendar-day prior window label
     if "_" in period_str:
         parts = period_str.split("_", 1)
-        parsed = _parse_period(period_str)
-        if isinstance(parsed, tuple):
-            span = parsed[1] - parsed[0]
-            prior_end = parsed[0]
-            prior_start = prior_end - span
-            return f"{prior_start.strftime('%Y-%m-%d')}_{prior_end.strftime('%Y-%m-%d')}"
+        try:
+            start_date = datetime.strptime(parts[0], "%Y-%m-%d").date()
+            end_date = datetime.strptime(parts[1], "%Y-%m-%d").date()
+            inclusive_days = (end_date - start_date).days + 1
+            prior_end_date = start_date - timedelta(days=1)
+            prior_start_date = prior_end_date - timedelta(days=inclusive_days - 1)
+            return f"{prior_start_date.isoformat()}_{prior_end_date.isoformat()}"
+        except ValueError:
+            pass
     if _is_iso_date(period_str):
         return f"prior period (same duration before {period_str})"
     return period_str

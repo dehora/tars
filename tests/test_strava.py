@@ -950,15 +950,33 @@ class DefaultComparisonPeriodTests(unittest.TestCase):
         self.assertAlmostEqual((before - after).total_seconds(), span.total_seconds(), delta=5)
 
     def test_date_range(self):
+        """2025-10-01_2025-10-31 (31 days) → prior window 2025-08-31_2025-09-30."""
         parsed_a = strava._parse_period("2025-10-01_2025-10-31")
         self.assertIsInstance(parsed_a, tuple)
         result = strava._default_comparison_period("2025-10-01_2025-10-31", parsed_a)
         self.assertIsInstance(result, tuple)
         after, before = result
-        self.assertEqual(before, parsed_a[0])
-        span = parsed_a[1] - parsed_a[0]
-        expected_span = (before - after).total_seconds()
-        self.assertAlmostEqual(expected_span, span.total_seconds(), delta=5)
+        self.assertEqual(after, datetime(2025, 8, 31, tzinfo=timezone.utc))
+        self.assertEqual(before, datetime(2025, 9, 30, 23, 59, 59, tzinfo=timezone.utc))
+
+    def test_date_range_no_overlap(self):
+        """Prior window must end the day before the current window starts."""
+        parsed_a = strava._parse_period("2025-10-01_2025-10-31")
+        self.assertIsInstance(parsed_a, tuple)
+        result = strava._default_comparison_period("2025-10-01_2025-10-31", parsed_a)
+        self.assertIsInstance(result, tuple)
+        _, before = result
+        self.assertLess(before, parsed_a[0])
+
+    def test_date_range_short(self):
+        """2025-03-10_2025-03-12 (3 days) → prior 2025-03-07_2025-03-09."""
+        parsed_a = strava._parse_period("2025-03-10_2025-03-12")
+        self.assertIsInstance(parsed_a, tuple)
+        result = strava._default_comparison_period("2025-03-10_2025-03-12", parsed_a)
+        self.assertIsInstance(result, tuple)
+        after, before = result
+        self.assertEqual(after, datetime(2025, 3, 7, tzinfo=timezone.utc))
+        self.assertEqual(before, datetime(2025, 3, 9, 23, 59, 59, tzinfo=timezone.utc))
 
 
 class ComputeDeltaTests(unittest.TestCase):
@@ -1633,8 +1651,11 @@ class CompareLabelTests(unittest.TestCase):
 
     def test_date_range(self):
         label = strava._compare_label("2025-10-01_2025-10-31")
-        self.assertIn("_", label)
-        self.assertNotEqual(label, "2025-10-01_2025-10-31")
+        self.assertEqual(label, "2025-08-31_2025-09-30")
+
+    def test_date_range_short(self):
+        label = strava._compare_label("2025-03-10_2025-03-12")
+        self.assertEqual(label, "2025-03-07_2025-03-09")
 
 
 def _strict_get_activities(activities):
