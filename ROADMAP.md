@@ -18,6 +18,14 @@ Unified cross-vault search across tars vault and personal vault with source attr
 
 Local speech-to-text (Whisper or MLX whisper) piped through existing conversation flow. Apple Silicon is fast enough for real-time local transcription. Makes tars usable hands-free.
 
+### 46. Knowledge compile (`/compile`)
+
+The "compile-don't-append" half tars is missing. We have ingest (`/capture`), lint (`/tidy`), and retrieval (`/find`) — but nothing that synthesises a cluster of captured notes into a coherent page. Given a topic or folder (e.g. `15 Clippings/Instapaper/ml/`), pull the member notes via the existing `notes.db` index, draft a concept page that summarises and reconciles them with `[[wikilinks]]` back to sources, and write it to a compiled area for approval — same interactive pattern as `/review`. Reuses #40 link extraction and #18/#27 search. Human curates the cluster; tars maintains the page. (Karpathy's LLM-Wiki idea, scoped to what tars already does — see vault note "Karpathy LLM-Wiki vs dehora + tars".)
+
+### 47. Vault schema doc (for discussion)
+
+A vault-level schema/config doc telling tars how to read and write the vault: folder rules (where captures vs compiled pages live), page templates, citation style, and the "human curates / LLM maintains" guardrail. Today this is implicit and scattered (`VOICE.md`, `Templates_/Post.md`, the folder conventions); consolidating it gives `/capture` and #46 `/compile` a single contract to follow. Open questions: one vault-root doc vs per-area docs; how much it overlaps with the existing system prompt; whether tars reads it at index time or per-write. Worth a design session before building.
+
 ## Fixes
 
 <details>
